@@ -4,7 +4,7 @@
 
 > **Your life, your data, your AI** — a self-hosted life assistant powered by NVIDIA Nemotron on Nebius Token Factory.
 
-**在线演示：<https://xujianshiguang.ting97.cn>**（默认英文界面，可随时切换中文）
+**在线演示：<https://gatherlight.ting97.cn>**（默认英文界面，可随时切换中文）
 
 | 账号 | 凭据 | 用途 |
 |---|---|---|
