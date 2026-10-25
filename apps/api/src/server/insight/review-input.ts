@@ -1,5 +1,5 @@
 import { pool } from "@/server/platform/db";
-import { chat, extractJson, activeModel } from "@shiguangri/ai";
+import { chat, extractJson, activeModel, langDirective } from "@shiguangri/ai";
 import { assembleUserPrompt, getPromptBundle } from "@/server/ai/prompts";
 import { writeAuditRecord } from "@/server/ai/audit";
 
@@ -192,10 +192,13 @@ export async function chatReviewJson<T>(opts: {
   temperature?: number;
   maxTokens: number;
   timeoutMs: number;
+  lang?: "zh" | "en";
   onUsage?: (u: { prompt_tokens: number; completion_tokens: number }) => void;
 }): Promise<T> {
+  // 输出语言由代码拼指令（不进 ai_prompts 库）：en 时 summary/highlights/suggestions 英文
+  const system = opts.lang === "en" ? `${opts.system}\n${langDirective("en")}` : opts.system;
   let raw = await chat({
-    system: opts.system,
+    system,
     user: opts.user,
     temperature: opts.temperature ?? 0.4,
     maxTokens: opts.maxTokens,
@@ -208,7 +211,7 @@ export async function chatReviewJson<T>(opts: {
   } catch (first) {
     const repairMsg = `${opts.user}\n\n你上次的输出不是合法 JSON（${String(first).slice(0, 120)}）。请修正后重新输出完整 JSON：结构不变、只输出 JSON、字符串内不得包含未转义的英文双引号或换行。`;
     raw = await chat({
-      system: opts.system,
+      system,
       user: repairMsg,
       temperature: opts.temperature ?? 0.4,
       maxTokens: opts.maxTokens,

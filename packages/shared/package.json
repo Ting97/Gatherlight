@@ -13,6 +13,7 @@
     "./finance": "./src/finance.ts",
     "./fitness-types": "./src/fitness-types.ts",
     "./graph": "./src/graph.ts",
+    "./i18n-enum": "./src/i18n-enum.ts",
     "./lunar": "./src/lunar.ts",
     "./mood": "./src/mood.ts",
     "./modules": "./src/modules.ts",

@@ -11,6 +11,9 @@ import { BlockRows } from "./recognition-blocks";
 import { TodoRows } from "./recognition-todos";
 import { TxRows } from "./recognition-transactions";
 import type { DelFn, RunFn } from "./types";
+import { t } from "@/i18n";
+import { mealLabel } from "@shiguangri/shared/i18n-enum";
+import { getLang } from "@/i18n";
 
 interface RecognitionSectionProps {
   m: FeedMoment;
@@ -78,14 +81,14 @@ export function RecognitionSection({ m, activities, run, del, delArmed }: Recogn
               onDelete: () =>
                 del(`diet:${m.id}`, async () => {
                   await api(`/api/entries/${m.id}/diet`, "DELETE");
-                  return "🗑 已删除饮食记录";
+                  return t("🗑 已删除饮食记录");
                 }),
             });
           }}
         >
-          <TagChip icon={<Utensils size={12} />} label="饮食" tone="amber" size="sm" className="shrink-0" />
+          <TagChip icon={<Utensils size={12} />} label={t("饮食")} tone="amber" size="sm" className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">
-            {m.diet.meal !== "未知" ? `${m.diet.meal} · ` : ""}
+            {m.diet.meal !== "未知" ? `${mealLabel(m.diet.meal, getLang())} · ` : ""}
             {(m.diet.items ?? []).map((i) => `${i.name}${i.amount ?? ""}`).join(" + ")}
             {m.diet.totalKcal != null ? ` · ≈${m.diet.totalKcal} kcal` : ""}
           </span>
@@ -94,13 +97,13 @@ export function RecognitionSection({ m, activities, run, del, delArmed }: Recogn
               e.stopPropagation(); // 触屏冒泡会再弹行菜单盖住确认按钮（同 row-action）
               del(`diet:${m.id}`, async () => {
                 await api(`/api/entries/${m.id}/diet`, "DELETE");
-                return "🗑 已删除饮食记录";
+                return t("🗑 已删除饮食记录");
               });
             }}
-            title={delArmed === `diet:${m.id}` ? "3 秒内再点确认删除" : "删除饮食记录"}
+            title={delArmed === `diet:${m.id}` ? t("3 秒内再点确认删除") : t("删除饮食记录")}
             className={`row-actions-hidden hidden shrink-0 rounded px-1 py-0.5 text-[10px] font-medium leading-none group-hover/row:block ${delArmed === `diet:${m.id}` ? "bg-rose-500/15 text-danger" : "text-ink-dim hover:text-danger"}`}
           >
-            {delArmed === `diet:${m.id}` ? "确认删除?" : <Trash2 size={12} className="mx-auto" />}
+            {delArmed === `diet:${m.id}` ? t("确认删除?") : <Trash2 size={12} className="mx-auto" />}
           </button>
         </p>
       )}

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/server/platform/db";
 import { hasApiKey } from "@shiguangri/ai";
-import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { withModule, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import { isValidCalendarDate } from "@/server/platform/http/datetime";
 import { getOrGenerateReview, acquireGeneration, releaseGeneration, ReviewGateError } from "@/server/insight";
@@ -58,6 +58,7 @@ export const POST = withModule("trade_review", async (req, { user }) => {
   const from = bjMondayOf(anchor);
   const to = bjAddDays(from, 6);
 
+  const lang = reqLang(req);
   const bundle = await getPromptBundle("trade_review_week");
   const injectTx = bundle.config.inject.txDetail;
   const txCap = bundle.config.caps.txCap;
@@ -168,7 +169,7 @@ export const POST = withModule("trade_review", async (req, { user }) => {
       await acquireGeneration(user.id, "trade_week", from, latest ? new Date(latest) : null);
       try {
         const parsed = await chatReviewJson<Partial<WeekReview>>({
-          system: bundle.system,
+          system: bundle.system, lang,
           user: userPrompt,
           maxTokens: 4000,
           timeoutMs: 120_000,
@@ -183,7 +184,9 @@ export const POST = withModule("trade_review", async (req, { user }) => {
           summary:
             typeof parsed.summary === "string" && parsed.summary.trim()
               ? parsed.summary.trim().replace(/["“”„]/g, "")
-              : "本周流水还很少，多记几笔再来复盘会更有料",
+              : lang === "en"
+                ? "Few transactions this week — record more and the review will be more useful."
+                : "本周流水还很少，多记几笔再来复盘会更有料",
           highlights: arr(parsed.highlights),
           suggestions: arr(parsed.suggestions),
         };
@@ -192,7 +195,7 @@ export const POST = withModule("trade_review", async (req, { user }) => {
         await releaseGeneration(user.id, "trade_week", from).catch(() => {});
         throw e;
       }
-    });
+    }, lang);
   } catch (e) {
     if (e instanceof ReviewGateError) return NextResponse.json({ error: e.message }, { status: 403 });
     return NextResponse.json({ error: "AI 解读失败，请稍后重试" }, { status: 502 });

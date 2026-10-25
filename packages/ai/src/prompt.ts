@@ -1,5 +1,20 @@
 import { ACTIVITY_NAMES } from "./schema";
 
+// ============ 输出语言指令（chat/复盘等自由文本链路由服务端代码拼接） ============
+
+export type OutputLang = "zh" | "en";
+
+/** 输出语言指令：en 时枚举字段（入库中文值）保持原值、自由文本用英文；zh 为默认无需拼接 */
+export function langDirective(lang: OutputLang): string {
+  if (lang === "zh") return "";
+  return [
+    "",
+    "## Language",
+    "IMPORTANT: Respond in English. Exception: enumerated fields whose allowed values are given in Chinese (e.g. category, meal, contact group) MUST keep the exact Chinese value from the given list — they are stored as-is.",
+    "",
+  ].join("\n");
+}
+
 // ============ 全量模式（发动态/编辑重识别）：一次调用五域联合 ============
 
 export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。用户像发朋友圈一样随口说一句话。请对这句话做**五个独立判断**，严格输出 JSON。你是唯一的判断者——输出会被直接落库，没有规则引擎替你纠错，请严格按下方标准判定。
@@ -42,7 +57,7 @@ export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。
   "mood": { "label": "情绪词或null", "score": -100~100或null, "confidence": 0~1 },
   "diet": { "applicable": bool, "meal": "早餐|午餐|晚餐|加餐|夜宵|未知", "items": [ { "name": "食物", "amount": "分量或null", "kcal": 整数或null } ], "totalKcal": 合计或null, "confidence": 0~1 },
   "people": [ { "name": "人名", "event": "吃饭/送礼/通话/帮忙…或null" } ],
-  "ambiguity": "有歧义时一句中文追问，否则 null"
+  "ambiguity": "有歧义时用与用户输入相同的语言写一句追问，否则 null"
 }
 
 ## 规则

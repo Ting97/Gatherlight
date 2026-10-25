@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/ui/modal";
+import { t } from "@/i18n";
 
 export interface ConfirmOptions {
   title: string;
@@ -66,7 +67,7 @@ export function ConfirmHost() {
       )}
       <div className="flex justify-end gap-2">
         <button type="button" onClick={() => close(false)} className="btn-ghost rounded-lg px-4 py-1.5 text-xs font-medium">
-          {pending.cancelText ?? "取消"}
+          {pending.cancelText ?? t("取消")}
         </button>
         <button
           type="button"
@@ -76,7 +77,7 @@ export function ConfirmHost() {
             danger ? "bg-rose-600 hover:bg-rose-500" : "btn-primary"
           }`}
         >
-          {pending.confirmText ?? "确认"}
+          {pending.confirmText ?? t("确认")}
         </button>
       </div>
     </Modal>

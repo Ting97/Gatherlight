@@ -4,12 +4,24 @@
  * Web 数据层唯一入口（REQ-004 FR-E1.1/E1.2 收口）：
  * - 转发三端共享 client-api 的 api()/apiForm()，行为与旧裸 fetch 完全兼容（同域 cookie）
  * - 401 单点跳转：会话失效统一回 /login（登录/初始化页除外——其自身调用 401 是正常业务语义）
+ * - 统一注入 X-Lang（AI 输出语言跟随界面语言）与错误 message 的 code 级翻译
  * - 调用方按状态码分支时捕获 ApiClientError 检查 e.status（如 409 冲突）
  */
 import { api as baseApi, apiForm as baseApiForm, apiBase as baseApiBase, ApiClientError } from "@shiguangri/shared/client-api";
+import { getLang } from "@/i18n";
+import { CODE_MESSAGES } from "@/i18n/en/errors";
 
 const NO_REDIRECT_PATHS = ["/login", "/setup"];
 export { NO_REDIRECT_PATHS };
+
+/** 错误文案翻译：en 模式优先按稳定 code 映射，无 code 回退服务端原始 message（中文） */
+export function errorMessage(e: unknown, fallback = "操作失败"): string {
+  if (e instanceof ApiClientError) {
+    if (getLang() === "en" && e.code && CODE_MESSAGES[e.code]) return CODE_MESSAGES[e.code];
+    return e.message;
+  }
+  return e instanceof Error ? e.message : String(e ?? fallback);
+}
 
 async function with401Redirect<T>(run: () => Promise<T>): Promise<T> {
   try {
@@ -34,11 +46,13 @@ export function api<T = any>(
   headers?: Record<string, string>,
   opts?: { timeoutMs?: number },
 ): Promise<T> {
-  return with401Redirect(() => baseApi<T>(url, method, body, headers, opts));
+  return with401Redirect(() =>
+    baseApi<T>(url, method, body, { "x-lang": getLang(), ...headers }, opts),
+  );
 }
 
 export function apiForm<T = any>(url: string, form: FormData, method = "POST"): Promise<T> {
-  return with401Redirect(() => baseApiForm<T>(url, form, method));
+  return with401Redirect(() => baseApiForm<T>(url, form, method, { "x-lang": getLang() }));
 }
 
 export { ApiClientError };

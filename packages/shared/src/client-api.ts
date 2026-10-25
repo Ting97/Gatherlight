@@ -99,13 +99,16 @@ export async function api<T = any>(
   return parseResponse<T>(r);
 }
 
-/** 带错误 status 的客户端异常：调用方可按状态码分支（409 冲突 / 401 会话等） */
+/** 带错误 status 的客户端异常：调用方可按状态码分支（409 冲突 / 401 会话等）；
+ *  code 携带服务端 ApiError 的稳定错误码（invalid_input 等），前端可按 code 做语言映射 */
 export class ApiClientError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = "ApiClientError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -119,7 +122,8 @@ async function parseResponse<T>(r: Response): Promise<T> {
   });
   if (!r.ok) {
     if (r.status === 401) await store.set(null); // 会话失效即清 token
-    throw new ApiClientError((j as { error?: string }).error ?? "操作失败", r.status);
+    const err = j as { error?: string; code?: string };
+    throw new ApiClientError(err.error ?? "操作失败", r.status, err.code);
   }
   if (parseFailed) throw new ApiClientError("响应格式错误（响应非 JSON），请刷新重试", r.status);
   // 登录/注册/setup 响应附带 token：自动入库，后续请求带 Bearer。
@@ -132,13 +136,18 @@ async function parseResponse<T>(r: Response): Promise<T> {
 }
 
 /** FormData 上传（语音/图片等）：不设 Content-Type，交由浏览器生成 boundary */
-export async function apiForm<T = any>(url: string, form: FormData, method = "POST"): Promise<T> {
-  const headers: Record<string, string> = {};
+export async function apiForm<T = any>(
+  url: string,
+  form: FormData,
+  method = "POST",
+  headers?: Record<string, string>,
+): Promise<T> {
+  const h: Record<string, string> = { ...headers };
   const token = await store.get();
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token) h["Authorization"] = `Bearer ${token}`;
   const r = await fetch(apiBase() + url, {
     method,
-    headers,
+    headers: h,
     body: form,
     // 上传（多图/语音）弱网耗时更长，给 120s；JSON 通道 30s
     signal: timeoutSignal(120_000),

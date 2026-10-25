@@ -21,6 +21,7 @@ export async function getOrGenerateReview(
   refresh: boolean,
   latestDataAt: Date | null,
   generate: (capture: (usage: { prompt_tokens: number; completion_tokens: number }) => void) => Promise<Review>,
+  lang: "zh" | "en" = "zh",
 ): Promise<{ review: Review; cached: boolean; generatedAt: string }> {
   let cachedHit: Review | null = null;
   let cachedAt: Date | null = null;
@@ -28,8 +29,8 @@ export async function getOrGenerateReview(
   try {
     if (!refresh) {
       const hit = await pool.query(
-        `select review, updated_at from review_caches where user_id = $1 and kind = $2 and period_key = $3`,
-        [userId, kind, periodKey],
+        `select review, updated_at from review_caches where user_id = $1 and kind = $2 and period_key = $3 and lang = $4`,
+        [userId, kind, periodKey, lang],
       );
       if (hit.rows[0]) {
         cachedHit = hit.rows[0].review as Review;
@@ -80,11 +81,11 @@ export async function getOrGenerateReview(
     // 水位取生成开始时刻（startedAt）：updated_at=now() 会把生成期间（LLM 可达 45s+）新写入的数据
     // 遮蔽在缓存之下——下次读取 cachedAt >= latestDataAt 误判「仍新鲜」，漏掉生成期间的新记录
     await pool.query(
-      `insert into review_caches (user_id, kind, period_key, review, updated_at)
-       values ($1,$2,$3,$4,$5)
-       on conflict (user_id, kind, period_key)
+      `insert into review_caches (user_id, kind, period_key, lang, review, updated_at)
+       values ($1,$2,$3,$4,$5,$6)
+       on conflict (user_id, kind, period_key, lang)
        do update set review = excluded.review, updated_at = excluded.updated_at`,
-      [userId, kind, periodKey, JSON.stringify(review), new Date(startedAt)],
+      [userId, kind, periodKey, lang, JSON.stringify(review), new Date(startedAt)],
     );
   } catch (e) {
     console.error("[review-cache] 写入失败:", e);

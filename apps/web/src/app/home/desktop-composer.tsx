@@ -4,6 +4,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import VoiceButton from "@/components/voice-button";
 import { toast } from "@/shared/ui/toast";
 import type { DesktopImage } from "./types";
+import { t, tpl } from "@/i18n";
 
 interface Props {
   text: string;
@@ -52,14 +53,14 @@ export default function DesktopComposer({
         }}
         rows={2}
         maxLength={2000}
-        placeholder='记录此刻…（试试"刚跑完步40分钟，心情不错"、"有点累"、"明天下午三点看牙"）'
+        placeholder={t('记录此刻…（试试"刚跑完步40分钟，心情不错"、"有点累"、"明天下午三点看牙"）')}
         className="input-glow w-full resize-none rounded-xl border border-line-soft bg-surface/60 px-4 py-3 text-sm outline-none placeholder:text-ink-faint"
       />
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {/* 图片按钮：相册多选 ≤9 张（发布后并行上传） */}
           <label
-            title="添加图片（最多 9 张）"
+            title={t("添加图片（最多 9 张）")}
             className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-line-soft bg-surface/60 text-base transition hover:border-sky-500/60"
           >
             🖼
@@ -81,7 +82,7 @@ export default function DesktopComposer({
             onError={(m) => toast(m, "err")}
             onHint={(m) => toast(m)}
           />
-          <span className="hidden text-micro text-ink-faint sm:block">🎤 按住说话 · Enter 发布</span>
+          <span className="hidden text-micro text-ink-faint sm:block">🎤 {t("按住说话 · Enter 发布")}</span>
         </div>
         <div className="flex items-center gap-3">
           {/* 接近上限才显示字数，与发布弹层口径一致 */}
@@ -95,7 +96,7 @@ export default function DesktopComposer({
             disabled={busy || !text.trim()}
             className="btn-primary rounded-xl px-7 py-2 text-sm font-medium"
           >
-            {busy ? "识别中…" : "发布"}
+            {busy ? t("识别中…") : t("发布")}
           </button>
         </div>
       </div>
@@ -103,8 +104,8 @@ export default function DesktopComposer({
       {voiceSeconds != null && (
         <div className="mt-2">
           <span className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-micro text-accent">
-            🎤 语音已附加 {Math.floor(voiceSeconds / 60)}:{String(voiceSeconds % 60).padStart(2, "0")}
-            <button onClick={onRemoveVoice} title="移除语音" className="tap-lg rounded-full bg-black/30 px-1 leading-none text-white">
+            🎤 {tpl("语音已附加 {dur}", { dur: `${Math.floor(voiceSeconds / 60)}:${String(voiceSeconds % 60).padStart(2, "0")}` })}
+            <button onClick={onRemoveVoice} title={t("移除语音")} className="tap-lg rounded-full bg-black/30 px-1 leading-none text-white">
               ✕
             </button>
           </span>

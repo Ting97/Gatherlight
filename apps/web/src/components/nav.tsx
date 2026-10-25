@@ -5,8 +5,10 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { LogOut } from "lucide-react";
 import ThemeToggle from "./theme-toggle";
+import LangToggle from "./lang-toggle";
 import { useSession } from "@/shared/session";
 import { MODULE_REGISTRY } from "@shiguangri/shared/modules";
+import { t } from "@/i18n";
 
 // 导航项来自模块注册表（REQ-028 单一事实源）：域级带 nav 的项；core 恒显
 const NAV_LINKS = MODULE_REGISTRY.filter((m) => m.nav).map((m) => ({ ...m.nav!, key: m.key, core: m.core ?? false }));
@@ -48,18 +50,19 @@ export default function Nav() {
           const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
           return (
             <Link key={l.href} href={l.href} data-path={l.href} className={linkCls(active)}>
-              {l.label}
+              {t(l.label)}
             </Link>
           );
         })}
       </div>
       <span className="flex shrink-0 items-center gap-1 pr-2">
         <ThemeToggle />
+        <LangToggle />
         {!authDisabled && nickname && (
           <span className="flex items-center gap-1.5 text-xs text-ink-mute">
             <Link
               href="/profile"
-              title="个人设置"
+              title={t("个人设置")}
               className={`max-w-[4.5rem] truncate rounded-full px-2 py-1.5 transition hover:bg-wash hover:text-accent sm:max-w-none sm:py-1 ${
                 pathname === "/profile" ? "text-accent" : ""
               }`}
@@ -68,8 +71,8 @@ export default function Nav() {
             </Link>
             <button
               onClick={logout}
-              title="退出登录"
-              aria-label="退出登录"
+              title={t("退出登录")}
+              aria-label={t("退出登录")}
               className="flex items-center rounded-full px-2 py-1.5 text-ink-mute transition hover:bg-wash hover:text-danger sm:py-1"
             >
               <LogOut size={13} />

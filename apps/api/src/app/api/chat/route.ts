@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { withModule, withModuleSchema } from "@/server/platform/http/route";
+import { withModule, withModuleSchema, reqLang } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import { assertUuidParam, isUuid } from "@/server/platform/http/validate";
 import { chatService, parseScope } from "@/server/chat";
@@ -38,7 +38,7 @@ const sendSchema = z.object({
 });
 
 /** POST /api/chat —— 发送消息，AI 工具循环查库后回答（MVP 非流式；LLM+查询总预算 60s，客户端超时需放宽） */
-export const POST = withModuleSchema("ai", sendSchema, async (_req, { user, valid }) => {
-  const r = await chatService.sendMessage(user.id, valid);
+export const POST = withModuleSchema("ai", sendSchema, async (req, { user, valid }) => {
+  const r = await chatService.sendMessage(user.id, { ...valid, lang: reqLang(req) });
   return NextResponse.json(r);
 });

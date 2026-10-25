@@ -1,4 +1,6 @@
 import { bjDayIdx, isoToBjInput, bjInputToIso, zhTime } from "@/lib/bj-time";
+import { getLang } from "@/i18n";
+import { dateLabel } from "@shiguangri/shared/i18n-enum";
 import { yuan as sharedYuan } from "@shiguangri/shared/finance";
 
 /**
@@ -16,8 +18,13 @@ export const zhRecordTime = (iso: string) => {
   const diffDays = bjDayIdx(nowT) - bjDayIdx(t);
   const d = new Date(t + 8 * 3600_000);
   const clock = zhClock(iso);
-  if (diffDays === 0) return { day: "今天", clock };
-  if (diffDays === 1) return { day: "昨天", clock };
+  const lang = getLang();
+  if (diffDays === 0) return { day: lang === "en" ? "Today" : "今天", clock };
+  if (diffDays === 1) return { day: lang === "en" ? "Yesterday" : "昨天", clock };
+  if (lang === "en") {
+    const sameYear = d.getUTCFullYear() === new Date(nowT + 8 * 3600_000).getUTCFullYear();
+    return { day: `${sameYear ? "" : d.getUTCFullYear() + " "}${dateLabel(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), "en")}`, clock };
+  }
   const sameYear = d.getUTCFullYear() === new Date(nowT + 8 * 3600_000).getUTCFullYear();
   return {
     day: `${sameYear ? "" : d.getUTCFullYear() + "年"}${d.getUTCMonth() + 1}月${d.getUTCDate()}日`,
@@ -53,6 +60,14 @@ export const dayPrefix = (iso: string) => {
 export const COMMON_MOODS = ["开心", "满足", "兴奋", "放松", "平静", "疲惫", "焦虑", "烦躁", "难过", "生气"];
 
 // 五域/关系域中文名（待确认提示等处使用）
+const DOMAIN_LABELS_EN: Record<string, string> = {
+  schedule: "Schedule", todo: "Todo", finance: "Money", mood: "Mood", diet: "Diet", people: "People",
+};
+export function domainLabel(domain: string): string {
+  if (getLang() === "en") return DOMAIN_LABELS_EN[domain] ?? domain;
+  return DOMAIN_LABELS[domain] ?? domain;
+}
+
 export const DOMAIN_LABELS: Record<string, string> = {
   schedule: "日程",
   todo: "todo",

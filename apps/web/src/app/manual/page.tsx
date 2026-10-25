@@ -12,10 +12,11 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { useLang } from "@/i18n";
 
 /**
- * 使用手册（REQ-使用手册）：面向用户的功能介绍与使用方式，蓝本 docs/11-使用手册.md，
- * 浓缩为结构化章节并覆盖双端入口差异。纯静态内容，无接口调用。
+ * 使用手册（REQ-使用手册）：面向用户的功能介绍与使用方式。
+ * 纯静态内容，无接口调用；中英双份内容按界面语言选择（截图共用）。
  */
 interface Section {
   icon: LucideIcon;
@@ -25,7 +26,7 @@ interface Section {
   img?: string;
 }
 
-const SECTIONS: Section[] = [
+const SECTIONS_ZH: Section[] = [
   {
     icon: Sparkles,
     h: "拾光是什么",
@@ -112,15 +113,108 @@ const SECTIONS: Section[] = [
   },
 ];
 
+const SECTIONS_EN: Section[] = [
+  {
+    icon: Sparkles,
+    h: "What is Shiguang",
+    rows: [
+      "A self-hosted personal life OS: money · time · people. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
+      "Top navigation on web: Feed / Goals / Schedule / People / Finance. Click your avatar at the top right for settings.",
+    ],
+  },
+  {
+    icon: Mic,
+    h: "How to capture a sentence",
+    img: "/manual/web-feed.png",
+    rows: [
+      "Type a casual line in the composer at the top of the home page (e.g. \"Morning run 40 minutes, feeling great\", \"Dentist tomorrow at 3pm\", \"Taxi cost 32 yuan\"), then hit Post or Enter (Shift+Enter for a new line).",
+      "Voice input: hold the mic button at the bottom-left of the composer and speak — it transcribes on release (30 seconds max). Audio is never stored; it is discarded right after transcription.",
+      "Once posted, the moment appears instantly while AI extracts five domains in the background: 🕒 schedule → timeline; 📋 todo → todo list; 💰 money → pending transaction; 😊 mood → mood tag; 🍽 diet → diet record. Low-confidence items are marked \"pending\" and only take effect after you confirm.",
+      "Wrong extraction? Fix it: every item on the moment card can be edited or deleted, and all lists (including today's actions) refresh automatically.",
+    ],
+  },
+  {
+    icon: ListTodo,
+    h: "Today's actions & todos",
+    rows: [
+      "Today's actions card: the day's action list on the home page. Tap the card title to collapse/expand; pressing Enter in the composer adds an action directly.",
+      "Tap the circle to complete an action; the row menu edits/deletes; the \"Done today\" area can restore items.",
+      "Full todo management (sub-actions, daily repeats, due times) lives under Schedule → todos.",
+    ],
+  },
+  {
+    icon: CalendarDays,
+    h: "Schedule & calendar",
+    img: "/manual/web-schedule.png",
+    rows: [
+      "The bottom of the home page shows today's timeline; the full calendar is on the Schedule page with day / week / month / year views — the week view fits a whole week on one screen.",
+      "Every view supports adding / editing / deleting blocks, with automatic conflict detection on save.",
+    ],
+  },
+  {
+    icon: Target,
+    h: "Goal spaces",
+    img: "/manual/web-spaces.png",
+    rows: [
+      "The Goals page gives each big goal (pass the exam / first 10k side income…) a dedicated space that gathers todos, reflections and moments, with progress cards showing todo progress, moment and reflection counts.",
+      "Inside a space you can write reflections and track progress; related moments are attached automatically.",
+    ],
+  },
+  {
+    icon: Users,
+    h: "People",
+    img: "/manual/web-contacts.png",
+    rows: [
+      "The People page has list / graph views: the graph puts you at the center with contacts on orbits by importance (5 close ~ 1 casual); drag to rearrange.",
+      "Contact profiles support birthdays (solar/lunar), anniversaries, groups and notes; birthdays auto-convert with countdown reminders (\"birthday in N days\").",
+      "The detail page gathers that person's interaction timeline and linked gift ledger (given as negative, received as positive).",
+    ],
+  },
+  {
+    icon: Wallet,
+    h: "Finance",
+    img: "/manual/web-finance.png",
+    rows: [
+      "The Finance page: monthly income/expense & savings-rate overview, monthly budget with alerts, category breakdown, and account management.",
+      "Money mentioned in moments first lands as a \"pending transaction\" and only counts after you confirm — so AI misreads never pollute the books. You can also add entries manually.",
+    ],
+  },
+  {
+    icon: User,
+    h: "Account & settings",
+    img: "/manual/web-profile.png",
+    rows: [
+      "Sign-in: email + password.",
+      "Settings: change nickname or password, theme (dark/light/system), data export (JSON / Markdown), sign out everywhere.",
+    ],
+  },
+  {
+    icon: Star,
+    h: "Tips",
+    rows: [
+      "1. Just say it: time words like \"today\", \"just now\", \"tomorrow\" are the key signals AI uses to place schedules and todos.",
+      "2. Money goes through a draft: amounts mentioned in moments never enter the books directly.",
+      "3. Todos need no time: manual entry only requires a title.",
+      "4. Search covers moment text, schedule, todos, amounts and contacts.",
+    ],
+  },
+];
+
 export default function ManualPage() {
+  const { lang } = useLang();
+  const sections = lang === "en" ? SECTIONS_EN : SECTIONS_ZH;
   return (
     <main className="mx-auto min-h-screen w-full max-w-3xl px-4 pb-16 pt-6">
       <div className="mb-6 text-center">
-        <h1 className="text-2xl font-bold text-gradient">拾光 · 使用手册</h1>
-        <p className="mt-2 text-xs text-ink-faint">随口说一句话，AI 帮你记进四本账</p>
+        <h1 className="text-2xl font-bold text-gradient">
+          {lang === "en" ? "Shiguang · User Guide" : "拾光 · 使用手册"}
+        </h1>
+        <p className="mt-2 text-xs text-ink-faint">
+          {lang === "en" ? "Say one sentence — AI files it into your life books" : "随口说一句话，AI 帮你记进四本账"}
+        </p>
       </div>
 
-      {SECTIONS.map((sec) => (
+      {sections.map((sec) => (
         <section key={sec.h} className="glass mb-4 rounded-2xl p-5">
           <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink">
             <sec.icon size={15} className="text-accent" aria-hidden />
@@ -132,14 +226,19 @@ export default function ManualPage() {
             </p>
           ))}
           {sec.img && (
-            <img src={sec.img} alt={sec.h + " 界面截图"} loading="lazy" className="mt-3 w-full rounded-xl border border-line" />
+            <img
+              src={sec.img}
+              alt={lang === "en" ? `${sec.h} screenshot` : `${sec.h}界面截图`}
+              loading="lazy"
+              className="mt-3 w-full rounded-xl border border-line"
+            />
           )}
         </section>
       ))}
 
       <footer className="mt-8 text-center">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">
-          拾光 · 使用手册
+          {lang === "en" ? "Shiguang · User Guide" : "拾光 · 使用手册"}
         </span>
       </footer>
     </main>

@@ -12,17 +12,22 @@ import ModulePrefsSection from "@/components/module-prefs-section";
 import XunjiKeySection from "@/components/xunji-key-section";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import { clearCachedApiData } from "@/lib/sw-cache";
+import { t, tpl, useLang } from "@/i18n";
+import { dateLabel } from "@shiguangri/shared/i18n-enum";
 
-const zhDate = (iso: string | null) => {
+const zhDate = (iso: string | null, lang: "zh" | "en" = "zh") => {
   if (!iso) return "—";
   // 北京时间口径：UTC getter + 8h（getUTC* 等本地 getter 在非中国时区设备会错 8 小时）
   const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
-  return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  return lang === "en"
+    ? dateLabel(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), "en")
+    : `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
 };
 
 export default function ProfilePage() {
   // 会话走 useSession() 单源（session.tsx 约定：子页面禁止散拉 /api/auth/me——旧版与 Provider 双请求）
   const { user: me, loading: meLoading, refresh } = useSession();
+  const { lang } = useLang();
   const armLogout = useArmConfirm();
   const [nickname, setNickname] = useState("");
   const [savedNick, setSavedNick] = useState<string | null>(null);
@@ -67,7 +72,7 @@ export default function ProfilePage() {
     setBusy(true);
     try {
       const j = await api<any>("/api/auth/profile", "PATCH", { nickname });
-      toast("✅ 昵称已更新（导航栏即刻生效）");
+      toast(t("✅ 昵称已更新（导航栏即刻生效）"));
       setSavedNick(j.nickname);
       await refresh(); // 经 SessionProvider 重拉 /api/auth/me：Nav 昵称就地生效（替代旧的 location.reload）
     } catch (e) {
@@ -80,11 +85,11 @@ export default function ProfilePage() {
   async function savePassword() {
     if (busy) return;
     if (newPwd.length < 8) {
-      toast("新密码至少 8 位", "err"); // 前端先拦（二十轮）：服务端 422 兜底但往返慢
+      toast(t("新密码至少 8 位"), "err"); // 前端先拦（二十轮）：服务端 422 兜底但往返慢
       return;
     }
     if (newPwd !== confirmPwd) {
-      toast("两次输入的新密码不一致", "err");
+      toast(t("两次输入的新密码不一致"), "err");
       return;
     }
     setBusy(true);
@@ -93,7 +98,7 @@ export default function ProfilePage() {
         currentPassword: currentPwd || undefined,
         newPassword: newPwd,
       });
-      toast("✅ 密码已更新，下次登录请使用新密码");
+      toast(t("✅ 密码已更新，下次登录请使用新密码"));
       setCurrentPwd("");
       setNewPwd("");
       setConfirmPwd("");
@@ -110,8 +115,8 @@ export default function ProfilePage() {
   return (
     <main className="min-h-screen text-ink">
       <div className="mx-auto max-w-2xl px-5 py-8">
-        <h1 className="text-gradient mb-1 text-center text-3xl font-bold sm:text-4xl">我的<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">个人设置</span></h1>
-        <p className="mb-5 text-xs text-ink-dim">个性化你的账号信息</p>
+        <h1 className="text-gradient mb-1 text-center text-3xl font-bold sm:text-4xl">{t("我的")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("个人设置")}</span></h1>
+        <p className="mb-5 text-xs text-ink-dim">{t("个性化你的账号信息")}</p>
 
         {!me ? (
           // SessionProvider 自带 401 重定向与 loading 骨架语义：未加载完先出骨架（admin 页同款门）
@@ -124,28 +129,28 @@ export default function ProfilePage() {
             <section className="glass mb-5 rounded-2xl p-5">
               <div className="mb-4 flex items-center gap-4">
                 <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-xl font-bold text-white shadow-lg shadow-sky-500/30">
-                  {(savedNick || "我").slice(0, 1).toUpperCase()}
+                  {(savedNick || t("我")).slice(0, 1).toUpperCase()}
                 </div>
                 <div className="text-sm">
-                  <p className="font-medium">{savedNick || "未设置昵称"}</p>
+                  <p className="font-medium">{savedNick || t("未设置昵称")}</p>
                   <p className="mt-0.5 flex items-center gap-2 text-xs text-ink-dim">
                     {me.isAdmin && (
                       <span className="rounded bg-gradient-to-r from-sky-500/20 to-indigo-500/20 px-1.5 py-0.5 text-badge text-accent">
-                        管理员
+                        {t("管理员")}
                       </span>
                     )}
                   </p>
-                  <p className="mt-0.5 text-badge text-ink-faint">加入于 {zhDate(me.createdAt ?? null)}</p>
+                  <p className="mt-0.5 text-badge text-ink-faint">{tpl("加入于 {date}", { date: zhDate(me.createdAt ?? null, lang) })}</p>
                 </div>
               </div>
 
-              <label className="mb-1 block text-xs text-ink-mute">昵称</label>
+              <label className="mb-1 block text-xs text-ink-mute">{t("昵称")}</label>
               <div className="flex gap-2">
                 <input
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   maxLength={20}
-                  placeholder="给自己起个名字"
+                  placeholder={t("给自己起个名字")}
                   className={`${inputCls} flex-1`}
                 />
                 <button
@@ -153,7 +158,7 @@ export default function ProfilePage() {
                   disabled={busy || nickname.trim() === savedNick}
                   className="btn-primary shrink-0 rounded-xl px-5 text-sm font-medium"
                 >
-                  保存
+                  {t("保存")}
                 </button>
               </div>
             </section>
@@ -166,27 +171,27 @@ export default function ProfilePage() {
 
             {/* 修改密码 */}
             <section className="glass rounded-2xl p-5">
-              <h2 className="mb-3 text-sm font-semibold text-ink-soft">修改密码</h2>
+              <h2 className="mb-3 text-sm font-semibold text-ink-soft">{t("修改密码")}</h2>
               <div className="space-y-3">
                 <input
                   value={currentPwd}
                   onChange={(e) => setCurrentPwd(e.target.value)}
                   type="password"
-                  placeholder="当前密码（从未设过密码可留空）"
+                  placeholder={t("当前密码（从未设过密码可留空）")}
                   className={inputCls}
                 />
                 <input
                   value={newPwd}
                   onChange={(e) => setNewPwd(e.target.value)}
                   type="password"
-                  placeholder="新密码（至少 8 位）"
+                  placeholder={t("新密码（至少 8 位）")}
                   className={inputCls}
                 />
                 <input
                   value={confirmPwd}
                   onChange={(e) => setConfirmPwd(e.target.value)}
                   type="password"
-                  placeholder="确认新密码"
+                  placeholder={t("确认新密码")}
                   className={inputCls}
                 />
                 <button
@@ -194,30 +199,30 @@ export default function ProfilePage() {
                   disabled={busy || !newPwd}
                   className="btn-primary w-full rounded-xl py-2.5 text-sm font-medium"
                 >
-                  更新密码
+                  {t("更新密码")}
                 </button>
               </div>
             </section>
 
             {/* 使用手册（REQ-使用手册） */}
             <section className="glass rounded-2xl p-5">
-              <h2 className="mb-2 text-sm font-semibold text-ink-soft">使用手册</h2>
+              <h2 className="mb-2 text-sm font-semibold text-ink-soft">{t("使用手册")}</h2>
               <p className="mb-3 text-micro text-ink-dim">
-                功能介绍与使用方式：一句话记录、AI 五域识别、各模块玩法与小贴士。
+                {t("功能介绍与使用方式：一句话记录、AI 五域识别、各模块玩法与小贴士。")}
               </p>
               <a
                 href="/manual"
                 className="inline-flex items-center gap-1 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-medium text-accent transition hover:bg-sky-500/20"
               >
-                阅读使用手册
+                {t("阅读使用手册")}
               </a>
             </section>
 
                         {/* 会话安全（4-B FR-C1.3 全端登出） */}
             <section className="glass rounded-2xl p-5">
-              <h2 className="mb-2 text-sm font-semibold text-ink-soft">会话安全</h2>
+              <h2 className="mb-2 text-sm font-semibold text-ink-soft">{t("会话安全")}</h2>
               <p className="mb-3 text-micro text-ink-dim">
-                吊销本账号在所有设备（网页/App）上的登录状态，适合怀疑账号异常时使用；本机也会一并退出。
+                {t("吊销本账号在所有设备（网页/App）上的登录状态，适合怀疑账号异常时使用；本机也会一并退出。")}
               </p>
               <button
                 onClick={async () => {
@@ -231,27 +236,27 @@ export default function ProfilePage() {
                 }}
                 className={`w-full rounded-xl border py-2.5 text-sm font-medium transition ${armLogout.armedId ? "border-rose-500 bg-rose-500/20 text-danger" : "border-rose-500/40 bg-rose-500/10 text-danger hover:bg-rose-500/20"}`}
               >
-                {armLogout.armedId ? "确认在所有设备退出？（3 秒内再点）" : "全端登出"}
+                {armLogout.armedId ? t("确认在所有设备退出？（3 秒内再点）") : t("全端登出")}
               </button>
             </section>
 
             {/* 套餐与 AI 用量（M3 商业化） */}
             <section className="glass rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Gem size={12} />} label="套餐与 AI 用量" tone="violet" /></h2>
+              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Gem size={12} />} label={t("套餐与 AI 用量")} tone="violet" /></h2>
               {quota ? (
                 <>
                   <p className="mt-1 text-xs text-ink-dim">
-                    当前套餐：
+                    {t("当前套餐：")}
                     <span className={quota.plan === "pro" ? "font-semibold text-amber-400" : "font-semibold text-ink"}>
-                      {quota.plan === "pro" ? "Pro" : "免费版"}
+                      {quota.plan === "pro" ? "Pro" : t("免费版")}
                     </span>
-                    {quota.planExpiresAt && ` · Pro 有效期至 ${zhDate(quota.planExpiresAt)}`}
-                    {quota.isAdmin && " · 管理员不限量"}
+                    {quota.planExpiresAt && tpl(" · Pro 有效期至 {date}", { date: zhDate(quota.planExpiresAt, lang) })}
+                    {quota.isAdmin && t(" · 管理员不限量")}
                   </p>
                   <div className="mt-2.5">
                     <div className="flex justify-between text-xs text-ink-dim">
-                      <span>近 30 天 AI 识别次数</span>
-                      <span>{quota.used}{quota.limit === null ? "（不限）" : ` / ${quota.limit}`}</span>
+                      <span>{t("近 30 天 AI 识别次数")}</span>
+                      <span>{quota.used}{quota.limit === null ? t("（不限）") : tpl(" / {n}", { n: quota.limit })}</span>
                     </div>
                     {quota.limit !== null && (
                       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-elevated">
@@ -266,22 +271,22 @@ export default function ProfilePage() {
                     <ul className="mt-2.5 space-y-0.5">
                       {quota.byModel.map((m) => (
                         <li key={m.model} className="flex items-center gap-2 text-micro tabular-nums text-ink-mute">
-                          <span className="font-medium text-ink-soft">{m.model || "其他模型"}</span>
+                          <span className="font-medium text-ink-soft">{m.model || t("其他模型")}</span>
                           <span className="ml-auto">
-                            近30天 {m.d30.calls} 次 · 累计 {m.all.calls} 次 /{" "}
-                            {(m.all.promptTokens + m.all.completionTokens).toLocaleString("zh-CN")} tokens
+                            {tpl("近30天 {d} 次 · 累计 {a} 次 /", { d: m.d30.calls, a: m.all.calls })}{" "}
+                            {(m.all.promptTokens + m.all.completionTokens).toLocaleString(lang === "en" ? "en-US" : "zh-CN")} tokens
                           </span>
                         </li>
                       ))}
                     </ul>
                   )}
-                  <p className="mt-2 text-micro text-ink-faint">语音速记、AI 识别、复盘均消耗次数；Pro 不限量。支付通道接入前，内测期间联系管理员开通 Pro。</p>
+                  <p className="mt-2 text-micro text-ink-faint">{t("语音速记、AI 识别、复盘均消耗次数；Pro 不限量。支付通道接入前，内测期间联系管理员开通 Pro。")}</p>
                 </>
               ) : quotaErr ? (
                 <div className="mt-1">
-                  <p className="text-xs text-danger">加载失败：{quotaErr}</p>
+                  <p className="text-xs text-danger">{t("加载失败：")}{quotaErr}</p>
                   <button onClick={loadQuota} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-                    重试
+                    {t("重试")}
                   </button>
                 </div>
               ) : (
@@ -295,8 +300,8 @@ export default function ProfilePage() {
                 >
                   <span className="flex h-6 w-6 items-center justify-center text-accent"><Wrench size={16} aria-hidden /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-xs font-semibold text-accent">后台管理</span>
-                    <span className="block text-micro text-ink-dim">AI prompt 调优 · 邀请与套餐 · Token 消耗</span>
+                    <span className="block text-xs font-semibold text-accent">{t("后台管理")}</span>
+                    <span className="block text-micro text-ink-dim">{t("AI prompt 调优 · 邀请与套餐 · Token 消耗")}</span>
                   </span>
                   <ChevronRight size={14} className="text-ink-mute" aria-hidden />
                 </a>
@@ -305,21 +310,21 @@ export default function ProfilePage() {
 
             {/* 数据导出（docs/06 P8）：个人数据可携带 */}
             <section className="glass rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Archive size={12} />} label="导出我的数据" tone="slate" /></h2>
-              <p className="mt-1 text-xs text-ink-dim">全量备份包含动态、日程、todo、流水、联系人与往来；Markdown 版可读性更好。建议定期下载备份。</p>
+              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Archive size={12} />} label={t("导出我的数据")} tone="slate" /></h2>
+              <p className="mt-1 text-xs text-ink-dim">{t("全量备份包含动态、日程、todo、流水、联系人与往来；Markdown 版可读性更好。建议定期下载备份。")}</p>
               <div className="mt-3 flex gap-2">
                 {/* apiBase() 对齐：分离部署时裸 /api 会打到静态站点 origin 而 404 */}
                 <a
                   href={`${apiBase()}/api/export?format=json`}
                   className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-medium text-accent transition hover:bg-sky-500/20"
                 >
-                  全量备份 (JSON)
+                  {t("全量备份 (JSON)")}
                 </a>
                 <a
                   href={`${apiBase()}/api/export?format=md`}
                   className="rounded-xl border border-line-soft bg-surface/60 px-4 py-2 text-xs text-ink-soft transition hover:border-sky-500/50"
                 >
-                  动态日记 (Markdown)
+                  {t("动态日记 (Markdown)")}
                 </a>
               </div>
             </section>
@@ -327,7 +332,7 @@ export default function ProfilePage() {
         )}
         <footer className="mt-10 text-center">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">
-            拾光 · 我的
+            {t("拾光 · 我的")}
           </span>
         </footer>
       </div>

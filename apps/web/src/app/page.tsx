@@ -21,12 +21,15 @@ import TodaySchedule from "./home/today-schedule";
 import { useHomeData } from "./home/use-home-data";
 import { useSession } from "@/shared/session";
 import { MODULE_REGISTRY } from "@shiguangri/shared/modules";
+import { t, tpl, useLang } from "@/i18n";
+import { dateLabel } from "@shiguangri/shared/i18n-enum";
 
 /**
  * 动态首页入口：状态与发布编排留在本文件，
  * 各区块 UI 与取数/随图上传逻辑拆至 ./home/（行为与视觉与拆分前一致）。
  */
 export default function Home() {
+  const { lang } = useLang();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -153,7 +156,7 @@ export default function Home() {
       try {
         await uploadEntryAudio(entryId, pendingVoice.blob);
       } catch (e) {
-        forwardMsg({ ok: false, text: `动态已发布；语音上传失败：${e instanceof Error ? e.message : e}` });
+        forwardMsg({ ok: false, text: tpl("动态已发布；语音上传失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }) });
       }
       setPendingVoice(null);
     }
@@ -183,15 +186,15 @@ export default function Home() {
 
   /** 发布一条动态（文字秒存上墙），返回 entry id；图片上传由调用方拿到 id 后自行并行处理（可重试） */
   async function publish(raw: string, source?: "voice"): Promise<string | null> {
-    const t = raw.trim();
-    if (!t || busy) return null;
+    const body = raw.trim();
+    if (!body || busy) return null;
     setBusy(true);
     try {
-      const j = await api<any>("/api/parse", "POST", { text: t, ...(source ? { source } : {}) });
+      const j = await api<any>("/api/parse", "POST", { text: body, ...(source ? { source } : {}) });
       // 防御非约定响应（结构变更）：给出可读原因，而不是 TypeError
-      if (!j?.entry) throw new Error("服务异常，请稍后重试");
+      if (!j?.entry) throw new Error(t("服务异常，请稍后重试"));
       // 动态已秒存上墙；五域识别在后台进行，完成后由延迟刷新呈现
-      toast("✨ 已记录动态，AI 正在识别日程 / 关系 / todo / 收支 / 心情 / 饮食…");
+      toast(t("✨ 已记录动态，AI 正在识别日程 / 关系 / todo / 收支 / 心情 / 饮食…"));
       setText("");
       // 新动态要立即可见：历史回看中发布的新动态晚于锚点会不可见 → 发布即回到「今天」；
       // 搜索过滤中则清空搜索再刷新（搜索词可能不匹配新动态）
@@ -217,7 +220,7 @@ export default function Home() {
       scheduleRecognitionRefresh();
       return j.entry.id as string;
     } catch (e) {
-      toast(`记录失败：${e instanceof Error ? e.message : e}`, "err");
+      toast(tpl("记录失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }), "err");
       return null;
     } finally {
       setBusy(false);
@@ -231,11 +234,11 @@ export default function Home() {
       <div className="mx-auto max-w-2xl px-5 pb-28 pt-5 sm:pb-8 sm:pt-8">
         <header className="mb-5 text-center sm:mb-7">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光
-            <span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">动态</span>
+            {t("拾光")}
+            <span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("动态")}</span>
           </h1>
           <p className="mt-2 text-xs text-ink-dim">
-            随口一句 → AI 自动识别：此刻心情 · 过往日程 · 未来 todo
+            {t("随口一句 → AI 自动识别：此刻心情 · 过往日程 · 未来 todo")}
           </p>
         </header>
 
@@ -265,9 +268,9 @@ export default function Home() {
 
         {loadErr && (
           <div className="glass mb-5 rounded-2xl p-6 text-center">
-            <p className="text-sm text-danger">加载失败：{loadErr}</p>
+            <p className="text-sm text-danger">{t("加载失败：")}{loadErr}</p>
             <button onClick={() => void load()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs font-medium">
-              重试
+              {t("重试")}
             </button>
           </div>
         )}
@@ -290,27 +293,27 @@ export default function Home() {
                 type="button"
                 onClick={() => jumpToDate(shiftYmd(anchorDate, -1))}
                 className="btn-ghost press flex items-center gap-0.5 rounded-lg px-2 py-1"
-                title="前一天"
+                title={t("前一天")}
               >
-                <ArrowLeft size={11} aria-hidden /> 前一天
+                <ArrowLeft size={11} aria-hidden /> {t("前一天")}
               </button>
-              <span className="tabular-nums font-medium">{zhYmd(anchorDate)}</span>
+              <span className="tabular-nums font-medium">{dateLabel(...ymdParts(anchorDate), lang)}</span>
               <button
                 type="button"
                 onClick={() => jumpToDate(shiftYmd(anchorDate, +1) > bjToday() ? null : shiftYmd(anchorDate, +1))}
                 className="btn-ghost press flex items-center gap-0.5 rounded-lg px-2 py-1"
-                title="后一天（越过今天回到最新）"
+                title={t("后一天（越过今天回到最新）")}
               >
-                后一天 <ArrowRight size={11} aria-hidden />
+                {t("后一天")} <ArrowRight size={11} aria-hidden />
               </button>
             </div>
-            <span className="min-w-0 truncate text-ink-mute">列表从这天的最后一条往前展示；搜索/筛选会回到最新</span>
+            <span className="min-w-0 truncate text-ink-mute">{t("列表从这天的最后一条往前展示；搜索/筛选会回到最新")}</span>
             <button
               type="button"
               onClick={() => jumpToDate(null)}
               className="btn-ghost press flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1 font-medium"
             >
-              <RotateCcw size={11} aria-hidden /> 回到最新
+              <RotateCcw size={11} aria-hidden /> {t("回到最新")}
             </button>
           </div>
         )}
@@ -338,7 +341,7 @@ export default function Home() {
         <TodaySchedule blocks={blocks} activities={activities} todayKcal={todayKcal} load={loadVoid} />
 
 <footer className="mt-10 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">拾光 · 动态</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">{t("拾光 · 动态")}</span>
         </footer>
       </div>
 
@@ -368,7 +371,7 @@ export default function Home() {
             try {
               await uploadEntryAudio(entryId, pendingVoice.blob);
             } catch (e) {
-              forwardMsg({ ok: false, text: `动态已发布；语音上传失败：${e instanceof Error ? e.message : e}` });
+              forwardMsg({ ok: false, text: tpl("动态已发布；语音上传失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }) });
             }
             setPendingVoice(null);
           }
@@ -389,7 +392,7 @@ export default function Home() {
           className="fixed right-5 top-[4.25rem] z-40 flex items-center gap-1.5 rounded-full border border-line-soft bg-surface/90 px-3.5 py-2 text-xs font-medium text-ink-soft shadow-lg shadow-scrim/40 backdrop-blur transition hover:border-sky-500/50 hover:text-accent"
           aria-expanded={actionsOpen}
         >
-          <ListTodo size={15} aria-hidden /> 今日行动
+          <ListTodo size={15} aria-hidden /> {t("今日行动")}
         </button>
       )}
       {isDesktop && actionsOpen && (
@@ -410,10 +413,10 @@ function shiftYmd(ymd: string, n: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** Y-M-D → 中文展示 */
-function zhYmd(ymd: string): string {
-  const [, m, d] = ymd.split("-").map(Number);
-  return `${m}月${d}日`;
+/** Y-M-D → 展示（随语言）；展开为元组供 dateLabel */
+function ymdParts(ymd: string): [number, number, number] {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return [y, m, d];
 }
 
 /** 全模块关闭引导卡（REQ-028 FR-A11）：除 core（动态）外所有域级模块均关闭时出现，指路功能管理 */
@@ -426,13 +429,13 @@ function AllModulesOffHint() {
   return (
     <div className="glass mb-4 rounded-2xl p-4 text-center">
       <p className="text-xs text-ink-dim">
-        其余功能模块都已关闭中——想找回目标、日程、人际、财务或 AI 助手？
+        {t("其余功能模块都已关闭中——想找回目标、日程、人际、财务或 AI 助手？")}
       </p>
       <a
         href="/profile"
         className="mt-2 inline-block rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-1.5 text-xs font-medium text-accent transition hover:bg-sky-500/20"
       >
-        去【我的 → 功能管理】开启
+        {t("去【我的 → 功能管理】开启")}
       </a>
     </div>
   );

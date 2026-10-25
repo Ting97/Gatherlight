@@ -7,8 +7,8 @@ import Providers from "@/shared/providers";
 import "./globals.css";
 
 export const metadata = {
-  title: "拾光",
-  description: "拾起光阴，记录今日 —— 个人经营系统：钱 · 时间 · 人",
+  title: "拾光 Shiguang — Personal Life OS",
+  description: "Capture life in one sentence — AI organizes your schedule, todos, finance, mood & diet. Self-hosted, your data stays yours.",
   // PWA（REQ-009 FR-B8）：此前 manifest.json 存在但从未挂载——应用根本不可安装
   manifest: "/manifest.json",
   appleWebApp: {
@@ -29,14 +29,16 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-/** 首帧前解析主题（防闪烁）：localStorage 记忆 → 未设置时跟随系统；同步 meta theme-color */
-const themeScript = `(function(){try{var m=localStorage.getItem("shiguang_theme");if(m!=="dark"&&m!=="light")m="system";var l=m==="light"||(m==="system"&&window.matchMedia("(prefers-color-scheme: light)").matches);document.documentElement.dataset.theme=l?"light":"dark";var t=document.querySelector('meta[name="theme-color"]');if(t)t.setAttribute("content",l?"#f1f5f9":"#020617")}catch(e){}})()`;
+/** 首帧前解析主题（防闪烁）：localStorage 记忆 → 未设置时跟随系统；同步 meta theme-color。
+ *  同步语言到 documentElement.lang（i18n 纯函数 t() 首帧即正确；SSR HTML 为构建态英文，
+ *  中文用户首帧文本由 hydration 修正——纯静态导出下的固有限制） */
+const themeScript = `(function(){try{var m=localStorage.getItem("shiguang_theme");if(m!=="dark"&&m!=="light")m="system";var l=m==="light"||(m==="system"&&window.matchMedia("(prefers-color-scheme: light)").matches);document.documentElement.dataset.theme=l?"light":"dark";var t=document.querySelector('meta[name="theme-color"]');if(t)t.setAttribute("content",l?"#f1f5f9":"#020617")}catch(e){}try{var g=localStorage.getItem("shiguang_lang");document.documentElement.lang=g==="zh"?"zh-CN":"en"}catch(e){}})()`;
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

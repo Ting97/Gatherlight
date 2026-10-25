@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
+import { t } from "@/i18n";
 
 export const THEME_KEY = "shiguang_theme";
 export type ThemeMode = "dark" | "light" | "system";
@@ -70,8 +71,8 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={cycle}
-      title={`主题：${LABEL[mode]}（点击切换）`}
-      aria-label={`切换主题，当前${LABEL[mode]}`}
+      title={t(`主题：${LABEL[mode]}（点击切换）`)}
+      aria-label={t(`切换主题，当前${LABEL[mode]}`)}
       className="tap-lg shrink-0 rounded-full p-2 text-ink-mute transition hover:bg-wash hover:text-accent"
     >
       <Icon className="h-4 w-4" strokeWidth={2} />

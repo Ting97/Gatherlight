@@ -5,6 +5,8 @@ import type { FeedMoment } from "@/lib/types";
 import { TX_CATEGORIES, yuanToCents, centsToYuanInput } from "@/lib/finance";
 import { Coins } from "lucide-react";
 import { api } from "@/shared/api";
+import { t, tpl, getLang } from "@/i18n";
+import { txCatLabel } from "@shiguangri/shared/i18n-enum";
 import { TagChip } from "../tag-chip";
 import { RowAction } from "./row-action";
 import { RowActionMenu, useRowMenu } from "./row-action-menu";
@@ -86,12 +88,12 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
                       counterparty: editTx.counterparty,
                     });
                     setEditTx(null);
-                    return "💾 金额已更新";
+                    return t("💾 金额已更新");
                   })
                 }
                 className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"
               >
-                保存
+                {t("保存")}
               </button>
             </span>
           </div>
@@ -118,14 +120,14 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
             >
             <TagChip
               icon={<Coins size={12} />}
-              label={`${x.direction === "out" ? "支出" : "收入"} ${yuan(x.amountCents)}`}
+              label={`${x.direction === "out" ? t("支出") : t("收入")} ${yuan(x.amountCents)}`}
               tone={x.direction === "out" ? "rose" : "emerald"}
               size="sm"
               className="shrink-0"
             />
             <span className="min-w-0 truncate">
-              {x.category}
-              {x.counterparty ? ` · 对方：${x.counterparty}` : ""}
+              {txCatLabel(x.category, getLang())}
+              {x.counterparty ? tpl(" · 对方：{who}", { who: x.counterparty }) : ""}
             </span>
             <RowAction
               onEdit={() =>

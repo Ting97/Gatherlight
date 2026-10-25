@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hasApiKey } from "@shiguangri/ai";
-import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { withModule, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import { acquireGeneration, releaseGeneration, getOrGenerateReview, ReviewGateError } from "@/server/insight";
 import { checkAiQuota, getPromptBundle } from "@/server/ai";
@@ -30,6 +30,7 @@ export const POST = withModule("insight", async (req, { user }) => {
     throw ApiError.badRequest("year 需为 YYYY");
   }
 
+  const lang = reqLang(req);
   const bundle = await getPromptBundle("review_year");
   const built = await buildReviewCtx(user.id, "year", { year }, bundle);
   const { from, to, latest } = built;
@@ -48,7 +49,7 @@ export const POST = withModule("insight", async (req, { user }) => {
       await acquireGeneration(user.id, "year", year, latest ? new Date(latest) : null);
       try {
         const parsed = await chatReviewJson<Partial<YearReview>>({
-          system: bundle.system,
+          system: bundle.system, lang,
           user: built.userPrompt,
           maxTokens: 16000,
           timeoutMs: 240_000,
@@ -69,7 +70,9 @@ export const POST = withModule("insight", async (req, { user }) => {
           summary:
             typeof parsed.summary === "string" && parsed.summary.trim()
               ? parsed.summary.trim().replace(/["“”„]/g, "")
-              : "这一年记录还很少，多记几天再来复盘会更有料",
+              : lang === "en"
+                ? "Not much recorded this year yet — keep capturing your days."
+                : "这一年记录还很少，多记几天再来复盘会更有料",
           sections,
           highlights: arr(parsed.highlights),
           suggestions: arr(parsed.suggestions),
@@ -79,7 +82,7 @@ export const POST = withModule("insight", async (req, { user }) => {
         await releaseGeneration(user.id, "year", year).catch(() => {});
         throw e;
       }
-    });
+    }, lang);
   } catch (e) {
     if (e instanceof ReviewGateError) return NextResponse.json({ error: e.message }, { status: 403 });
     return NextResponse.json({ error: "AI 解读失败，请稍后重试" }, { status: 502 });

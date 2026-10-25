@@ -4,8 +4,11 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Eye, EyeOff, X } from "lucide-react";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t, tpl, useLang } from "@/i18n";
 
 export default function LoginPage() {
+  // 订阅语言切换：t() 读模块级 currentLang，切换需触发本组件重渲染
+  useLang();
   const [mode, setMode] = useState<"password" | "code">("password"); // 登录方式：密码/邮箱验证码
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState(""); // 登录/注册身份：仅邮箱
@@ -57,21 +60,21 @@ export default function LoginPage() {
   async function sendCode() {
     if (sending) return; // 请求飞行中忽略再次点击，防重复发送
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      toast("请先填写正确的邮箱地址", "err");
+      toast(t("请先填写正确的邮箱地址"), "err");
       return;
     }
     setSending(true);
     try {
       await api("/api/auth/email/send", "POST", { email, purpose: "login" });
       if (!aliveRef.current) return; // 卸载后到达：不弹提示也不建倒计时
-      toast("验证码已发送，5 分钟内有效");
+      toast(t("验证码已发送，5 分钟内有效"));
       startCountdown();
     } catch (e) {
       if (!aliveRef.current) return;
       const text = e instanceof Error ? e.message : String(e);
       // 邮件通道未配置（503）：注册免验证码可直接提交；验证码登录则不可用
       if (isRegister && e instanceof ApiClientError && e.status === 503) {
-        toast(`${text}（当前注册无需验证码，可留空直接注册）`, "err");
+        toast(tpl("{text}（当前注册无需验证码，可留空直接注册）", { text }), "err");
       } else {
         toast(text, "err");
       }
@@ -84,17 +87,17 @@ export default function LoginPage() {
     if (busy) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
       // 邮箱必填且校验格式：空值/格式错会被服务端 422 拒绝，这里先行拦截给出可读提示
-      toast("请先填写正确的邮箱地址", "err");
+      toast(t("请先填写正确的邮箱地址"), "err");
       return;
     }
     if (isRegister && password.length < 8) {
       // 长度/一致性属表单校验（二十轮）：服务端 422 兜底但往返慢，toast 收口提交反馈
-      toast("密码至少 8 位", "err");
+      toast(t("密码至少 8 位"), "err");
       return;
     }
     if (isRegister && password !== password2) {
       // 密码一致性属表单校验：字段旁已有 ✓/✗ 即时指示，这里 toast 收口提交反馈
-      toast("两次输入的密码不一致", "err");
+      toast(t("两次输入的密码不一致"), "err");
       return;
     }
     setBusy(true);
@@ -154,8 +157,8 @@ export default function LoginPage() {
             <circle cx="120" cy="150" r="12" fill="#f1c66b" />
             <circle cx="120" cy="150" r="5" fill="#fff7e0" />
           </svg>
-          <h1 className="text-gradient text-3xl font-bold">拾光</h1>
-          <p className="mt-1 text-xs text-ink-dim">拾起光阴，记录今日 · {isRegister ? "注册账号" : "登录后继续"}</p>
+          <h1 className="text-gradient text-3xl font-bold">{t("拾光")}</h1>
+          <p className="mt-1 text-xs text-ink-dim">{t("拾起光阴，记录今日")} · {isRegister ? t("注册账号") : t("登录后继续")}</p>
         </div>
 
         <div className="glass rounded-2xl p-5">
@@ -170,7 +173,7 @@ export default function LoginPage() {
                     : "text-ink-mute hover:text-ink"
                 }`}
               >
-                密码登录
+                {t("密码登录")}
               </button>
               <button
                 onClick={() => setMode("code")}
@@ -180,7 +183,7 @@ export default function LoginPage() {
                     : "text-ink-mute hover:text-ink"
                 }`}
               >
-                验证码登录
+                {t("验证码登录")}
               </button>
             </div>
           )}
@@ -191,7 +194,7 @@ export default function LoginPage() {
               onChange={(e) => setEmail(e.target.value.trim())}
               onKeyDown={onEnterSubmit}
               type="email"
-              placeholder="邮箱"
+              placeholder={t("邮箱")}
               className={inputCls}
             />
 
@@ -203,7 +206,7 @@ export default function LoginPage() {
                   onKeyDown={onEnterSubmit}
                   maxLength={6}
                   inputMode="numeric"
-                  placeholder={isRegister ? "邮箱验证码（未开通可留空）" : "6 位验证码"}
+                  placeholder={isRegister ? t("邮箱验证码（未开通可留空）") : t("6 位验证码")}
                   className={`${inputCls} flex-1`}
                 />
                 <button
@@ -211,7 +214,7 @@ export default function LoginPage() {
                   disabled={countdown > 0 || sending}
                   className="shrink-0 rounded-xl border border-line-soft bg-elevated/70 px-3 text-xs text-accent transition hover:border-sky-500/50 disabled:opacity-40"
                 >
-                  {sending ? "发送中…" : countdown > 0 ? `${countdown}s` : "发送验证码"}
+                  {sending ? t("发送中…") : countdown > 0 ? `${countdown}s` : t("发送验证码")}
                 </button>
               </div>
             ) : (
@@ -221,7 +224,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   onKeyDown={onEnterSubmit}
                   type={showPwd ? "text" : "password"}
-                  placeholder="密码"
+                  placeholder={t("密码")}
                   className={`${inputCls} pr-11`}
                 />
                 <button
@@ -242,7 +245,7 @@ export default function LoginPage() {
                   onChange={(e) => setNickname(e.target.value)}
                   onKeyDown={onEnterSubmit}
                   maxLength={20}
-                  placeholder="昵称（必填）"
+                  placeholder={t("昵称（必填）")}
                   className={inputCls}
                 />
                 <div className="relative">
@@ -251,7 +254,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={onEnterSubmit}
                     type={showPwd ? "text" : "password"}
-                    placeholder="设置密码（至少 8 位）"
+                    placeholder={t("设置密码（至少 8 位）")}
                     className={`${inputCls} pr-11`}
                   />
                   <button
@@ -269,7 +272,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword2(e.target.value)}
                     onKeyDown={onEnterSubmit}
                     type={showPwd ? "text" : "password"}
-                    placeholder="确认密码"
+                    placeholder={t("确认密码")}
                     className={`${inputCls} pr-11`}
                   />
                   {password2 && (
@@ -307,7 +310,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="mt-6 text-center text-badge text-ink-faint">个人经营系统 · 钱 · 时间 · 人</p>
+        <p className="mt-6 text-center text-badge text-ink-faint">{t("个人经营系统 · 钱 · 时间 · 人")}</p>
       </div>
     </main>
   );

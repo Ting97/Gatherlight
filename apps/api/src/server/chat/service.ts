@@ -6,7 +6,7 @@
  */
 import { pool } from "@/server/platform/db";
 import { ApiError } from "@/server/platform/http/errors";
-import { activeModel, chatAgent, toCstWallClock, type AgentTurn } from "@shiguangri/ai";
+import { activeModel, chatAgent, langDirective, toCstWallClock, type AgentTurn } from "@shiguangri/ai";
 import { assembleUserPrompt, getPromptBundle, writeAuditRecord, type PromptKey } from "@/server/ai";
 import { toAgentTools, TOOL_LABELS, CHAT_SCOPES, type ChatScope, type ChatToolCtx } from "./tools";
 import { acquireChatQuota, releaseChatQuota, getChatQuota, FREE_CHAT_CALLS_PER_DAY, type ChatQuotaInfo } from "./chat-quota";
@@ -196,9 +196,10 @@ export interface SendMessageResult {
  * scope（REQ-019 FR-C）：新会话按此落域；传入已有会话时须与库中一致（防同一会话串域提问） */
 export async function sendMessage(
   userId: string,
-  input: { conversationId?: string; text: string; scope?: unknown },
+  input: { conversationId?: string; text: string; scope?: unknown; lang?: "zh" | "en" },
 ): Promise<SendMessageResult> {
   const text = input.text.trim();
+  const lang = input.lang === "en" ? "en" : "zh";
   if (!text || text.length > 2000) throw ApiError.badRequest("消息长度须为 1~2000 字");
   const requestedScope = parseScope(input.scope);
 
@@ -271,10 +272,12 @@ export async function sendMessage(
       }));
 
     // system = 按会话域选人设（REQ-019 FR-C3，纳管热更）+ 上下文块（当前北京时间；画像注入沿用各 key 配置）
+    // 语言指令由代码拼接（不进 ai_prompts 库，admin 覆盖人设也不影响输出语言跟随界面）
     const promptKey = SCOPE_PROMPT_KEY[scope];
     const bundle = await getPromptBundle(promptKey);
     const ctxBlock = await assembleUserPrompt(promptKey, bundle, { nowCst: toCstWallClock(new Date()) }, { userId });
-    system = ctxBlock ? `${bundle.system}\n\n${ctxBlock}` : bundle.system;
+    const langSuffix = langDirective(lang);
+    system = [ctxBlock ? `${bundle.system}\n\n${ctxBlock}` : bundle.system, langSuffix].filter(Boolean).join("\n");
   } catch (e) {
     // 失败回退占位（口径：配额只扣成功调用）后原样重抛
     await releaseChatQuota(userId, quota.dayKey).catch(() => {});
@@ -301,10 +304,12 @@ export async function sendMessage(
       args: tc.args,
     }));
     // 兜底：glm-4-flash 被工具错误拒绝后偶发整轮空文本（尤其漏传计划明细被拒时），
-    // 落一条可读提示避免前端空气泡
+    // 落一条可读提示避免前端空气泡（双语：跟随界面语言）
     const replyText =
       res.text.trim() ||
-      "（这轮我没能组织好回复：如果是要生成训练计划，请直接告诉我明天想练力量还是跑步，我再生成计划卡片。）";
+      (lang === "en"
+        ? "(I couldn't compose a reply this turn. If you asked for a training plan, tell me whether you want strength or running tomorrow and I'll generate the plan card.)"
+        : "（这轮我没能组织好回复：如果是要生成训练计划，请直接告诉我明天想练力量还是跑步，我再生成计划卡片。）");
     const { rows: insertedReply } = await pool.query(
       `insert into chat_messages (conversation_id, user_id, role, content, tool_calls)
        values ($1, $2, 'assistant', $3, $4::jsonb)

@@ -5,6 +5,8 @@ import { assertUuidParam } from "@/server/platform/http/validate";
 import { chat, extractJson, activeModel } from "@shiguangri/ai";
 import { z } from "zod";
 import { getPromptBundle, assembleUserPrompt, checkAiQuota, writeAuditRecord } from "@/server/ai";
+import { reqLang } from "@/server/platform/http/route";
+import { langDirective } from "@shiguangri/ai";
 import { loadProfileBlock } from "@/server/insight";
 
 export const runtime = "nodejs";
@@ -84,6 +86,7 @@ export const POST = withAuthParams(async (req, { user, params }) => {
 
   // ---- 组装 prompt（3-A：system/user 模板/注入配置三件套按 DB 覆盖装配） ----
   const promptKey = isAction ? "action_decompose" : "todo_decompose";
+  const lang = reqLang(req);
   const bundle = await getPromptBundle(promptKey);
   const existingOn = bundle.config.inject.existingBlock;
   const cap = bundle.config.caps.existingCount;
@@ -104,7 +107,7 @@ export const POST = withAuthParams(async (req, { user, params }) => {
     target: isAction ? `「${todo.title}」` : "上述 todo",
     modeSuffix: mode === "replace" ? "（重新生成：只输出新的行动清单）" : "",
   }, { userId: user.id });
-  const system = bundle.system;
+  const system = lang === "en" ? `${bundle.system}\n${langDirective("en")}` : bundle.system;
 
   // ---- 调 LLM（temperature 0.3；失败走一次 repair 风格重试） ----
   let raw = "";

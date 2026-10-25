@@ -28,6 +28,12 @@ export interface NextArgs extends Record<string, unknown> {
   params: Promise<any>;
 }
 
+/** 界面语言（X-Lang 请求头，web 端 i18n 统一注入）：AI 输出语言与双语兜底文案跟随；
+ *  未传/非法回退 zh（与存量行为一致）。 */
+export function reqLang(req: Request): "zh" | "en" {
+  return req.headers.get("x-lang") === "en" ? "en" : "zh";
+}
+
 type Handler<C> = (req: NextRequest, ctx: C) => Promise<Response> | Response;
 
 export function jsonError(e: unknown): NextResponse {
