@@ -219,7 +219,7 @@ export const scopeMetaZh = (): Record<ChatScope, ScopeMeta> => ({
 
 export const SCOPE_META_EN: Record<ChatScope, ScopeMeta> = {
   global: {
-    title: "Shiguang Assistant",
+    title: "Gatherlight Assistant",
     tagline: "A private assistant that knows your data",
     dockLabel: "Assistant",
     greeting: "Ask me anything about your time, finance, people and goals",

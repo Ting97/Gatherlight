@@ -1,7 +1,7 @@
 /** 财务主页 */
 export const EN: Record<string, string> = {
   "财务": "Finance",
-  "拾光 · 财务": "Shiguang · Finance",
+  "拾光 · 财务": "Gatherlight · Finance",
   "该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。": "This module is off. Re-enable it in Settings → Modules (data is kept), or contact an admin.",
   "返回首页": "Back to home",
   "动态里说的钱都在这里 —— 确认草稿、管账户、看月度结构": "Every yuan mentioned in your moments lands here — confirm drafts, manage accounts, see the monthly picture",
@@ -99,7 +99,7 @@ export const EN: Record<string, string> = {
   // ---- 收支复盘页 ----
   // 说明：下列 key 与 pages2.ts EN_REVIEW 同值（那边多 key 同行，审计脚本按行首解析不到，
   // 此处逐行补齐镜像条目；运行时后 spread 的 pages2 同值覆盖，行为不变）
-  "拾光 · 收支复盘": "Shiguang · Budget review",
+  "拾光 · 收支复盘": "Gatherlight · Budget review",
   "周": "Week",
   "上一周": "Previous week",
   "下一周": "Next week",

@@ -1,7 +1,7 @@
 /** 目标/人际/日程/后台页 */
 export const EN: Record<string, string> = {
   "目标": "Goals",
-  "拾光 · 人际": "Shiguang · People",
+  "拾光 · 人际": "Gatherlight · People",
   "人际": "People",
   "日程": "Schedule",
   "该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。": "This module is off. Re-enable it in Settings → Modules (data is kept), or contact an admin.",
@@ -143,7 +143,7 @@ export const EN_CALENDAR: Record<string, string> = {
   "等 {n} 类未展示": "+ {n} more not shown",
   "确认删除？": "Delete?",
   // ---- 日程页抬头 ----
-  "拾光 · 日程": "Shiguang · Schedule",
+  "拾光 · 日程": "Gatherlight · Schedule",
   "时间去了哪、todo 推进如何 —— 日历 · 看板 · 分类": "Where time went and how todos move — calendar · board · categories",
 };
 Object.assign(EN, EN_CALENDAR);

@@ -45,7 +45,7 @@ export const EN: Record<string, string> = {
   "全量备份包含动态、日程、todo、流水、联系人与往来；Markdown 版可读性更好。建议定期下载备份。": "Full backup includes moments, schedule, todos, transactions, contacts and interactions. The Markdown version is easier to read. Download backups regularly.",
   "全量备份 (JSON)": "Full backup (JSON)",
   "动态日记 (Markdown)": "Journal (Markdown)",
-  "拾光 · 我的": "Shiguang · Me",
+  "拾光 · 我的": "Gatherlight · Me",
 
   // ---- 训记同步（REQ-042） ----
   "✅ 训记已绑定（{key}）——健身页的「同步训记 / 回读打卡」即刻可用": "✅ Xunji bound ({key}) — \"Sync to Xunji / read back check-ins\" on the fitness page is ready",

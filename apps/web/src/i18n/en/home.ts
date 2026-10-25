@@ -1,6 +1,6 @@
 /** 首页动态动线（首页/输入区/提醒横幅/今日行动） */
 export const EN: Record<string, string> = {
-  "拾光": "Shiguang",
+  "拾光": "Gatherlight",
   "动态": "Feed",
   "随口一句 → AI 自动识别：此刻心情 · 过往日程 · 未来 todo": "One sentence → AI extracts: mood · schedule · todos",
   "记录此刻…（试试\"刚跑完步40分钟，心情不错\"、\"有点累\"、\"明天下午三点看牙\"）": "Capture this moment… (try \"Morning run 40 min, feeling great\", \"Kinda tired\", \"Dentist tomorrow 3pm\")",
@@ -24,7 +24,7 @@ export const EN: Record<string, string> = {
   "今日行动": "Today's actions",
   "其余功能模块都已关闭中——想找回目标、日程、人际、财务或 AI 助手？": "All other modules are off — want Goals, Schedule, People, Finance or the AI assistant back?",
   "去【我的 → 功能管理】开启": "Turn them on in Settings → Modules",
-  "拾光 · 动态": "Shiguang · Feed",
+  "拾光 · 动态": "Gatherlight · Feed",
 };
 
 /** 动态卡与识别结果（moment-card / pending-confirms / recognition-* / actions-today） */

@@ -118,7 +118,7 @@ const sectionsZh = (): Section[] => [
 const SECTIONS_EN: Section[] = [
   {
     icon: Sparkles,
-    h: "What is Shiguang",
+    h: "What is Gatherlight",
     rows: [
       "A self-hosted personal life OS: time · people · finance. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
       "Top navigation on web: Feed / Goals / Schedule / People / Finance. Click your avatar at the top right for settings.",
@@ -209,7 +209,7 @@ export default function ManualPage() {
     <main className="mx-auto min-h-screen w-full max-w-3xl px-4 pb-16 pt-6">
       <div className="mb-6 text-center">
         <h1 className="text-2xl font-bold text-gradient">
-          {lang === "en" ? "Shiguang · User Guide" : t("拾光 · 使用手册")}
+          {lang === "en" ? "Gatherlight · User Guide" : t("拾光 · 使用手册")}
         </h1>
         <p className="mt-2 text-xs text-ink-faint">
           {lang === "en" ? "Say one sentence — AI files it into your life books" : t("随口说一句话，AI 帮你记进四本账")}
@@ -240,7 +240,7 @@ export default function ManualPage() {
 
       <footer className="mt-8 text-center">
         <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">
-          {lang === "en" ? "Shiguang · User Guide" : t("拾光 · 使用手册")}
+          {lang === "en" ? "Gatherlight · User Guide" : t("拾光 · 使用手册")}
         </span>
       </footer>
     </main>

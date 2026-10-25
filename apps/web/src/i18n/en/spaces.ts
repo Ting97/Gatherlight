@@ -8,7 +8,7 @@ export const EN: Record<string, string> = {
   "＋ 新建空间": "＋ New space",
   "创建第一个空间": "Create your first space",
   "创建一个空间，专属于这个目标的 TODO·行动与感悟 —— 相关动态自动归属，见证每天的靠近": "Create a space dedicated to this goal — its todos, actions and reflections, with related moments auto-assigned",
-  "拾光 · 目标空间": "Shiguang · Goal spaces",
+  "拾光 · 目标空间": "Gatherlight · Goal spaces",
   "「{name}」已归档": "“{name}” archived",
   "「{name}」已恢复": "“{name}” restored",
   "「{name}」已删除": "“{name}” deleted",

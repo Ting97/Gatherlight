@@ -1,6 +1,6 @@
 /** 登录/注册页 */
 export const EN: Record<string, string> = {
-  "拾光": "Shiguang",
+  "拾光": "Gatherlight",
   "拾起光阴，记录今日": "Capture your moments, organize your life",
   "个人经营系统 · 时间 · 人际 · 财务": "Personal OS · Time · People · Finance",
   "注册账号": "Create account",

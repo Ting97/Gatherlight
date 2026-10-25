@@ -60,7 +60,7 @@ export const EN: Record<string, string> = {
   // 悬浮球（assistant-dock）
   "打开{label}": "Open {label}",
   // 分域助手元数据（chat-core scopeMetaZh；值与 SCOPE_META_EN 一致）
-  "拾光助手": "Shiguang Assistant",
+  "拾光助手": "Gatherlight Assistant",
   "懂你数据的私人经营助手": "A private assistant that knows your data",
   "问我任何关于你的时间、财务、人际与目标的问题": "Ask me anything about your time, finance, people and goals",
   "这周花了多少钱？花在哪了？": "What did I spend this week? On what?",
@@ -115,9 +115,9 @@ export const EN: Record<string, string> = {
   "如「明天练什么」（Ctrl+Enter 发送）": "e.g. \"What should I train tomorrow?\" (Ctrl+Enter to send)",
   "如「明天练什么」": "e.g. \"tomorrow's workout?\"",
   // 使用手册（manual/page.tsx sectionsZh；值与 SECTIONS_EN 一致）
-  "拾光 · 使用手册": "Shiguang · User Guide",
+  "拾光 · 使用手册": "Gatherlight · User Guide",
   "随口说一句话，AI 帮你记进四本账": "Say one sentence — AI files it into your life books",
-  "拾光是什么": "What is Shiguang",
+  "拾光是什么": "What is Gatherlight",
   "AI 个人经营系统：时间 · 人际 · 财务。核心玩法就一条——随口说一句话，AI 自动识别其中的日程、待办、收支、心情、饮食，分别记进对应模块；你在各模块里查看、修正、复盘。": "A self-hosted personal life OS: time · people · finance. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
   "网页端顶部导航：动态 / 目标 / 日程 / 人际 / 财务，点右上角头像进个人设置。": "Top navigation on web: Feed / Goals / Schedule / People / Finance. Click your avatar at the top right for settings.",
   "怎么记录一句话": "How to capture a sentence",
