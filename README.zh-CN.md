@@ -20,7 +20,7 @@
 ## Nebius 与 NVIDIA 接入
 
 - 运行时所有 LLM 调用走 **Nebius Token Factory**（`https://api.tokenfactory.nebius.com/v1`，OpenAI 兼容端点）
-- 模型：**`nvidia/nemotron-3-super-120b-a12b`**（NVIDIA 开源模型）——用于分域助手、动态识别、周期复盘与目标拆解
+- 模型：**`nvidia/Nemotron-3_5-Lightning`**（NVIDIA 开源模型，30B MoE——Token Factory 上性价比最高的 Nemotron）——用于分域助手、动态识别、周期复盘与目标拆解
 - 工具调用走标准 OpenAI tools 协议：20 个只读查询工具（`query_transactions`、`query_calendar`、`query_contacts`…）+ 需确认的提案工具
 - 模型层与端点解耦：`ZHIPUAI_BASE_URL` 指向任意 OpenAI 兼容服务（如智谱 GLM）即可，零代码改动
 - Nemotron-3 是思考模型；对延迟敏感的任务通过 `reasoning_effort: "none"` 关闭思考，并兜底兼容其 `reasoning` 字段（`packages/ai/src/glm.ts`）
@@ -28,7 +28,7 @@
 ```env
 ZHIPUAI_BASE_URL=https://api.tokenfactory.nebius.com/v1
 ZHIPUAI_API_KEY=<你的 Nebius Token Factory key>
-GLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+GLM_MODEL=nvidia/Nemotron-3_5-Lightning
 ```
 
 ## 核心功能

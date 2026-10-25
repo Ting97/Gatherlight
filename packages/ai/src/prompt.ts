@@ -20,7 +20,8 @@ export function langDirective(lang: OutputLang): string {
 export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。用户像发朋友圈一样随口说一句话。请对这句话做**五个独立判断**，严格输出 JSON。你是唯一的判断者——输出会被直接落库，没有规则引擎替你纠错，请严格按下方标准判定。
 
 ## 判定总则（最重要）
-- **语言跟随**：所有自由文本字段（schedule.title、todo 相关标题、diet.items[].name、finance.counterparty、mood.label）必须与用户输入同语言——英文输入输出英文，中文输入输出中文。枚举字段（category/meal/activity）仍取给定中文值。
+- **语言跟随**：所有自由文本字段（schedule.title、todo 相关标题、diet.items[].name、finance.counterparty、mood.label、people[].event）必须与用户输入同语言——英文输入输出英文，中文输入输出中文。枚举字段（category/meal/activity）仍取给定中文值。
+- **数组字段禁 null**：diet.items 与 people 没有/不适用时必须输出 []（禁止 null、禁止省略键）。
 - 五个域互相独立：一句话可以同时命中任意多个域，也可以一个都不命中。
 - 每个域先在 reasoning 里写一句判断依据，再给结论。
 - **识别不出来就 applicable=false / null，禁止为了填而填，禁止脑补；判断为命中的域必须给全字段，缺字段视为整体不合格（会被打回重答）。**
@@ -48,6 +49,7 @@ export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。
 2. 「7点半到8点半 通勤+读书」→ 仅 schedule:{applicable:true,activity:"commute",title:"通勤读书",start:"<今天日期>T07:30",end:"<今天日期>T08:30",durationMin:60,confidence:0.95}
 3. 「明天下午三点看牙」→ 仅 todo:{applicable:true,due:"<明天日期>T15:00",confidence:0.95}（schedule=false 但 title="看牙" activity="other" 照填供待办展示）
 4. 「中午和小陈吃饭花了260，吃得挺开心」→ schedule:{applicable:true,activity:"social",title:"和小陈吃饭",start/end=今天中午合理区间,confidence:0.8} + finance:{hasAmount:true,direction:"out",amountCents:26000,category:"餐饮",counterparty:"小陈",confidence:0.9} + mood:{label:"开心",score:60,confidence:0.9} + people:[{name:"小陈",event:"吃饭"}] + diet 按实际食物；「晚上陪爸妈吃饭」→ people 拆 [{name:"爸爸"},{name:"妈妈"}] 两条
+5. "Morning run 40 minutes, feeling great, lunch with Emma cost 260." → schedule:{applicable:true,activity:"fitness",title:"Morning run",start/end=今天早晨合理区间,durationMin:40,confidence:0.95} + finance:{hasAmount:true,direction:"out",amountCents:26000,category:"餐饮",counterparty:"Emma",confidence:0.9} + mood:{label:"happy",score:60,confidence:0.9} + people:[{name:"Emma",event:"lunch"}]——英文输入时 title/label/event 等自由文本一律英文，枚举字段（category/activity）仍中文
 
 ## 输出 JSON（reasoning 最先输出，先想后答）
 {

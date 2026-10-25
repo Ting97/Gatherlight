@@ -26,7 +26,7 @@ All data stays in your own PostgreSQL database. The UI is bilingual (English / �
 ## How it uses Nebius & NVIDIA
 
 - All runtime LLM calls go to **Nebius Token Factory** (`https://api.tokenfactory.nebius.com/v1`), an OpenAI-compatible endpoint
-- Model: **`nvidia/nemotron-3-super-120b-a12b`** (NVIDIA open model) — used for domain assistants, moment extraction, periodic reviews and goal decomposition
+- Model: **`nvidia/Nemotron-3_5-Lightning`** (NVIDIA open model, 30B MoE — the most cost-efficient Nemotron on Token Factory) — used for domain assistants, moment extraction, periodic reviews and goal decomposition
 - Function calling over the standard OpenAI tools protocol: 20 read-only query tools (`query_transactions`, `query_calendar`, `query_contacts`, …) plus confirmable proposal tools
 - The model layer is endpoint-agnostic: point `ZHIPUAI_BASE_URL` at any OpenAI-compatible service (e.g. Zhipu GLM) — zero code change
 - Nemotron-3 is a thinking model; for latency-sensitive tasks we disable thinking via `reasoning_effort: "none"` and fall back to its `reasoning` field (`packages/ai/src/glm.ts`)
@@ -34,7 +34,7 @@ All data stays in your own PostgreSQL database. The UI is bilingual (English / �
 ```env
 ZHIPUAI_BASE_URL=https://api.tokenfactory.nebius.com/v1
 ZHIPUAI_API_KEY=<your Nebius Token Factory key>
-GLM_MODEL=nvidia/nemotron-3-super-120b-a12b
+GLM_MODEL=nvidia/Nemotron-3_5-Lightning
 ```
 
 ## Core features

@@ -311,7 +311,9 @@ export const DietDraftV2 = z
   .object({
     applicable: llmBoolean,
     meal: z.enum(["早餐", "午餐", "晚餐", "加餐", "夜宵", "未知"]).nullish().transform((m) => m ?? "未知"),
-    items: z.array(DietItemV2).max(20).default([]),
+    // nullish 兜显式 null：部分模型（Nemotron-3.5-Lightning 实测）diet 不适用时输出 items:null——
+    // default([]) 只兜 undefined 不兜 null，整包校验失败进重问循环，重问后各域判定漂移（日程丢块）
+    items: z.array(DietItemV2).max(20).nullish().transform((v) => v ?? []),
     totalKcal: z.coerce.number().int().min(0).max(20000).nullish(),
     confidence: llmConfidence,
   })
@@ -349,7 +351,7 @@ export const FullExtractionV2 = z.object({
   finance: FinanceDraftV2,
   mood: MoodDraftV2,
   diet: DietDraftV2,
-  people: z.array(PersonDraftV2).max(10).default([]),
+  people: z.array(PersonDraftV2).max(10).nullish().transform((v) => v ?? []), // 同 diet.items：兜显式 null
   ambiguity: z.string().nullish().catch(null),
 });
 
@@ -361,7 +363,7 @@ export function domainExtractionV2(domain: string): z.ZodTypeAny {
     case "finance": return z.object({ reasoning: z.string().nullish(), finance: FinanceDraftV2 });
     case "mood": return z.object({ reasoning: z.string().nullish(), mood: MoodDraftV2 });
     case "diet": return z.object({ reasoning: z.string().nullish(), diet: DietDraftV2 });
-    case "people": return z.object({ reasoning: z.string().nullish(), people: z.array(PersonDraftV2).max(10).default([]) });
+    case "people": return z.object({ reasoning: z.string().nullish(), people: z.array(PersonDraftV2).max(10).nullish().transform((v) => v ?? []) });
     default: throw new Error(`未知域: ${domain}`);
   }
 }
