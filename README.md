@@ -1,6 +1,6 @@
 **English** | [中文](./README.zh-CN.md)
 
-# xujianshiguang (叙笺拾光)
+# xujianshiguang (叙间拾光)
 
 > **Your life, your data, your AI** — a self-hosted life assistant powered by NVIDIA Nemotron on Nebius Token Factory.
 
