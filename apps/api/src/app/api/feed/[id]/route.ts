@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { withAuthParams, readJsonCapped } from "@/server/platform/http/route";
+import { withAuthParams, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { assertUuidParam } from "@/server/platform/http/validate";
 import { patchFeed, deleteFeed } from "@/server/timeline";
 
@@ -18,7 +18,7 @@ export const PATCH = withAuthParams(async (req: NextRequest, { user, params }) =
   const { id } = await params;
   assertUuidParam(id, "id"); // 非法 uuid 落 SQL 会 22P02 → 500，先拦成 400
   const body = await readJsonCapped(req) as any;
-  return NextResponse.json(await patchFeed(user.id, id, patchSchema.parse(body ?? {})));
+  return NextResponse.json(await patchFeed(user.id, id, patchSchema.parse(body ?? {}), reqLang(req)));
 });
 
 /** DELETE /api/feed/[id] —— 删除动态及其全部识别产物 */

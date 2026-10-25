@@ -16,7 +16,7 @@ import { inferInteractionType } from "@shiguangri/shared/social";
 import { yuanToCents } from "@shiguangri/shared/finance";
 import { checkAiQuota } from "@/server/ai/quota";
 import { writeAuditRecord } from "../ai/audit";
-import { assembleUserPrompt, getPromptBundle, type PromptKey } from "../ai/prompts";
+import { assembleUserPrompt, getPromptBundle, type PromptKey, type PromptLang } from "../ai/prompts";
 import { deleteImageFile, sniffImageMime, sniffWavMime, IMAGE_MIME_EXT, newStorageKey, saveImageFile } from "@/server/timeline/storage";
 import { ApiError } from "../platform/http/errors";
 import { isUuid } from "../platform/http/validate";
@@ -50,7 +50,7 @@ async function assertActivityExists(client: import("pg").PoolClient, userId: str
 }
 
 /** POST /api/parse：动态本体先落地秒回 + 配额 + 后台五域识别（fire-and-forget，成败都打 analyzed_at） */
-export async function ingest(userId: string, text: string, source: "keyboard" | "voice" = "keyboard") {
+export async function ingest(userId: string, text: string, source: "keyboard" | "voice" = "keyboard", lang: PromptLang = "zh") {
   const q = await checkAiQuota(userId);
   if (!q.allowed) {
     throw ApiError.quota(
@@ -60,7 +60,7 @@ export async function ingest(userId: string, text: string, source: "keyboard" | 
   }
   const entry = (await entriesRepo.insert(userId, source, text.trim())).rows[0];
   // FR-C2.4：识别失败不再打 analyzed_at（失败留痕由巡检补跑）；成功路径 analyzeAndPersist 内部落 analyzed_at
-  void analyzeAndPersist(userId, entry.id, text.trim())
+  void analyzeAndPersist(userId, entry.id, text.trim(), lang)
     .catch((e) => {
       console.error("[analyze] 后台识别失败（巡检将补跑）:", e);
       return pool.query(`update entries set analyze_retries = analyze_retries + 1 where id = $1`, [entry.id]);
@@ -345,7 +345,7 @@ export interface FeedPatch {
 }
 
 /** PATCH /api/feed/:id：手动归属空间 / 编辑原文重识别 / 修正心情（三选一语义互斥） */
-export async function patchFeed(userId: string, entryId: string, body: FeedPatch) {
+export async function patchFeed(userId: string, entryId: string, body: FeedPatch, lang: PromptLang = "zh") {
   // 三字段皆未传时旧版会径直落到末尾的 mood 分支：按 label=null 清空心情并打 analyzed_at——
   // 空更新被当成「清除心情」，这里 400 拦下（与 updateTodo/builds 的「没有可更新的字段」同口径）
   if (body.mood === undefined && body.raw_text === undefined && body.spaceId === undefined) {
@@ -401,7 +401,7 @@ export async function patchFeed(userId: string, entryId: string, body: FeedPatch
       client.release();
     }
     // 后台全域重识别（同发动态：秒回 + fire-and-forget）；成功自打 analyzed_at，失败留巡检
-    void analyzeAndPersist(userId, entryId, text)
+    void analyzeAndPersist(userId, entryId, text, lang)
       .catch((e) => console.error(`[analyze] entry ${entryId} 编辑重识别失败（巡检将补跑）:`, e));
     // 编辑清派生（历史块/饮食/流水被删）会让对应周期水位盲区陈旧——按动态创建日 + 全部事件日失效（十一轮 P2 / 十七轮补全）
     void invalidateReviewCachesForOccurrence(userId, new Date(updated.created_at));
@@ -679,7 +679,7 @@ function confidenceOf(r: ParseResult, domain: string): number {
  * POST /api/entries/:id/recognize { domain } —— 单域重新识别（替换式）
  * mood: 覆写/清空 | schedule: 冲突检测通过才换块 | todo/finance: 删旧落新 | diet: upsert
  */
-export async function reRecognize(userId: string, entryId: string, domain?: string) {
+export async function reRecognize(userId: string, entryId: string, domain?: string, lang: PromptLang = "zh") {
   const q = await checkAiQuota(userId);
   if (!q.allowed) {
     throw ApiError.quota(
@@ -701,12 +701,12 @@ export async function reRecognize(userId: string, entryId: string, domain?: stri
   let completionTokens = 0;
   // 输入装配（3-A）：单域 key 按 DB 配置组装 user prompt；people 域联系人受开关控制
   const key = `extract_domain_${domain}` as PromptKey;
-  const bundle = await getPromptBundle(key);
+  const bundle = await getPromptBundle(key, lang);
   const contactsOn = domain === "people" && bundle.config.inject.contactList;
   const contactNames = contactsOn ? await listContactNames(userId, bundle.config.caps.contactCount) : undefined;
   const contactList =
     contactsOn && contactNames && contactNames.length
-      ? `\n已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`
+      ? `\n${lang === "en" ? `Existing contacts (align person mentions to the exact names in this list): ${contactNames.join("、")}` : `已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`}`
       : "";
   // 单域注入（与全量同源）：schedule→分类对照（用户活动分类），finance→常用分类词表。
   // todo 域同取 userActs（仅供下方归一，不注入 todo prompt）——todo 分支同样把 r.activity
@@ -725,7 +725,7 @@ export async function reRecognize(userId: string, entryId: string, domain?: stri
   if (domain === "finance" && bundle.config.inject.financeCats) {
     const cats = await listUserFinanceCats(userId, bundle.config.caps.financeCatCount ?? 15);
     if (cats.length) financeCats = `
-常用分类（category 优先从中选取）：${cats.join("、")}`;
+${lang === "en" ? `Frequent categories (prefer these values for category): ${cats.join("、")}` : `常用分类（category 优先从中选取）：${cats.join("、")}`}`;
   }
   const userPrompt = await assembleUserPrompt(key, bundle, {
     nowCst: toCstWallClock(new Date()),

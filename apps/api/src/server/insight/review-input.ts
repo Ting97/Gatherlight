@@ -233,10 +233,10 @@ export async function updateProfileFromReview(
 ): Promise<void> {
   try {
     // 输入装配（3-A）：profile_merge 三要素必需；画像条数上限可调（caps.profileItems）
-    const bundle = await getPromptBundle("profile_merge");
+    const bundle = await getPromptBundle("profile_merge", lang);
     const old = await loadProfileBlock(userId);
     const userPrompt = await assembleUserPrompt("profile_merge", bundle, {
-      oldProfile: old ?? "（暂无，首次建立）",
+      oldProfile: old ?? (lang === "en" ? "(none yet — first profile)" : "（暂无，首次建立）"),
       period,
       factsText,
       reviewText,

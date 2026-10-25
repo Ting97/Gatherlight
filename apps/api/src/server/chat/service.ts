@@ -274,7 +274,7 @@ export async function sendMessage(
     // system = 按会话域选人设（REQ-019 FR-C3，纳管热更）+ 上下文块（当前北京时间；画像注入沿用各 key 配置）
     // 语言指令由代码拼接（不进 ai_prompts 库，admin 覆盖人设也不影响输出语言跟随界面）
     const promptKey = SCOPE_PROMPT_KEY[scope];
-    const bundle = await getPromptBundle(promptKey);
+    const bundle = await getPromptBundle(promptKey, lang);
     const ctxBlock = await assembleUserPrompt(promptKey, bundle, { nowCst: toCstWallClock(new Date()) }, { userId });
     const langSuffix = langDirective(lang);
     system = [ctxBlock ? `${bundle.system}\n\n${ctxBlock}` : bundle.system, langSuffix].filter(Boolean).join("\n");

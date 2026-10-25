@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/server/platform/db";
-import { withAdminParams, readJsonCapped } from "@/server/platform/http/route";
+import { reqLang, withAdminParams, readJsonCapped } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import { AI_INPUT_REGISTRY, invalidatePrompts, PROMPT_KEYS, validateUserTemplate, validateUserDataConfig, type PromptKey } from "@/server/ai";
 
@@ -12,6 +12,7 @@ type CtxConfig = { inject?: Record<string, boolean>; caps?: Record<string, numbe
 
 /**
  * PUT /api/admin/prompts/[key] —— 保存三件套覆盖（REQ-003 3-A）：system + user 模板 + 注入配置。
+ * 双语（070）：按 X-Lang 保存到对应语言的覆盖行（中文/英文模板互不影响）。
  * 校验：模板占位符完整性（缺失/未知 → 400 列明）、caps 整数且在注册表范围、required 注入不可为 false。
  * 保存即生效（upsert + 清缓存）；版本快照写 payload 三件套（content 列保留兼容）。
  */
@@ -20,6 +21,7 @@ export const PUT = withAdminParams(async (req, { user, params }) => {
   if (!PROMPT_KEYS.includes(key as PromptKey)) {
     throw ApiError.notFound("未知的 prompt key");
   }
+  const lang = reqLang(req);
   const spec = AI_INPUT_REGISTRY[key as PromptKey];
   const { content, enabled = true, remark, userTemplate, contextConfig } = (await readJsonCapped(req) as any) as {
     content?: string; enabled?: boolean; remark?: string | null;
@@ -90,8 +92,8 @@ export const PUT = withAdminParams(async (req, { user, params }) => {
     }
   }
 
-  // 读原覆盖（未传的字段保持原值）
-  const prev = (await pool.query(`select user_template, context_config from ai_prompts where key = $1`, [key])).rows[0];
+  // 读原覆盖（未传的字段保持原值；同语言行）
+  const prev = (await pool.query(`select user_template, context_config from ai_prompts where key = $1 and lang = $2`, [key, lang])).rows[0];
   const finalTpl = userTemplate !== undefined ? tplToSave : ((prev?.user_template as string | null) ?? null);
   const finalCfg =
     contextConfig !== undefined
@@ -104,17 +106,17 @@ export const PUT = withAdminParams(async (req, { user, params }) => {
   try {
     await client.query("begin");
     const { rows } = await client.query(
-      `insert into ai_prompts (key, content, enabled, remark, user_template, context_config, updated_by, updated_at)
-       values ($1,$2,$3,$4,$5,$6::jsonb,$7,now())
-       on conflict (key) do update set
-         content = $2, enabled = $3, remark = $4, user_template = $5, context_config = $6::jsonb, updated_by = $7, updated_at = now()
+      `insert into ai_prompts (key, lang, content, enabled, remark, user_template, context_config, updated_by, updated_at)
+       values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,now())
+       on conflict (key, lang) do update set
+         content = $3, enabled = $4, remark = $5, user_template = $6, context_config = $7::jsonb, updated_by = $8, updated_at = now()
        returning key, content, enabled, remark, user_template, context_config, updated_at`,
-      [key, content, enabled === true, remark ?? null, finalTpl, finalCfg ? JSON.stringify(finalCfg) : null, user.id],
+      [key, lang, content, enabled === true, remark ?? null, finalTpl, finalCfg ? JSON.stringify(finalCfg) : null, user.id],
     );
-    // 版本快照（三件套 payload；content 列保留兼容旧版本读取）
+    // 版本快照（三件套 payload；content 列保留兼容旧版本读取；lang 记录所属语言版本）
     await client.query(
-      `insert into ai_prompt_versions (key, content, payload, created_by) values ($1,$2,$3::jsonb,$4)`,
-      [key, content, JSON.stringify({ system: content, userTemplate: finalTpl, contextConfig: finalCfg }), user.id],
+      `insert into ai_prompt_versions (key, lang, content, payload, created_by) values ($1,$2,$3,$4::jsonb,$5)`,
+      [key, lang, content, JSON.stringify({ system: content, userTemplate: finalTpl, contextConfig: finalCfg }), user.id],
     );
     await client.query("commit");
     invalidatePrompts(key as PromptKey);
@@ -127,29 +129,31 @@ export const PUT = withAdminParams(async (req, { user, params }) => {
   }
 });
 
-/** GET /api/admin/prompts/[key] —— 版本历史（最近 30 条，含三件套 payload 供整体回滚） */
-export const GET = withAdminParams(async (_req, { params }) => {
+/** GET /api/admin/prompts/[key] —— 版本历史（最近 30 条，含三件套 payload 供整体回滚；按 X-Lang 隔离） */
+export const GET = withAdminParams(async (req, { params }) => {
   const { key } = await params;
   if (!PROMPT_KEYS.includes(key as PromptKey)) {
     throw ApiError.notFound("未知的 prompt key");
   }
+  const lang = reqLang(req);
   const { rows } = await pool.query(
     `select v.id, v.content, v.payload, v.restored_from, v.created_at, p.nickname as created_by_name,
             length(v.content) as size
      from ai_prompt_versions v left join profiles p on p.id = v.created_by
-     where v.key = $1 order by v.created_at desc limit 30`,
-    [key],
+     where v.key = $1 and v.lang = $2 order by v.created_at desc limit 30`,
+    [key, lang],
   );
   return NextResponse.json({ versions: rows });
 });
 
-/** DELETE /api/admin/prompts/[key] —— 恢复代码默认：删覆盖行 + 清缓存 */
-export const DELETE = withAdminParams(async (_req, { params }) => {
+/** DELETE /api/admin/prompts/[key] —— 恢复代码默认：删对应语言的覆盖行 + 清缓存 */
+export const DELETE = withAdminParams(async (req, { params }) => {
   const { key } = await params;
   if (!PROMPT_KEYS.includes(key as PromptKey)) {
     throw ApiError.notFound("未知的 prompt key");
   }
-  await pool.query(`delete from ai_prompts where key = $1`, [key]);
+  const lang = reqLang(req);
+  await pool.query(`delete from ai_prompts where key = $1 and lang = $2`, [key, lang]);
   invalidatePrompts(key as PromptKey);
   return NextResponse.json({ ok: true });
 });

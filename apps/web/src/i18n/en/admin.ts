@@ -210,4 +210,7 @@ export const EN: Record<string, string> = {
   "保存即生效（≤60s 缓存、主动失效）；启用开关关闭 = 整 key 回退代码默认": "Saves apply immediately (≤60s cache, actively invalidated); turning the switch off makes the whole key fall back to code defaults",
   "关闭后此 key 使用代码默认值": "When off, this key uses code defaults",
   "启用此覆盖": "Enable this override",
+  "中文模板": "Chinese template",
+  "English 模板": "English template",
+  "中英模板独立保存：未调整用该语言默认，调整后用调整版": "Chinese and English templates are stored independently: an untouched language uses its built-in default; an adjusted one uses your saved version",
 };

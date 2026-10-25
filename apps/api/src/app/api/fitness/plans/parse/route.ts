@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { withModule, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { fitnessService } from "@/server/fitness";
 
 /** POST /api/fitness/plans/parse —— 粘贴课表文本或佳明训练截图 → AI 结构化草稿（不入库，返回给前端预览）。
@@ -15,5 +15,5 @@ export const POST = withModule("fitness", async (req, { user }) => {
     body.image?.base64 && typeof body.image.base64 === "string"
       ? { mimeType: String(body.image.mimeType ?? "image/jpeg"), base64: String(body.image.base64) }
       : undefined;
-  return NextResponse.json(await fitnessService.parsePlanDraft(user.id, String(body.text ?? ""), image));
+  return NextResponse.json(await fitnessService.parsePlanDraft(user.id, String(body.text ?? ""), image, undefined, reqLang(req)));
 });

@@ -30,7 +30,7 @@ export const POST = withModule("insight", async (req, { user }) => {
   }
 
   const lang = reqLang(req);
-  const bundle = await getPromptBundle("review_day");
+  const bundle = await getPromptBundle("review_day", lang);
   const built = await buildReviewCtx(user.id, "day", { date }, bundle);
   const { latest } = built;
 

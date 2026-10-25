@@ -17,8 +17,11 @@ export type { CapSpec, CtxConfig, InjectSpec, RegistrySpec, UserDataEntry };
 export interface PromptItem {
   key: string;
   title: string;
-  /** 服务端 PROMPT_META 下发的中文分类（识别/复盘/目标/系统/助手），展示处经 t() 翻译 */
+  /** 英文标题（双语 070）：EN 界面下清单/通知用；空则回落 title */
+  titleEn: string;
   category: string;
+  /** 当前清单所属语言（服务端按 X-Lang 返回对应语言的覆盖与默认模板） */
+  lang: string;
   enabled: boolean;
   overridden: boolean;
   dbContent: string | null;

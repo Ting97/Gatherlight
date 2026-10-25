@@ -1,8 +1,8 @@
 "use client";
 
-import { Circle, Pause } from "lucide-react";
+import { Circle, Languages, Pause } from "lucide-react";
 import { TagChip } from "@/components/tag-chip";
-import { t, tpl } from "@/i18n";
+import { getLang, t, tpl } from "@/i18n";
 import { zhTime } from "./kit";
 import type { PromptItem } from "./types";
 
@@ -19,12 +19,21 @@ interface Props {
   saveBlockReason?: string;
 }
 
-/** 三段式编辑器标题行：覆盖态徽标 + 保存 / 恢复代码默认 */
+/** 三段式编辑器标题行：覆盖态徽标 + 保存 / 恢复代码默认。
+ * 双语（070）：标题与「中文/English 模板」指示跟随界面语言——当前编辑的就是该语言的模板版本 */
 export default function EditorHeader({ sel, dirty, saving, draft, onSave, onRevert, revertArmed, saveBlocked, saveBlockReason }: Props) {
+  const title = getLang() === "en" && sel.titleEn ? sel.titleEn : sel.title;
   return (
     <div className="mb-3 flex flex-wrap items-center gap-2">
-      <h3 className="text-sm font-semibold text-ink">{sel.title}</h3>
+      <h3 className="text-sm font-semibold text-ink">{title}</h3>
       <TagChip label={sel.key} tone="slate" size="sm" />
+      <TagChip
+        icon={<Languages size={10} />}
+        label={sel.lang === "en" ? t("English 模板") : t("中文模板")}
+        tone="violet"
+        size="sm"
+        title={t("中英模板独立保存：未调整用该语言默认，调整后用调整版")}
+      />
       {sel.overridden ? (
         <TagChip icon={<Circle size={10} className="fill-current" />} label={t("DB 覆盖")} tone="emerald" size="sm" title={tpl("更新于 {time}", { time: zhTime(sel.updatedAt) })} />
       ) : (

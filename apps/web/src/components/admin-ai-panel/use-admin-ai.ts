@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/shared/api";
-import { t, tpl } from "@/i18n";
+import { t, tpl, getLang } from "@/i18n";
 import { MODE_META, validateTpl, zhTime } from "./kit";
 import type { EngineMode, PromptItem, Version } from "./types";
 import { useAdminUserData } from "./use-admin-user-data";
@@ -12,6 +12,11 @@ import { useAdminUserData } from "./use-admin-user-data";
  * prompt 清单加载 / 三段式草稿状态 / 保存·恢复默认·回滚 / AI 优化 / 装配预览 / 引擎模式开关。
  * 个性化注入（REQ-005 FR-5.6）的 userData 草稿与 catalog 懒加载在 ./use-admin-user-data。
  */
+/** 通知用本地化标题（双语 070）：EN 界面优先 titleEn */
+function titleOf(it: PromptItem): string {
+  return getLang() === "en" && it.titleEn ? it.titleEn : it.title;
+}
+
 export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
   const [items, setItems] = useState<PromptItem[] | null>(null);
   // 清单加载失败态：失败要落明确错误（否则 items 永远 null，面板停在永久「加载中」）
@@ -171,7 +176,7 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
         userTemplate: tplDirty ? tplDraft : null,
         contextConfig: sendCfg ? { inject: injectDraft, caps: capsDraft, userData: ud.userDataDraft } : null,
       });
-      notify(tpl("「{title}」已保存并即时生效", { title: sel.title }));
+      notify(tpl("「{title}」已保存并即时生效", { title: titleOf(sel) }));
       const list = await load();
       // 仅当用户仍停留在该 prompt 才重 pick：await 后用旧 sel 找回会顶掉正在编辑的其他项
       const fresh = list?.find((x) => x.key === key);
@@ -190,7 +195,7 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     setArmKey(null);
     try {
       await api(`/api/admin/prompts/${sel.key}`, "DELETE");
-      notify(tpl("「{title}」已恢复代码默认", { title: sel.title }));
+      notify(tpl("「{title}」已恢复代码默认", { title: titleOf(sel) }));
       const list = await load();
       const fresh = list?.find((x) => x.key === sel.key);
       // selRef 守卫与 save() 同款：await 期间用户已点选其他 prompt 时 pick 会顶掉其正在编辑的草稿

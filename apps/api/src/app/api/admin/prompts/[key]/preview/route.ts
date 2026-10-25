@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/server/platform/db";
 import { ACTIVITY_NAMES, toCstWallClock } from "@shiguangri/ai";
-import { withAdminParams, readJsonCapped } from "@/server/platform/http/route";
+import { withAdminParams, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import { isValidCalendarDate } from "@/server/platform/http/datetime";
 import { isValidYearMonth } from "@/server/platform/http/validate";
@@ -28,7 +28,9 @@ export const POST = withAdminParams(async (req, { user, params }) => {
     throw ApiError.notFound("未知的 prompt key");
   }
   const { sample, period } = (await readJsonCapped(req) as any) as { sample?: string; period?: string };
-  const bundle = await getPromptBundle(key as PromptKey);
+  // 双语（070）：预览当前界面语言的模板装配（与线上同源）
+  const lang = reqLang(req);
+  const bundle = await getPromptBundle(key as PromptKey, lang);
   const cfg = bundle.config;
   const sampleText = sample?.trim() || null;
 
@@ -59,10 +61,12 @@ export const POST = withAdminParams(async (req, { user, params }) => {
       : "";
     const needCats = cfg.inject.financeCats && (key === "extract_full" || key === "extract_domain_finance");
     const cats = needCats ? await listUserFinanceCats(user.id, cfg.caps.financeCatCount ?? 15) : [];
-    const financeCats = cats.length ? `\n常用分类（finance.category 优先从中选取）：${cats.join("、")}` : "";
+    const financeCats = cats.length
+      ? `\n${lang === "en" ? `Frequent categories (prefer these values for finance.category): ${cats.join("、")}` : `常用分类（finance.category 优先从中选取）：${cats.join("、")}`}`
+      : "";
     const contactList =
       contactsOn && contactNames.length
-        ? `\n已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`
+        ? `\n${lang === "en" ? `Existing contacts (align person mentions to the exact names in this list): ${contactNames.join("、")}` : `已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`}`
         : "";
     const text = sampleText ?? (await latestEntry()) ?? "（管理员名下暂无动态，可粘贴样例话术）";
     ctxOut = { nowCst: toCstWallClock(new Date()), catList, financeCats, contactList, text };
@@ -261,7 +265,7 @@ export const POST = withAdminParams(async (req, { user, params }) => {
     ctxOut = {
       purpose: `示例（key=${key}）——「拾光」系统的 AI 提示词`,
       contract,
-      current: sampleText ?? (await getPrompt(key as PromptKey)),
+      current: sampleText ?? (await getPrompt(key as PromptKey, lang)),
       intent: "（无，按专家判断全面优化）",
     };
     userPrompt = await assembleUserPrompt("prompt_optimizer", bundle, ctxOut, { userId: user.id });

@@ -31,9 +31,11 @@ export const POST = withAdminParams(async (req, { user, params }) => {
   if (!versionId) throw ApiError.badRequest("缺少 versionId");
 
   const ver = (
-    await pool.query(`select id, content, payload from ai_prompt_versions where id = $1 and key = $2`, [versionId, key])
+    await pool.query(`select id, content, payload, lang from ai_prompt_versions where id = $1 and key = $2`, [versionId, key])
   ).rows[0];
   if (!ver) throw ApiError.notFound("版本不存在");
+  // 双语（070）：回滚写回该版本所属语言的覆盖行（英文版本 → en 行，不随界面语言漂移）
+  const lang: string = ver.lang ?? "zh";
 
   const payload = (ver.payload ?? null) as VersionPayload | null;
   const content = payload?.system ?? ver.content;
@@ -44,7 +46,7 @@ export const POST = withAdminParams(async (req, { user, params }) => {
   let finalTpl: string | null = tpl;
   let finalCfg: Record<string, unknown> | null = cfg;
   if (!payload) {
-    const cur = (await pool.query(`select user_template, context_config from ai_prompts where key = $1`, [key])).rows[0];
+    const cur = (await pool.query(`select user_template, context_config from ai_prompts where key = $1 and lang = $2`, [key, lang])).rows[0];
     finalTpl = (cur?.user_template as string | null) ?? null;
     finalCfg = (cur?.context_config as Record<string, unknown> | null) ?? null;
   }
@@ -54,15 +56,15 @@ export const POST = withAdminParams(async (req, { user, params }) => {
   try {
     await client.query("begin");
     const { rows } = await client.query(
-      `insert into ai_prompts (key, content, enabled, user_template, context_config, updated_by, updated_at)
-       values ($1,$2,true,$3,$4::jsonb,$5,now())
-       on conflict (key) do update set content = $2, enabled = true, user_template = $3, context_config = $4::jsonb, updated_by = $5, updated_at = now()
+      `insert into ai_prompts (key, lang, content, enabled, user_template, context_config, updated_by, updated_at)
+       values ($1,$2,$3,true,$4,$5::jsonb,$6,now())
+       on conflict (key, lang) do update set content = $3, enabled = true, user_template = $4, context_config = $5::jsonb, updated_by = $6, updated_at = now()
        returning key, content, enabled, user_template, context_config, updated_at`,
-      [key, content, finalTpl, finalCfg ? JSON.stringify(finalCfg) : null, user.id],
+      [key, lang, content, finalTpl, finalCfg ? JSON.stringify(finalCfg) : null, user.id],
     );
     await client.query(
-      `insert into ai_prompt_versions (key, content, payload, restored_from, created_by) values ($1,$2,$3::jsonb,$4,$5)`,
-      [key, content, JSON.stringify({ system: content, userTemplate: finalTpl, contextConfig: finalCfg }), ver.id, user.id],
+      `insert into ai_prompt_versions (key, lang, content, payload, restored_from, created_by) values ($1,$2,$3,$4::jsonb,$5,$6)`,
+      [key, lang, content, JSON.stringify({ system: content, userTemplate: finalTpl, contextConfig: finalCfg }), ver.id, user.id],
     );
     await client.query("commit");
     invalidatePrompts(key as PromptKey);

@@ -15,8 +15,12 @@ import {
   TRADE_REVIEW_WEEK_SYSTEM,
 } from "@/server/insight/review-prompts";
 import { OPEN_VOCAB_SYSTEM_PROMPT } from "@shiguangri/ai";
+import { DEFAULT_PROMPTS_EN } from "./prompts-en";
 import { AI_INPUT_REGISTRY, mergeContextConfig } from "./ai-inputs";
 import { buildUserDataBlock } from "./admin-data";
+
+/** 提示词语言维度（与管理后台/界面语言一致；ai_prompts.lang 同口径） */
+export type PromptLang = "zh" | "en";
 
 export const PROMPT_KEYS = [
   "extract_full",
@@ -48,33 +52,33 @@ export const PROMPT_KEYS = [
 ] as const;
 export type PromptKey = (typeof PROMPT_KEYS)[number];
 
-export const PROMPT_META: Record<PromptKey, { title: string; category: "识别" | "复盘" | "目标" | "系统" | "助手" }> = {
-  extract_full: { title: "全量五域提取", category: "识别" },
-  extract_open_vocab: { title: "瘦身开放词汇提取（Jev 接管）", category: "识别" },
-  extract_domain_schedule: { title: "单域 · 日程", category: "识别" },
-  extract_domain_todo: { title: "单域 · todo", category: "识别" },
-  extract_domain_finance: { title: "单域 · 收支", category: "识别" },
-  extract_domain_mood: { title: "单域 · 心情", category: "识别" },
-  extract_domain_diet: { title: "单域 · 饮食", category: "识别" },
-  extract_domain_people: { title: "单域 · 人物", category: "识别" },
-  review_day: { title: "日小结", category: "复盘" },
-  review_week: { title: "周复盘", category: "复盘" },
-  review_month: { title: "月复盘", category: "复盘" },
-  review_year: { title: "年复盘", category: "复盘" },
-  trade_review_week: { title: "交易周复盘", category: "复盘" },
-  profile_merge: { title: "月报画像合并", category: "复盘" },
-  space_classify: { title: "空间归属分类", category: "目标" },
-  todo_decompose: { title: "todo AI 拆解", category: "目标" },
-  action_decompose: { title: "行动细化拆解", category: "目标" },
-  prompt_optimizer: { title: "Prompt 优化器", category: "系统" },
-  chat_assistant: { title: "AI 对话助手", category: "助手" },
-  chat_goal: { title: "目标管家（分域）", category: "助手" },
-  chat_time: { title: "日程管家（分域）", category: "助手" },
-  chat_people: { title: "人际管家（分域）", category: "助手" },
-  chat_finance: { title: "财务管家（分域）", category: "助手" },
-  chat_fitness_coach: { title: "运动教练（分域）", category: "助手" },
-  fitness_plan_parse: { title: "健身计划解析（粘贴导入）", category: "识别" },
-  xunji_name_match: { title: "训记动作名匹配", category: "识别" },
+export const PROMPT_META: Record<PromptKey, { title: string; titleEn: string; category: "识别" | "复盘" | "目标" | "系统" | "助手" }> = {
+  extract_full: { title: "全量五域提取", titleEn: "Full five-domain extraction", category: "识别" },
+  extract_open_vocab: { title: "瘦身开放词汇提取（Jev 接管）", titleEn: "Slim open-vocab extraction (Jev takeover)", category: "识别" },
+  extract_domain_schedule: { title: "单域 · 日程", titleEn: "Single domain · Schedule", category: "识别" },
+  extract_domain_todo: { title: "单域 · todo", titleEn: "Single domain · Todo", category: "识别" },
+  extract_domain_finance: { title: "单域 · 收支", titleEn: "Single domain · Finance", category: "识别" },
+  extract_domain_mood: { title: "单域 · 心情", titleEn: "Single domain · Mood", category: "识别" },
+  extract_domain_diet: { title: "单域 · 饮食", titleEn: "Single domain · Diet", category: "识别" },
+  extract_domain_people: { title: "单域 · 人物", titleEn: "Single domain · People", category: "识别" },
+  review_day: { title: "日小结", titleEn: "Daily recap", category: "复盘" },
+  review_week: { title: "周复盘", titleEn: "Weekly review", category: "复盘" },
+  review_month: { title: "月复盘", titleEn: "Monthly review", category: "复盘" },
+  review_year: { title: "年复盘", titleEn: "Yearly review", category: "复盘" },
+  trade_review_week: { title: "交易周复盘", titleEn: "Cashflow weekly review", category: "复盘" },
+  profile_merge: { title: "月报画像合并", titleEn: "Monthly profile merge", category: "复盘" },
+  space_classify: { title: "空间归属分类", titleEn: "Goal-space classification", category: "目标" },
+  todo_decompose: { title: "todo AI 拆解", titleEn: "Todo AI decomposition", category: "目标" },
+  action_decompose: { title: "行动细化拆解", titleEn: "Action refinement", category: "目标" },
+  prompt_optimizer: { title: "Prompt 优化器", titleEn: "Prompt optimizer", category: "系统" },
+  chat_assistant: { title: "AI 对话助手", titleEn: "AI chat assistant", category: "助手" },
+  chat_goal: { title: "目标管家（分域）", titleEn: "Goal keeper (domain)", category: "助手" },
+  chat_time: { title: "日程管家（分域）", titleEn: "Schedule keeper (domain)", category: "助手" },
+  chat_people: { title: "人际管家（分域）", titleEn: "People keeper (domain)", category: "助手" },
+  chat_finance: { title: "财务管家（分域）", titleEn: "Finance keeper (domain)", category: "助手" },
+  chat_fitness_coach: { title: "运动教练（分域）", titleEn: "Fitness coach (domain)", category: "助手" },
+  fitness_plan_parse: { title: "健身计划解析（粘贴导入）", titleEn: "Fitness plan parsing (paste import)", category: "识别" },
+  xunji_name_match: { title: "训记动作名匹配", titleEn: "Xunji exercise name matching", category: "识别" },
 };
 
 const DEFAULT_PROMPTS: Record<PromptKey, string> = {
@@ -143,7 +147,8 @@ const DEFAULT_PROMPTS: Record<PromptKey, string> = {
   xunji_name_match: XUNJI_NAME_MATCH_PROMPT,
 };
 
-// ---- 进程内缓存（60s；standalone 常驻进程，保存后同进程 Map.delete 即时生效） ----
+// ---- 进程内缓存（60s；standalone 常驻进程，保存后同进程失效即生效） ----
+// 双语后缓存键为 `${key}:${lang}`
 const CACHE_TTL_MS = 60_000;
 interface BundleCacheEntry {
   content: string;
@@ -151,41 +156,45 @@ interface BundleCacheEntry {
   config: { inject: Record<string, boolean>; caps: Record<string, number> };
   fetchedAt: number;
 }
-const cache = new Map<PromptKey, BundleCacheEntry>();
+const cache = new Map<string, BundleCacheEntry>();
 
-/** 代码默认值全文（管理端对比/回退用） */
-export function defaultPrompt(key: PromptKey): string {
-  return DEFAULT_PROMPTS[key];
+/** 代码默认值全文（管理端对比/回退用）；lang 缺 EN 模板时回落 ZH（防御：翻译未覆盖的 key 不至于拿空串） */
+export function defaultPrompt(key: PromptKey, lang: PromptLang = "zh"): string {
+  return lang === "en" ? (DEFAULT_PROMPTS_EN[key] ?? DEFAULT_PROMPTS[key]) : DEFAULT_PROMPTS[key];
 }
 
-/** 清缓存：不传 key 全清（保存/回滚/开关切换后调用） */
+/** 清缓存：不传 key 全清（保存/回滚/开关切换后调用）；单 key 时两种语言一起清 */
 export function invalidatePrompts(key?: PromptKey): void {
-  if (key) cache.delete(key);
-  else cache.clear();
+  if (key) {
+    cache.delete(`${key}:zh`);
+    cache.delete(`${key}:en`);
+  } else cache.clear();
 }
 
-/** 生效中的 prompt：DB 覆盖（enabled=true）优先，否则代码默认值 */
-export async function getPrompt(key: PromptKey): Promise<string> {
-  return (await getPromptBundle(key)).system;
+/** 生效中的 prompt：DB 覆盖（enabled=true，对应语言）优先，否则该语言的代码默认值 */
+export async function getPrompt(key: PromptKey, lang: PromptLang = "zh"): Promise<string> {
+  return (await getPromptBundle(key, lang)).system;
 }
 
 /** 生效中的 system + user 模板 + 注入配置三件套（REQ-003 3-A）。
- * DB 覆盖（enabled=true）优先；user_template/config 为空 = 代码默认；60s 缓存，保存主动失效 */
-export async function getPromptBundle(key: PromptKey): Promise<PromptBundle> {
-  const hit = cache.get(key);
+ * DB 覆盖（enabled=true，key+lang 命中）优先；未覆盖用该语言代码默认（EN 缺模板回落 ZH）；
+ * userTemplate/config 覆盖同语言行内；60s 缓存，保存主动失效 */
+export async function getPromptBundle(key: PromptKey, lang: PromptLang = "zh"): Promise<PromptBundle> {
+  const cacheKey = `${key}:${lang}`;
+  const hit = cache.get(cacheKey);
   if (hit && Date.now() - hit.fetchedAt < CACHE_TTL_MS) {
     return { system: hit.content, userTemplate: hit.userTemplate, config: hit.config };
   }
   const spec = AI_INPUT_REGISTRY[key];
   const bundle: PromptBundle = {
-    system: DEFAULT_PROMPTS[key],
+    system: defaultPrompt(key, lang),
     userTemplate: spec.userTemplate,
     config: mergeContextConfig(key, null),
   };
   try {
     const { rows } = await pool.query(
-      `select content, enabled, user_template, context_config from ai_prompts where key = $1`,
-      [key],
+      `select content, enabled, user_template, context_config from ai_prompts where key = $1 and lang = $2`,
+      [key, lang],
     );
     const row = rows[0];
     if (row?.enabled) {
@@ -195,9 +204,9 @@ export async function getPromptBundle(key: PromptKey): Promise<PromptBundle> {
       bundle.config = mergeContextConfig(key, (row.context_config ?? null) as { inject?: Record<string, boolean>; caps?: Record<string, number> } | null);
     }
   } catch (e) {
-    console.warn(`[prompts] 读取 ${key} 三件套覆盖失败，用代码默认：`, String(e).slice(0, 120));
+    console.warn(`[prompts] 读取 ${key}/${lang} 三件套覆盖失败，用代码默认：`, String(e).slice(0, 120));
   }
-  cache.set(key, {
+  cache.set(cacheKey, {
     content: bundle.system,
     userTemplate: bundle.userTemplate,
     config: bundle.config,

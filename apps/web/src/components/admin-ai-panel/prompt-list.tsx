@@ -1,6 +1,7 @@
 "use client";
 
 import { t } from "@/i18n";
+import { getLang } from "@/i18n";
 import type { PromptItem } from "./types";
 
 interface Props {
@@ -10,9 +11,11 @@ interface Props {
 }
 
 /** prompt 清单：分类分组 + 覆盖态徽标；移动端横滑、PC 左栏。
- * 分类值来自服务端中文枚举：列表与过滤两侧同经 t() 映射，保证两种语言下分组一致 */
+ * 分类值来自服务端中文枚举：列表与过滤两侧同经 t() 映射，保证两种语言下分组一致。
+ * 双语（070）：清单为当前界面语言的模板版本，标题按语言取 title/titleEn */
 export default function PromptList({ items, selKey, onPick }: Props) {
   const categories = [t("识别"), t("复盘"), t("目标"), t("助手"), t("系统")];
+  const titleOf = (it: PromptItem) => (getLang() === "en" && it.titleEn ? it.titleEn : it.title);
   return (
     <div className="scrollbar-none -mx-5 mb-3 flex gap-1.5 overflow-x-auto px-5 pb-1 lg:mx-0 lg:mb-0 lg:block lg:space-y-2.5 lg:overflow-visible lg:px-0">
       {categories.map((cat) => {
@@ -31,7 +34,7 @@ export default function PromptList({ items, selKey, onPick }: Props) {
                     : "text-ink-mute hover:bg-wash hover:text-ink"
                 }`}
               >
-                {it.title}
+                {titleOf(it)}
                 {it.overridden && (
                   <span
                     title={it.enabled ? t("DB 覆盖生效中") : t("覆盖已停用（用代码默认）")}

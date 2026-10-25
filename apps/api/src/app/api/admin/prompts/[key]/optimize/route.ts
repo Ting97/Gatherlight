@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { chat, activeModel } from "@shiguangri/ai";
-import { withAdminParams, readJsonCapped } from "@/server/platform/http/route";
+import { withAdminParams, readJsonCapped, reqLang } from "@/server/platform/http/route";
 import { ApiError } from "@/server/platform/http/errors";
 import {
   assembleUserPrompt,
@@ -28,9 +28,11 @@ export const POST = withAdminParams(async (req, { user, params }) => {
     throw ApiError.notFound("未知的 prompt key");
   }
   const { hint } = (await readJsonCapped(req) as any) as { hint?: string };
-  const target = (await getPrompt(key as PromptKey)).slice(0, 30_000);
+  // 双语（070）：优化当前界面语言对应的模板版本（未覆盖 = 优化该语言默认模板）
+  const lang = reqLang(req);
+  const target = (await getPrompt(key as PromptKey, lang)).slice(0, 30_000);
   // 优化器自身也走三件套装配（3-A：prompt_optimizer 的 user 模板/注入可在后台调）
-  const optBundle = await getPromptBundle("prompt_optimizer");
+  const optBundle = await getPromptBundle("prompt_optimizer", lang);
   const contract = CONTRACT_HINTS[key as PromptKey]
     ? `【必须保留的契约约束】\n${CONTRACT_HINTS[key as PromptKey]}`
     : "【必须保留的契约约束】\n保持原文中的输出 JSON 结构、字段名、枚举值与占位符完全不变。";

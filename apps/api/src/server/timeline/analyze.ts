@@ -4,7 +4,7 @@ import {
   spaceClassifyQuestions, HybridUnavailableError, activeModel, extractJson,
   type ParseResult,
 } from "@shiguangri/ai";
-import { assembleUserPrompt, getPromptBundle } from "@/server/ai/prompts";
+import { assembleUserPrompt, getPromptBundle, type PromptLang } from "@/server/ai/prompts";
 import { ACTIVITY_NAMES, toCstWallClock } from "@shiguangri/ai";
 import {
   activityJevCriteria,
@@ -31,9 +31,9 @@ const SPACE_CONFIDENCE_THRESHOLD = 0.7;
  * 置信 ≥0.7 且 spaceId 在候选内 → 写入 entries.space_id 并让本动态的待办继承。
  * 失败静默（记 audit_logs stage='space_classify'），不影响主识别流程。
  */
-async function classifySpace(userId: string, entryId: string, rawText: string): Promise<void> {
+async function classifySpace(userId: string, entryId: string, rawText: string, lang: PromptLang = "zh"): Promise<void> {
   try {
-    const bundle = await getPromptBundle("space_classify");
+    const bundle = await getPromptBundle("space_classify", lang);
     const { rows: spaces } = await pool.query(
       `select id, name, description from goal_spaces where user_id = $1 and status = 'active' order by sort limit $2::int`,
       [userId, bundle.config.caps.spaceCount],
@@ -209,7 +209,7 @@ async function writeAudit(
  * 对一条已存在的动态做完整五域识别并落库（发布后后台执行，也被确认/重识别复用）。
  * 心情直接回写 entries；成功自写 entries.analyzed_at（失败留 null 供巡检补跑，FR-C2.4）。
  */
-export async function analyzeAndPersist(userId: string, entryId: string, rawText: string): Promise<AnalyzeOutcome> {
+export async function analyzeAndPersist(userId: string, entryId: string, rawText: string, lang: PromptLang = "zh"): Promise<AnalyzeOutcome> {
   const startedAt = Date.now();
   let engine = "rules";
   let model: string | null = null;
@@ -222,7 +222,8 @@ export async function analyzeAndPersist(userId: string, entryId: string, rawText
   let userActs: { id: string; name: string; isPreset: boolean }[] = [];
   try {
     // 输入装配（3-A）：按 DB 配置开关/参数组装 user prompt；联系人注入关闭时不取数
-    const bundle = await getPromptBundle("extract_full");
+    //（注入标签跟随界面语言——EN 模板配英文标签，避免中英混装）
+    const bundle = await getPromptBundle("extract_full", lang);
     const contactsOn = bundle.config.inject.contactList;
     const contactNames = contactsOn ? await listContactNames(userId, bundle.config.caps.contactCount) : [];
     // 分类对照：用户 activities 表（预设含改名 + 自定义分类）；空表回落代码枚举
@@ -240,11 +241,11 @@ export async function analyzeAndPersist(userId: string, entryId: string, rawText
     const financeCatNames = financeCatsOn ? await listUserFinanceCats(userId, bundle.config.caps.financeCatCount ?? 15) : [];
     const financeCats = financeCatNames.length
       ? `
-常用分类（finance.category 优先从中选取）：${financeCatNames.join("、")}`
+${lang === "en" ? `Frequent categories (prefer these values for finance.category): ${financeCatNames.join("、")}` : `常用分类（finance.category 优先从中选取）：${financeCatNames.join("、")}`}`
       : "";
     const contactList =
       contactsOn && contactNames.length
-        ? `\n已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`
+        ? `\n${lang === "en" ? `Existing contacts (align person mentions to the exact names in this list): ${contactNames.join("、")}` : `已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`}`
         : "";
     const userPrompt = await assembleUserPrompt("extract_full", bundle, {
       nowCst: toCstWallClock(new Date()),
@@ -270,12 +271,12 @@ export async function analyzeAndPersist(userId: string, entryId: string, rawText
     r =
       mode === "on" && jevEnabled()
         ? await (async () => {
-            const slimBundle = await getPromptBundle("extract_open_vocab");
+            const slimBundle = await getPromptBundle("extract_open_vocab", lang);
             const slimUserPrompt = await assembleUserPrompt("extract_open_vocab", slimBundle, {
               nowCst: toCstWallClock(new Date()),
               contactList:
                 slimBundle.config.inject.contactList && contactNames.length
-                  ? `\n已有联系人（称呼对齐到名单原文）：${contactNames.join("、")}`
+                  ? `\n${lang === "en" ? `Existing contacts (align mentions to the exact names in this list): ${contactNames.join("、")}` : `已有联系人（称呼对齐到名单原文）：${contactNames.join("、")}`}`
                   : "",
               text: rawText,
             }, { userId });
@@ -463,7 +464,7 @@ export async function analyzeAndPersist(userId: string, entryId: string, rawText
       promptTokens, completionTokens,
     });
     // 空间归属（失败静默）：有 active 空间即发起轻量分类（依据是原文本身，与是否落库产物无关）
-    void classifySpace(userId, entryId, rawText).catch(() => {});
+    void classifySpace(userId, entryId, rawText, lang).catch(() => {});
     // Jev 影子对照（3-C：JEV_MODE=shadow 时与 GLM 结果逐闭集字段比对，仅审计，零用户影响）
     void jevShadowCompare(userId, entryId, rawText, r);
     // 识别落库后按事件发生日失效复盘缓存（与 reRecognize 同口径）：这是流量最大的落库路径，

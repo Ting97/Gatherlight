@@ -1259,7 +1259,8 @@ export function restDayMessage(note?: string | null) {
 
 /** POST /api/fitness/plans/parse —— GLM 解析 + 一次修复重问；输出整数口径草稿（含动作库挂接）。
  * text 与 image 至少一项：image（佳明训练详情截图）走视觉模型 GLM_VISION_MODEL，text 作补充说明可空 */
-async function parsePlanDraft(userId: string, text: string, image?: ChatImage, opts?: XunjiNormalizeOptions) {
+async function parsePlanDraft(userId: string, text: string, image?: ChatImage, opts?: XunjiNormalizeOptions, lang?: "zh" | "en") {
+  const lg: "zh" | "en" = lang ?? "zh";
   const t = text.trim();
   if (t.length > PARSE_TEXT_MAX) throw ApiError.badRequest(`课表文本长度须为 0~${PARSE_TEXT_MAX} 字`);
   if (!t && !image) throw ApiError.badRequest("课表文本或截图至少提供一项");
@@ -1272,11 +1273,17 @@ async function parsePlanDraft(userId: string, text: string, image?: ChatImage, o
   const q = await checkAiQuota(userId);
   if (!q.allowed) throw new ApiError(402, "quota", `AI 免费额度已用完（30 天内 ${q.used}/${q.limit} 次）·升级 Pro 解锁无限解析`);
 
-  const bundle = await getPromptBundle("fitness_plan_parse");
+  const bundle = await getPromptBundle("fitness_plan_parse", lg);
   const base = await assembleUserPrompt(
     "fitness_plan_parse",
     bundle,
-    { text: t || (image ? "（见附图：佳明训练详情截图，以截图步骤为准）" : "") },
+    {
+      text:
+        t ||
+        (image
+          ? lg === "en" ? "(see attached image: Garmin workout detail screenshot; follow the steps shown in the image)" : "（见附图：佳明训练详情截图，以截图步骤为准）"
+          : ""),
+    },
   );
   const startedAt = Date.now();
   let usage = { prompt_tokens: 0, completion_tokens: 0 };

@@ -87,7 +87,7 @@ export const POST = withAuthParams(async (req, { user, params }) => {
   // ---- 组装 prompt（3-A：system/user 模板/注入配置三件套按 DB 覆盖装配） ----
   const promptKey = isAction ? "action_decompose" : "todo_decompose";
   const lang = reqLang(req);
-  const bundle = await getPromptBundle(promptKey);
+  const bundle = await getPromptBundle(promptKey, lang);
   const existingOn = bundle.config.inject.existingBlock;
   const cap = bundle.config.caps.existingCount;
   const listed = existingOn ? existingTitles.slice(0, cap) : [];
@@ -95,17 +95,18 @@ export const POST = withAuthParams(async (req, { user, params }) => {
   const profileCtxOn = bundle.config.inject.profileBlock;
   const profileBlock = profileCtxOn ? await loadProfileBlock(user.id) : null;
   const note = todo.note || (isAction ? parent?.note : null) || null;
+  const L = (zh: string, en: string) => (lang === "en" ? en : zh);
   const userPrompt = await assembleUserPrompt(promptKey, bundle, {
-    todoBlock: `${isAction ? `所属 todo：${parent?.title ?? ""}` : `todo：${todo.title}`}${note ? `\n相关描述：${note}` : ""}`,
-    spaceBlock: spaceCtxOn && space ? `所属空间：${space.name}${space.description ? `（${space.description}）` : ""}` : "",
+    todoBlock: `${isAction ? `${L("所属 todo：", "Parent todo: ")}${parent?.title ?? ""}` : `${L("todo：", "todo: ")}${todo.title}`}${note ? `\n${L("相关描述：", "Related note: ")}${note}` : ""}`,
+    spaceBlock: spaceCtxOn && space ? `${L("所属空间：", "Space: ")}${space.name}${space.description ? `（${space.description}）` : ""}` : "",
     existingBlock: listed.length
-      ? `已有行动（禁止生成语义重复项）：\n${listed.map((t) => `- ${t}`).join("\n")}`
+      ? `${L("已有行动（禁止生成语义重复项）：", "Existing actions (do not generate semantic duplicates):")}\n${listed.map((t) => `- ${t}`).join("\n")}`
       : existingOn
-        ? "已有行动：无"
+        ? L("已有行动：无", "Existing actions: none")
         : "",
-    profileBlock: profileCtxOn && profileBlock ? `用户画像（供参考）：\n${profileBlock}` : "",
-    target: isAction ? `「${todo.title}」` : "上述 todo",
-    modeSuffix: mode === "replace" ? "（重新生成：只输出新的行动清单）" : "",
+    profileBlock: profileCtxOn && profileBlock ? `${L("用户画像（供参考）：", "User profile (for reference):")}\n${profileBlock}` : "",
+    target: isAction ? `「${todo.title}」` : L("上述 todo", "the todo above"),
+    modeSuffix: mode === "replace" ? L("（重新生成：只输出新的行动清单）", "(regenerate: output only the new action list)") : "",
   }, { userId: user.id });
   const system = lang === "en" ? `${bundle.system}\n${langDirective("en")}` : bundle.system;
 
