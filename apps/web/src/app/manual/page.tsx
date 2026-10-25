@@ -33,7 +33,7 @@ const sectionsZh = (): Section[] => [
     icon: Sparkles,
     h: t("拾光是什么"),
     rows: [
-      t("AI 个人经营系统：钱 · 时间 · 人。核心玩法就一条——随口说一句话，AI 自动识别其中的日程、待办、收支、心情、饮食，分别记进对应模块；你在各模块里查看、修正、复盘。"),
+      t("AI 个人经营系统：时间 · 人际 · 财务。核心玩法就一条——随口说一句话，AI 自动识别其中的日程、待办、收支、心情、饮食，分别记进对应模块；你在各模块里查看、修正、复盘。"),
       t("网页端顶部导航：动态 / 目标 / 日程 / 人际 / 财务，点右上角头像进个人设置。"),
     ],
   },
@@ -108,7 +108,7 @@ const sectionsZh = (): Section[] => [
     h: t("小贴士"),
     rows: [
       t("1. 想到就说：「今天」「刚」「明天待会儿」这类时间词是 AI 判断日程/待办的关键。"),
-      t("2. 钱先草稿后入账：动态里说钱不会直接进账本。"),
+      t("2. 财务先草稿后入账：动态里提到的花销不会直接进账本。"),
       t("3. 待办不用填时间：手动新增只写标题即可。"),
       t("4. 搜索框支持按动态原文/日程/todo/金额/联系人检索。"),
     ],
@@ -120,7 +120,7 @@ const SECTIONS_EN: Section[] = [
     icon: Sparkles,
     h: "What is Shiguang",
     rows: [
-      "A self-hosted personal life OS: money · time · people. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
+      "A self-hosted personal life OS: time · people · finance. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
       "Top navigation on web: Feed / Goals / Schedule / People / Finance. Click your avatar at the top right for settings.",
     ],
   },
@@ -195,7 +195,7 @@ const SECTIONS_EN: Section[] = [
     h: "Tips",
     rows: [
       "1. Just say it: time words like \"today\", \"just now\", \"tomorrow\" are the key signals AI uses to place schedules and todos.",
-      "2. Money goes through a draft: amounts mentioned in moments never enter the books directly.",
+      "2. Finance goes through a draft: amounts mentioned in moments never enter the books directly.",
       "3. Todos need no time: manual entry only requires a title.",
       "4. Search covers moment text, schedule, todos, amounts and contacts.",
     ],

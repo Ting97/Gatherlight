@@ -68,7 +68,7 @@ const DOMAIN_ZH_KEY: Record<string, string> = {
   关系: "people",
 };
 const DOMAIN_LABELS_EN: Record<string, string> = {
-  schedule: "Schedule", todo: "Todo", finance: "Money", mood: "Mood", diet: "Diet", people: "People",
+  schedule: "Schedule", todo: "Todo", finance: "Finance", mood: "Mood", diet: "Diet", people: "People",
 };
 export const DOMAIN_LABELS: Record<string, string> = {
   todo: "todo",

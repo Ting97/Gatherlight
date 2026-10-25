@@ -62,7 +62,7 @@ export const EN: Record<string, string> = {
   // 分域助手元数据（chat-core scopeMetaZh；值与 SCOPE_META_EN 一致）
   "拾光助手": "Shiguang Assistant",
   "懂你数据的私人经营助手": "A private assistant that knows your data",
-  "问我任何关于你的时间、金钱、人际与目标的问题": "Ask me anything about your time, money, people and goals",
+  "问我任何关于你的时间、财务、人际与目标的问题": "Ask me anything about your time, finance, people and goals",
   "这周花了多少钱？花在哪了？": "What did I spend this week? On what?",
   "最近在忙什么？时间都去哪了": "What have I been busy with? Where did my time go",
   "有什么该联系的人了吗": "Anyone I should reach out to?",
@@ -118,7 +118,7 @@ export const EN: Record<string, string> = {
   "拾光 · 使用手册": "Shiguang · User Guide",
   "随口说一句话，AI 帮你记进四本账": "Say one sentence — AI files it into your life books",
   "拾光是什么": "What is Shiguang",
-  "AI 个人经营系统：钱 · 时间 · 人。核心玩法就一条——随口说一句话，AI 自动识别其中的日程、待办、收支、心情、饮食，分别记进对应模块；你在各模块里查看、修正、复盘。": "A self-hosted personal life OS: money · time · people. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
+  "AI 个人经营系统：时间 · 人际 · 财务。核心玩法就一条——随口说一句话，AI 自动识别其中的日程、待办、收支、心情、饮食，分别记进对应模块；你在各模块里查看、修正、复盘。": "A self-hosted personal life OS: time · people · finance. The core loop is one thing — say a single sentence, and AI extracts the schedule, todos, transactions, mood and diet hidden inside it, filing each into its module. You then browse, correct and review in each module.",
   "网页端顶部导航：动态 / 目标 / 日程 / 人际 / 财务，点右上角头像进个人设置。": "Top navigation on web: Feed / Goals / Schedule / People / Finance. Click your avatar at the top right for settings.",
   "怎么记录一句话": "How to capture a sentence",
   "首页顶部输入框随口写一句（如「刚跑完步40分钟，心情不错」「明天下午三点看牙」「打车花了32块」），点发布或按 Enter（Shift+Enter 换行）。": "Type a casual line in the composer at the top of the home page (e.g. \"Morning run 40 minutes, feeling great\", \"Dentist tomorrow at 3pm\", \"Taxi cost 32 yuan\"), then hit Post or Enter (Shift+Enter for a new line).",
@@ -144,7 +144,7 @@ export const EN: Record<string, string> = {
   "个人设置：改昵称、改密码、主题切换（深色/浅色/跟随系统）、导出数据（JSON / Markdown）、全端登出。": "Settings: change nickname or password, theme (dark/light/system), data export (JSON / Markdown), sign out everywhere.",
   "小贴士": "Tips",
   "1. 想到就说：「今天」「刚」「明天待会儿」这类时间词是 AI 判断日程/待办的关键。": "1. Just say it: time words like \"today\", \"just now\", \"tomorrow\" are the key signals AI uses to place schedules and todos.",
-  "2. 钱先草稿后入账：动态里说钱不会直接进账本。": "2. Money goes through a draft: amounts mentioned in moments never enter the books directly.",
+  "2. 财务先草稿后入账：动态里提到的花销不会直接进账本。": "2. Money goes through a draft: amounts mentioned in moments never enter the books directly.",
   "3. 待办不用填时间：手动新增只写标题即可。": "3. Todos need no time: manual entry only requires a title.",
   "4. 搜索框支持按动态原文/日程/todo/金额/联系人检索。": "4. Search covers moment text, schedule, todos, amounts and contacts.",
 };

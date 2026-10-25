@@ -315,7 +315,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="mt-6 text-center text-badge text-ink-faint">{t("个人经营系统 · 钱 · 时间 · 人")}</p>
+        <p className="mt-6 text-center text-badge text-ink-faint">{t("个人经营系统 · 时间 · 人际 · 财务")}</p>
       </div>
     </main>
   );

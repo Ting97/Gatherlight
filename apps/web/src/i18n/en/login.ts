@@ -2,7 +2,7 @@
 export const EN: Record<string, string> = {
   "拾光": "Shiguang",
   "拾起光阴，记录今日": "Capture your moments, organize your life",
-  "个人经营系统 · 钱 · 时间 · 人": "Personal OS · Money · Time · People",
+  "个人经营系统 · 时间 · 人际 · 财务": "Personal OS · Time · People · Finance",
   "注册账号": "Create account",
   "登录后继续": "Sign in to continue",
   "密码登录": "Password",
