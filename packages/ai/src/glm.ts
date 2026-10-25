@@ -124,6 +124,9 @@ function userContentOf(opts: ChatOptions): string | MultimodalPart[] {
 /** GLM 私有扩展（thinking/reasoning_effort/max_tokens 提升）按目标模型计算：
  * 只发给智谱端点（换 OpenAI 兼容端点会报未知字段）；legacy/sdk 两传输共用，保证降级模型不继承主模型的 5.x 扩展 */
 function glmExtensions(m: string, base: string, opts: ChatOptions): Record<string, unknown> {
+  // Nebius Token Factory / Nemotron-3：思考模型默认开思考（reasoning 吃 max_tokens 且 content 可为空）——
+  // 解析与助手任务关思考（OpenAI 风格参数，Token Factory 实测有效）
+  if (base.includes("tokenfactory.nebius.com")) return { reasoning_effort: "none" };
   if (!base.includes("bigmodel.cn")) return {};
   if (/glm-5\./i.test(m)) {
     // GLM-5.3 系列始终思考：不支持 thinking.type=disabled（报 1210）。
@@ -231,7 +234,8 @@ export async function chat(opts: ChatOptions): Promise<string> {
         const content = String(json.choices?.[0]?.message?.content ?? "");
         if (content) return content;
         // 思考模型兜底：max_tokens 被思考耗尽时 content 可能为空，思考文本里通常已有答案 JSON
-        return String(json.choices?.[0]?.message?.reasoning_content ?? "");
+        //（GLM 字段 reasoning_content；Nemotron 为 reasoning）
+        return String(json.choices?.[0]?.message?.reasoning_content ?? json.choices?.[0]?.message?.reasoning ?? "");
       }
       const errBody = (await res.text()).slice(0, 300);
       throw new GlmError(classifyGlmFailure(res.status, errBody), `GLM(${m}) HTTP ${res.status}: ${errBody}`);
