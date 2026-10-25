@@ -8,6 +8,7 @@ import { CONTACT_GROUPS, GROUP_EMOJI, IMPORTANCE_TIERS, importanceLabel } from "
 import { lunarDayLabel, lunarMonthLabel } from "@/lib/lunar";
 import { t as tr, tpl, getLang } from "@/i18n"; // t as tr：IMPORTANCE_TIERS.map((t) => 局部参数遮蔽 t
 import { contactGroupLabel } from "@shiguangri/shared/i18n-enum";
+import DatePicker from "@/components/date-picker";
 
 export interface ContactDraft {
   id: string;
@@ -129,11 +130,10 @@ export default function ContactFormModal({
                 <option key={g} value={g}>{GROUP_EMOJI[g]} {contactGroupLabel(g, getLang())}</option>
               ))}
             </select>
-            <input
-              type="date"
+            <DatePicker
               value={anniversary ?? ""}
-              onChange={(e) => setAnniversary(e.target.value)}
-              title={tr("纪念日（如：结婚纪念日）")}
+              onChange={setAnniversary}
+              ariaLabel={tr("纪念日（如：结婚纪念日）")}
               className="flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500"
             />
             <span className="flex items-center whitespace-nowrap text-micro text-ink-dim">{tr("纪念日")}</span>
@@ -158,11 +158,10 @@ export default function ContactFormModal({
                 ))}
               </div>
               {bdayCal === "solar" ? (
-                <input
-                  type="date"
+                <DatePicker
                   value={birthday ?? ""}
-                  onChange={(e) => setBirthday(e.target.value)}
-                  title={tr("生日（阳历）")}
+                  onChange={setBirthday}
+                  ariaLabel={tr("生日（阳历）")}
                   className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500"
                 />
               ) : (

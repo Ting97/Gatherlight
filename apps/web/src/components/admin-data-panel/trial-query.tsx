@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { api } from "@/shared/api";
 import { t as tr, tpl } from "@/i18n"; // 局部变量 t（fmtBjDay/cell 内）遮蔽默认名，此处用 tr
 import type { CatalogPayload, DatasetSpec, TrialResult } from "./types";
+import DatePicker from "@/components/date-picker";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 /** 北京口径日期（本地"今天"在海外设备会差一天，与数据面的北京日界错位） */
@@ -85,9 +86,9 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
         </select>
         {ds?.timeCol && (
           <>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none focus:border-sky-500" />
+            <DatePicker value={from} onChange={setFrom} className="rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none focus:border-sky-500" />
             <span className="text-badge text-ink-faint">→</span>
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none focus:border-sky-500" />
+            <DatePicker value={to} onChange={setTo} className="rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none focus:border-sky-500" />
           </>
         )}
         {ds?.categoryCol && (

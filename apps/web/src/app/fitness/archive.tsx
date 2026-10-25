@@ -12,6 +12,7 @@ import { toast } from "@/shared/ui/toast";
 import { t, tpl, getLang } from "@/i18n";
 import { moduleLabel } from "@shiguangri/shared/i18n-enum";
 import type { FitnessExercise, FitnessGoal, FitnessModule, FitnessProfile } from "@shiguangri/shared/fitness-types";
+import DatePicker from "@/components/date-picker";
 
 function GoalCard({
   goal,
@@ -111,11 +112,10 @@ function GoalCard({
             </label>
             <label className="block text-xs text-ink-mute">
               {t("目标日期")}
-              <input
-                type="date"
+              <DatePicker
                 className="input-glow mt-1 w-full"
                 value={targetDate}
-                onChange={(e) => setTargetDate(e.target.value)}
+                onChange={setTargetDate}
               />
             </label>
             <div className="flex items-center justify-between gap-2">

@@ -38,6 +38,7 @@ import {
   type RunPlanContent,
   type StrengthPlanContent,
 } from "./kit";
+import DatePicker from "@/components/date-picker";
 
 interface PageData {
   modules: FitnessModule[];
@@ -306,13 +307,11 @@ function SleepCard({
           <div className="space-y-3">
             <label className="block text-xs text-ink-mute">
               {t("日期")}
-              <input
+              <DatePicker
                 className="input-glow w-full text-sm"
-                type="date"
                 value={date}
                 max={today}
-                onChange={(e) => {
-                  const d = e.target.value;
+                onChange={(d) => {
                   setDate(d);
                   const existing = sleep.find((r) => r.log_date === d);
                   setHours(existing ? String(existing.hours) : "");

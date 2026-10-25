@@ -171,4 +171,7 @@ export const EN: Record<string, string> = {
   "已加入": "Added",
   "今天不再展示": "Hide for today",
   "加入今日 todo（跨零点自动失效）": "Add to today's todos (auto-expires after midnight)",
+  "选择日期": "Pick a date",
+  "清空日期": "Clear date",
+  "{d} 为今天": "{d} is today",
 };

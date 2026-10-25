@@ -20,6 +20,7 @@ import { toast } from "@/shared/ui/toast";
 import Skeleton from "@/components/skeleton";
 import { t, tpl } from "@/i18n";
 import { spaceName, spaceDesc } from "@/lib/space-i18n";
+import DatePicker from "@/components/date-picker";
 
 /**
  * 目标空间列表（REQ-001 R3）：宏大目标（≥1 年）容器。
@@ -450,20 +451,18 @@ export default function SpacesPage() {
               <div className="mt-3 flex gap-2">
                 <label className="flex flex-1 flex-col text-micro text-ink-faint">
                   {t("开始日期")}
-                  <input
-                    type="date"
+                  <DatePicker
                     value={editing.startedAt}
-                    onChange={(e) => setEditing({ ...editing, startedAt: e.target.value })}
-                    className="mt-1 rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
+                    onChange={(v) => setEditing({ ...editing, startedAt: v })}
+                    className="mt-1 block rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
                   />
                 </label>
                 <label className="flex flex-1 flex-col text-micro text-ink-faint">
                   {t("目标日期")}
-                  <input
-                    type="date"
+                  <DatePicker
                     value={editing.targetDate}
-                    onChange={(e) => setEditing({ ...editing, targetDate: e.target.value })}
-                    className="mt-1 rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
+                    onChange={(v) => setEditing({ ...editing, targetDate: v })}
+                    className="mt-1 block rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
                   />
                 </label>
               </div>

@@ -9,6 +9,7 @@ import type { Activity, FeedMoment, Space } from "@/lib/types";
 import { bjToday } from "@/lib/date";
 import { t, tpl } from "@/i18n";
 import { spaceName } from "@/lib/space-i18n";
+import DatePicker from "@/components/date-picker";
 
 interface Props {
   moments: FeedMoment[];
@@ -62,13 +63,11 @@ export default function FeedSection({
             <Sprout size={14} className="text-success" aria-hidden /> {t("我的动态")}
           </span>
           {/* 日期跳转（2026-10-04）：选某天 → 列表定位到那天的动态（从当天最后一条往前） */}
-          <input
-            type="date"
+          <DatePicker
             value={anchorDate ?? ""}
             max={mounted ? bjToday() : undefined}
-            onChange={(e) => onJumpDate(e.target.value || null)}
-            title={t("跳到某一天：从那天的动态往前回看（清除 = 回到最新）")}
-            aria-label={t("选择日期跳转动态")}
+            onChange={(v) => onJumpDate(v || null)}
+            ariaLabel={t("选择日期跳转动态")}
             className="w-[8.5rem] rounded-lg border border-line-soft bg-surface/60 px-2 py-0.5 text-xs font-normal text-ink-soft outline-none focus:border-sky-500/60"
           />
           {" "}

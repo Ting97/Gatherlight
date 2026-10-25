@@ -14,6 +14,7 @@ import { bjDate, bjToday } from "./kit";
 import { t as tr, tpl } from "@/i18n";
 import type { Msg, Pos } from "./types";
 import { spaceName, spaceDesc } from "@/lib/space-i18n";
+import DatePicker from "@/components/date-picker";
 
 /** 阶段目标区（REQ-019 FR-B1）：进行中列表 + 快速新建 + 历史弹层——取代 todo/行动完成率 */
 function MilestoneSection({ id, color, setSpace }: { id: string; color: string; setSpace: Dispatch<SetStateAction<Space | null>> }) {
@@ -134,12 +135,11 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
             maxLength={80}
             className="min-w-0 flex-1 rounded-lg border border-line-soft bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
           />
-          <input
-            type="date"
+          <DatePicker
             value={draftDate}
-            onChange={(e) => setDraftDate(e.target.value)}
+            onChange={setDraftDate}
             className="rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-            title={tr("目标日期（可空）")}
+            ariaLabel={tr("目标日期（可空）")}
           />
           <button className="btn-primary rounded-lg px-2.5 py-1 text-xs disabled:opacity-50" onClick={create} disabled={busy || !draft.trim()}>
             {tr("添加")}
@@ -171,12 +171,11 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                     maxLength={80}
                     className="min-w-0 flex-1 rounded-lg border border-line-soft bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
                   />
-                  <input
-                    type="date"
+                  <DatePicker
                     value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
+                    onChange={setEditDate}
                     className="shrink-0 rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-                    title={tr("目标日期（可空）")}
+                    ariaLabel={tr("目标日期（可空）")}
                   />
                   <button
                     onClick={() => saveEdit(m.id)}
@@ -255,12 +254,11 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                       maxLength={80}
                       className="min-w-0 flex-1 rounded-lg border border-line-soft bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
                     />
-                    <input
-                      type="date"
+                    <DatePicker
                       value={editDate}
-                      onChange={(e) => setEditDate(e.target.value)}
+                      onChange={setEditDate}
                       className="rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-                      title={tr("目标日期（可空）")}
+                      ariaLabel={tr("目标日期（可空）")}
                     />
                     <button
                       onClick={() => saveEdit(m.id)}
@@ -371,11 +369,9 @@ export default function SpaceHeaderCard(opts: {
             {space.started_at && <span>{tpl("{d} 开始", { d: bjDate(space.started_at) })}</span>}
             {dateEdit ? (
               <Dismissable onClose={() => setDateEdit(false)} className="inline-flex items-center gap-1.5">
-                <input
-                  type="date"
-                  autoFocus
+                <DatePicker
                   value={dateDraft}
-                  onChange={(e) => setDateDraft(e.target.value)}
+                  onChange={setDateDraft}
                   className="rounded-lg border border-sky-500/50 bg-elevated px-1.5 py-0.5 text-micro text-ink"
                 />
                 <button
