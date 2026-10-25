@@ -10,6 +10,7 @@ import { RowActionMenu, useRowMenu } from "./row-action-menu";
 import { useHoverCapable } from "./use-hover-capable";
 import { isoToLocalInput, localInputToIso, todoTimeLabel } from "./kit";
 import type { DelFn, RunFn } from "./types";
+import { t } from "@/i18n";
 
 /** todo 行内编辑态 */
 interface EditTodoState {
@@ -44,21 +45,21 @@ export function TodoRows({ m, activities, run, del, delArmed }: TodoRowsProps) {
               value={editTodo.title}
               onChange={(e) => setEditTodo({ ...editTodo, title: e.target.value })}
               className="min-w-28 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
-              placeholder="标题"
+              placeholder={t("标题")}
             />
             <input
               type="datetime-local"
               value={editTodo.start}
               onChange={(e) => setEditTodo({ ...editTodo, start: e.target.value })}
               className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
-              title="开始时间（可清空）"
+              title={t("开始时间（可清空）")}
             />
             <input
               type="datetime-local"
               value={editTodo.due}
               onChange={(e) => setEditTodo({ ...editTodo, due: e.target.value })}
               className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
-              title="到期时间"
+              title={t("到期时间")}
             />
             <select
               value={editTodo.activityId}
@@ -70,11 +71,11 @@ export function TodoRows({ m, activities, run, del, delArmed }: TodoRowsProps) {
               ))}
             </select>
             <span className="flex gap-1">
-              <button onClick={() => setEditTodo(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
+              <button onClick={() => setEditTodo(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">{t("取消")}</button>
               <button
                 onClick={() =>
                   run(async () => {
-                    if (!editTodo.title.trim()) throw new Error("标题不能为空");
+                    if (!editTodo.title.trim()) throw new Error(t("标题不能为空"));
                     await api(`/api/todos/${td.id}`, "PATCH", {
                       title: editTodo.title.trim(),
                       startAt: localInputToIso(editTodo.start),
@@ -82,7 +83,7 @@ export function TodoRows({ m, activities, run, del, delArmed }: TodoRowsProps) {
                       activityId: editTodo.activityId,
                     });
                     setEditTodo(null);
-                    return "💾 todo 已更新";
+                    return t("💾 todo 已更新");
                   })
                 }
                 className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"
@@ -115,9 +116,9 @@ export function TodoRows({ m, activities, run, del, delArmed }: TodoRowsProps) {
             <TagChip icon={<ClipboardList size={12} />} label="todo" tone="sky" size="sm" className="shrink-0" />
             <span className="truncate">{td.title}</span>
             <span className="shrink-0 text-ink-mute">
-              {todoTimeLabel(td.startAt, td.dueAt) ?? "未定时间"}
+              {todoTimeLabel(td.startAt, td.dueAt) ?? t("未定时间")}
             </span>
-            {td.status === "done" && <span className="shrink-0 text-success">已完成</span>}
+            {td.status === "done" && <span className="shrink-0 text-success">{t("已完成")}</span>}
             <RowAction
               onEdit={() =>
                 setEditTodo({

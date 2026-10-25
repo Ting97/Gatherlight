@@ -4,6 +4,7 @@ import Reminders from "@/components/reminders";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import type { ReminderItem } from "@/lib/reminders";
+import { tpl } from "@/i18n";
 
 /** W12 提醒横幅：生日/纪念日/到期 todo（可一键加入今日） */
 export default function RemindersBanner({
@@ -24,7 +25,7 @@ export default function RemindersBanner({
           await load();
           return true;
         } catch {
-          toast(`加入今日失败（${label.slice(0, 20)}…）`, "err");
+          toast(tpl("加入今日失败（{label}…）", { label: label.slice(0, 20) }), "err");
           return false;
         }
       }}

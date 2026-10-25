@@ -8,6 +8,7 @@ import { toast } from "@/shared/ui/toast";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import MarkdownView from "@/components/markdown-view";
 import { Dismissable } from "@/components/dismissable";
+import { t, tpl, useLang } from "@/i18n";
 
 /**
  * 拾光助手对话核心（REQ-015）：/assistant 整页与首页悬浮 Dock 共用一套状态与消息流。
@@ -63,7 +64,8 @@ interface ProposalItem {
 }
 
 /** 等待期状态文案轮换（约 2.4s 一轮，覆盖典型 GLM+查询耗时节奏） */
-const THINKING_STEPS = ["正在理解你的问题…", "正在查询你的数据…", "正在整理回答…"];
+const THINKING_STEPS_ZH = ["正在理解你的问题…", "正在查询你的数据…", "正在整理回答…"];
+const THINKING_STEPS_EN = ["Understanding your question…", "Querying your data…", "Composing the answer…"];
 
 /** 健身计划确认卡：模块/日期/动作明细（整数口径换算展示）+ 依据 + 保存/放弃 */
 function ProposalCard({
@@ -93,12 +95,12 @@ function ProposalCard({
             🏋️ 计划确认卡
           </span>
           <span className="text-micro text-ink-faint">
-            {item.payload.moduleCode === "run" ? "跑步" : "力量"} · {item.payload.planDate}
+            {item.payload.moduleCode === "run" ? t("跑步") : t("力量")} · {item.payload.planDate}
           </span>
         </div>
         <p className="mb-1.5 text-sm font-medium">
           {c.title}
-          {c.totalDistanceM ? <span className="ml-2 text-xs text-ink-mute">{km(c.totalDistanceM)}{c.durationMin ? ` / ${c.durationMin} 分钟` : ""}</span> : null}
+          {c.totalDistanceM ? <span className="ml-2 text-xs text-ink-mute">{km(c.totalDistanceM)}{c.durationMin ? tpl(" / {n} 分钟", { n: c.durationMin }) : ""}</span> : null}
         </p>
         <div className="space-y-0.5 text-xs text-ink-mute">
           {isRun
@@ -131,7 +133,7 @@ function ProposalCard({
             放弃
           </button>
           <button className="btn-primary px-4 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => onResolve("accept", { syncXunji })}>
-            {busy ? "处理中…" : "保存计划并联动今日行动"}
+            {busy ? t("处理中…") : t("保存计划并联动今日行动")}
           </button>
         </div>
       </div>
@@ -199,6 +201,64 @@ export const SCOPE_META: Record<ChatScope, { title: string; tagline: string; doc
   },
 };
 
+
+export const SCOPE_META_EN: Record<ChatScope, typeof SCOPE_META[ChatScope]> = {
+  global: {
+    title: "Shiguang Assistant",
+    tagline: "A private assistant that knows your data",
+    dockLabel: "Assistant",
+    greeting: "Ask me anything about your time, money, people and goals",
+    quick: ["What did I spend this week? On what?", "What have I been busy with? Where did my time go", "Anyone I should reach out to?", "What actions do I have today", "Review yesterday's workout and plan tomorrow's strength session"],
+    placeholder: "Ask your data, e.g. \"How much did I spend on gifts last month?\"",
+    placeholderShort: "Ask your data",
+  },
+  goal: {
+    title: "Goals Butler",
+    tagline: "Spaces · milestones · action progress",
+    dockLabel: "Goals",
+    greeting: "Ask about your goal spaces, milestones and action progress",
+    quick: ["Which space is closest to its deadline?", "How is the exam-prep space going?", "Summarize milestones across my spaces", "Which todos are unfinished today?"],
+    placeholder: "e.g. \"How is my exam space going?\" (Ctrl+Enter to send)",
+    placeholderShort: "e.g. \"exam space progress?\"",
+  },
+  time: {
+    title: "Schedule Butler",
+    tagline: "Time blocks · planning · review",
+    dockLabel: "Schedule",
+    greeting: "Ask about your schedule and where your time goes",
+    quick: ["What's left today?", "Where did this week's time go?", "Am I free on Saturday?", "How has my sleep been?"],
+    placeholder: "e.g. \"Where did my time go this week?\" (Ctrl+Enter to send)",
+    placeholderShort: "e.g. \"this week's time?\"",
+  },
+  people: {
+    title: "People Butler",
+    tagline: "Contacts · interactions · key dates",
+    dockLabel: "People",
+    greeting: "Ask about your contacts, interactions and important dates",
+    quick: ["Anyone I should reach out to?", "Who did I interact with most lately?", "Whose birthdays are coming up?", "How long since I contacted my boss?"],
+    placeholder: "e.g. \"Who should I catch up with?\" (Ctrl+Enter to send)",
+    placeholderShort: "e.g. \"who to contact?\"",
+  },
+  finance: {
+    title: "Finance Butler",
+    tagline: "Income & expense · budget · review",
+    dockLabel: "Finance",
+    greeting: "Ask about your income, expenses, budget and reviews",
+    quick: ["How much did I spend this month?", "Which category is growing fastest?", "How much budget is left?", "How is this month's cash flow?"],
+    placeholder: "e.g. \"How much did I spend on food this month?\" (Ctrl+Enter to send)",
+    placeholderShort: "e.g. \"food spend this month?\"",
+  },
+  fitness: {
+    title: "Fitness Coach",
+    tagline: "Plans · check-ins · body metrics · Xunji",
+    dockLabel: "Coach",
+    greeting: "Ask about training plans, workout reviews and body data",
+    quick: ["Review yesterday's training", "How should I schedule strength tomorrow?", "My weight/waist trend", "What did I train today on Xunji?"],
+    placeholder: "e.g. \"What should I train tomorrow?\" (Ctrl+Enter to send)",
+    placeholderShort: "e.g. \"tomorrow's workout?\"",
+  },
+};
+
 export default function AssistantChat({
   variant,
   onMinimize,
@@ -211,7 +271,9 @@ export default function AssistantChat({
   scope?: ChatScope;
 }) {
   const isDock = variant === "dock";
-  const meta = SCOPE_META[scope];
+  const { lang } = useLang();
+  const THINKING_STEPS = lang === "en" ? THINKING_STEPS_EN : THINKING_STEPS_ZH;
+  const meta = (lang === "en" ? SCOPE_META_EN : SCOPE_META)[scope];
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MsgItem[]>([]);
@@ -364,7 +426,7 @@ export default function AssistantChat({
       await api(`/api/chat/${id}`, "DELETE");
       setConversations((list) => list.filter((c) => c.id !== id));
       if (activeId === id) newConversation();
-      toast("已删除会话");
+      toast(t("已删除会话"));
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
     }
@@ -420,7 +482,7 @@ export default function AssistantChat({
 
   const quotaText = quota
     ? quota.limit === null
-      ? "Pro · 不限次数"
+      ? t("Pro · 不限次数")
       : `今日 ${quota.usedToday}/${quota.limit} 次`
     : "";
 
@@ -439,10 +501,10 @@ export default function AssistantChat({
           originConversationId: activeId ?? null,
           syncXunji: opts?.syncXunji ?? false,
         });
-        toast(`✅ 计划已保存${saved.syncedActions ? `，联动 ${saved.syncedActions} 条今日行动` : ""}，可在健身页查看`);
-        if (saved.xunjiWarning) toast(`训记同步未成功：${saved.xunjiWarning}`, "err");
+        toast(tpl("✅ 计划已保存{extra}，可在健身页查看", { extra: saved.syncedActions ? tpl("，联动 {n} 条今日行动", { n: saved.syncedActions }) : "" }));
+        if (saved.xunjiWarning) toast(tpl("训记同步未成功：{msg}", { msg: saved.xunjiWarning }), "err");
       } else {
-        toast("已放弃该计划");
+        toast(t("已放弃该计划"));
       }
       await api(`/api/chat/proposals/${item.id}`, "POST", { action });
       setProposals((ps) =>
@@ -468,8 +530,8 @@ export default function AssistantChat({
             className="flex w-full items-center gap-2 rounded-xl border border-line-soft bg-surface px-3.5 py-2.5 text-left text-xs"
           >
             <MessageSquare size={13} className="shrink-0 text-ink-faint" aria-hidden />
-            <span className="min-w-0 flex-1 truncate font-medium">{activeTitle ?? "新对话"}</span>
-            <span className="shrink-0 text-micro text-ink-faint">{conversations.length} 个会话</span>
+            <span className="min-w-0 flex-1 truncate font-medium">{activeTitle ?? t("新对话")}</span>
+            <span className="shrink-0 text-micro text-ink-faint">{tpl("{n} 个会话", { n: conversations.length })}</span>
             <ChevronDown size={14} className={`shrink-0 text-ink-faint transition ${switcherOpen ? "rotate-180" : ""}`} aria-hidden />
           </button>
           {switcherOpen && (
@@ -501,7 +563,7 @@ export default function AssistantChat({
                   </button>
                   <button
                     onClick={() => removeConversation(c.id)}
-                    aria-label="删除会话"
+                    aria-label={t("删除会话")}
                     className={`shrink-0 rounded p-1.5 transition ${
                       arm.armedId === c.id ? "text-rose-400" : "text-ink-faint group-hover:text-rose-400"
                     }`}
@@ -510,7 +572,7 @@ export default function AssistantChat({
                   </button>
                 </div>
               ))}
-              {!conversations.length && <p className="px-3.5 py-3 text-xs text-ink-faint">还没有会话，发第一条消息开始</p>}
+              {!conversations.length && <p className="px-3.5 py-3 text-xs text-ink-faint">{t("还没有会话，发第一条消息开始")}</p>}
             </Dismissable>
           )}
         </div>
@@ -539,7 +601,7 @@ export default function AssistantChat({
                 </button>
                 <button
                   onClick={() => removeConversation(c.id)}
-                  aria-label="删除会话"
+                  aria-label={t("删除会话")}
                   className={`shrink-0 rounded p-0.5 transition ${
                     arm.armedId === c.id ? "text-rose-400" : "text-ink-faint opacity-0 group-hover:opacity-100 hover:text-rose-400"
                   }`}
@@ -569,16 +631,16 @@ export default function AssistantChat({
             <div className={quotaText ? "flex items-center gap-0.5" : "ml-auto flex items-center gap-0.5"}>
               <button
                 onClick={newConversation}
-                aria-label="新对话"
-                title="新对话"
+                aria-label={t("新对话")}
+                title={t("新对话")}
                 className="rounded-lg p-1.5 text-ink-mute transition hover:bg-wash hover:text-ink"
               >
                 <Plus size={15} aria-hidden />
               </button>
               <Link
                 href={scope === "global" ? "/assistant" : `/assistant?scope=${scope}`}
-                aria-label="放大到整页"
-                title="放大到整页（含历史会话）"
+                aria-label={t("放大到整页")}
+                title={t("放大到整页（含历史会话）")}
                 className="rounded-lg p-1.5 text-ink-mute transition hover:bg-wash hover:text-ink"
               >
                 <Maximize2 size={14} aria-hidden />
@@ -586,8 +648,8 @@ export default function AssistantChat({
               {onMinimize && (
                 <button
                   onClick={onMinimize}
-                  aria-label="化小"
-                  title="化小"
+                  aria-label={t("化小")}
+                  title={t("化小")}
                   className="rounded-lg p-1.5 text-ink-mute transition hover:bg-wash hover:text-ink"
                 >
                   <Minus size={15} aria-hidden />
@@ -605,19 +667,19 @@ export default function AssistantChat({
                 disabled={loadingMore}
                 className="rounded-full border border-line-soft bg-surface px-3 py-1 text-xs text-ink-mute transition hover:border-sky-500/50 hover:text-accent disabled:opacity-50"
               >
-                {loadingMore ? "加载中…" : "↑ 查看更早对话"}
+                {loadingMore ? t("加载中…") : t("↑ 查看更早对话")}
               </button>
             </div>
           )}
           {convLoading ? (
-            <p className="py-8 text-center text-xs text-ink-faint">加载会话…</p>
+            <p className="py-8 text-center text-xs text-ink-faint">{t("加载会话…")}</p>
           ) : messages.length === 0 && !sending ? (
             <div className={isDock ? "py-4 text-center" : "py-8 text-center"}>
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/15">
                 <Sparkles size={22} className="text-ai" aria-hidden />
               </div>
               <p className="mb-1 text-sm font-medium">{meta.greeting}</p>
-              <p className="mb-5 text-xs text-ink-dim">我会先查你的真实数据再回答，不编数字</p>
+              <p className="mb-5 text-xs text-ink-dim">{t("我会先查你的真实数据再回答，不编数字")}</p>
               <div className="mx-auto flex max-w-md flex-wrap justify-center gap-2">
                 {meta.quick.map((q) => (
                   <button
@@ -650,7 +712,7 @@ export default function AssistantChat({
                               className="rounded-full bg-violet-500/10 px-2 py-0.5 text-micro text-ai"
                               title={`工具 ${tc.name}`}
                             >
-                              已查询：{tc.label ?? tc.name}
+                              {t("已查询：")}{tc.label ? t(tc.label) : tc.name}
                             </span>
                           ))}
                         </div>
@@ -678,7 +740,7 @@ export default function AssistantChat({
                   ) : (
                     <div key={p.id} className="flex justify-start">
                       <span className="rounded-full bg-wash px-2.5 py-1 text-micro text-ink-faint">
-                        {p.payload.content?.title ?? "计划"} · {p.status === "accepted" ? "已保存" : "已放弃"}
+                        {p.payload.content?.title ?? t("计划")} · {p.status === "accepted" ? t("已保存") : t("已放弃")}
                       </span>
                     </div>
                   ),
@@ -709,13 +771,13 @@ export default function AssistantChat({
             <button
               onClick={() => send()}
               disabled={sending || !input.trim()}
-              aria-label="发送"
+              aria-label={t("发送")}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-md shadow-sky-500/25 transition hover:opacity-90 disabled:opacity-40"
             >
               <Send size={16} aria-hidden />
             </button>
           </div>
-          <p className="mt-1.5 text-micro text-ink-faint">Ctrl+Enter 发送 · 回答基于工具查询的真实数据 · 想记账去首页发一句话动态</p>
+          <p className="mt-1.5 text-micro text-ink-faint">{t("Ctrl+Enter 发送 · 回答基于工具查询的真实数据 · 想记账去首页发一句话动态")}</p>
         </footer>
       </section>
     </>

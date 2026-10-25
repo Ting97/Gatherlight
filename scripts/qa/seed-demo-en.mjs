@@ -34,9 +34,6 @@ const j = async (method, path, body) => {
 };
 
 const NOW = new Date();
-const Y = NOW.getUTCFullYear();
-const M = NOW.getUTCMonth() + 1;
-const month = `${Y}-${String(M).padStart(2, "0")}`;
 const dayYmd = (offset) => {
   const d = new Date(NOW.getTime() + offset * 86_400_000);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;

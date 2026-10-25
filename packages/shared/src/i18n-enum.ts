@@ -7,8 +7,6 @@
  */
 export type I18nLang = "zh" | "en";
 
-const ZH = (v: string) => v;
-
 /** 交易分类（TX_CATEGORIES 中文值 → 英文展示） */
 const TX_CAT_EN: Record<string, string> = {
   餐饮: "Food",

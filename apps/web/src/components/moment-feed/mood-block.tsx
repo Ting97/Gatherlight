@@ -6,6 +6,7 @@ import { moodEmoji, moodTone } from "@/lib/mood";
 import { api } from "@/shared/api";
 import { COMMON_MOODS } from "./kit";
 import type { RunFn } from "./types";
+import { t } from "@/i18n";
 
 interface MoodBlockProps {
   m: FeedMoment;
@@ -46,7 +47,7 @@ export function MoodBlock({ m, run }: MoodBlockProps) {
               // 同上：锁占用时不关选择器
               run(async () => {
                 await api(`/api/feed/${m.id}`, "PATCH", { mood: null });
-                return "已清除心情";
+                return t("已清除心情");
               }).then((ok) => {
                 if (ok) setMoodPicker(false);
               })

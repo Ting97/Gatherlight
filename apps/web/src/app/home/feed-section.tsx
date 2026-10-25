@@ -7,6 +7,7 @@ import MomentFeed from "@/components/moment-feed";
 import { FilterChip } from "@/components/tag-chip";
 import type { Activity, FeedMoment, Space } from "@/lib/types";
 import { bjToday } from "@/lib/date";
+import { t, tpl } from "@/i18n";
 
 interface Props {
   moments: FeedMoment[];
@@ -57,7 +58,7 @@ export default function FeedSection({
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
           {/* shrink-0：窄屏（375 档）标题不再被日期输入挤压换行成「我的动/态」 */}
           <span className="flex shrink-0 items-center gap-2">
-            <Sprout size={14} className="text-success" aria-hidden /> 我的动态
+            <Sprout size={14} className="text-success" aria-hidden /> {t("我的动态")}
           </span>
           {/* 日期跳转（2026-10-04）：选某天 → 列表定位到那天的动态（从当天最后一条往前） */}
           <input
@@ -65,8 +66,8 @@ export default function FeedSection({
             value={anchorDate ?? ""}
             max={mounted ? bjToday() : undefined}
             onChange={(e) => onJumpDate(e.target.value || null)}
-            title="跳到某一天：从那天的动态往前回看（清除 = 回到最新）"
-            aria-label="选择日期跳转动态"
+            title={t("跳到某一天：从那天的动态往前回看（清除 = 回到最新）")}
+            aria-label={t("选择日期跳转动态")}
             className="w-[8.5rem] rounded-lg border border-line-soft bg-surface/60 px-2 py-0.5 text-xs font-normal text-ink-soft outline-none focus:border-sky-500/60"
           />
           {" "}
@@ -74,7 +75,7 @@ export default function FeedSection({
             {query
               ? `找到 ${feedTotal} 条`
               : feedTotal > 0
-                ? `共 ${feedTotal} 条${feedTotal > moments.length ? ` · 已显示 ${moments.length} 条` : " · 悬停卡片可修正识别"}`
+                ? tpl("共 {total} 条{extra}", { total: feedTotal, extra: feedTotal > moments.length ? tpl(" · 已显示 {n} 条", { n: moments.length }) : t(" · 悬停卡片可修正识别") })
                 : ""}
           </span>
         </h2>
@@ -89,16 +90,16 @@ export default function FeedSection({
                 setSearchInput("");
               }
             }}
-            placeholder="🔍 搜索：原文/日程/todo/金额/联系人"
+            placeholder={t("🔍 搜索：原文/日程/todo/金额/联系人")}
             className="w-full rounded-xl border border-line-soft bg-surface/60 py-1.5 pl-3 pr-8 text-xs outline-none placeholder:text-ink-faint focus:border-sky-500/60"
           />
           {searchInput && (
             <button
               onClick={() => setSearchInput("")}
-              title="清除搜索"
+              title={t("清除搜索")}
               className="tap-lg absolute right-2 top-1/2 -translate-y-1/2 text-ink-dim hover:text-ink"
             >
-              <X size={12} aria-label="清除搜索" />
+              <X size={12} aria-label={t("清除搜索")} />
             </button>
           )}
         </div>
@@ -109,13 +110,13 @@ export default function FeedSection({
           <FilterChip
             variant="filter"
             active={spaceFilter === "all"}
-            label="全部"
+            label={t("全部")}
             onClick={() => onSpaceChange("all")}
           />
           <FilterChip
             variant="filter"
             active={spaceFilter === "none"}
-            label="未归属"
+            label={t("未归属")}
             onClick={() => onSpaceChange("none")}
           />
           {spaces.map((s) => (

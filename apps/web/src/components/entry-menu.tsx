@@ -12,6 +12,9 @@ import { COMMON_MOODS } from "./moment-feed";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { bjInputToIso } from "@/lib/bj-time";
+import { t } from "@/i18n";
+import { getLang } from "@/i18n";
+import { txCatLabel, mealLabel } from "@shiguangri/shared/i18n-enum";
 
 const SIX = [
   { key: "schedule", icon: Clock, label: "日程", hint: "做了什么事" },
@@ -91,23 +94,23 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
     setBusy(true);
     try {
       // trim 后入库（use-todo-edit 等全站表单同口径）：日程标题/待办/饮食内容/联系人姓名不带走尾空白
-      const t = text.trim();
+      const textVal = text.trim();
       let payload: Record<string, unknown> = {};
-      if (key === "schedule") payload = { title: t, startTime: start, endTime: end, activityId: activities.find((a) => a.id === "other")?.id ?? activities[0]?.id ?? "other" }; // 默认归「其他」而非任意首个分类
+      if (key === "schedule") payload = { title: textVal, startTime: start, endTime: end, activityId: activities.find((a) => a.id === "other")?.id ?? activities[0]?.id ?? "other" }; // 默认归「其他」而非任意首个分类
       // due 是 datetime-local 裸值：直发会被服务端按宿主时区解析（UTC 容器上统一错 8 小时），显式按北京口径转 ISO
-      else if (key === "todo") payload = { title: t, dueAt: bjInputToIso(due) };
+      else if (key === "todo") payload = { title: textVal, dueAt: bjInputToIso(due) };
       else if (key === "finance") {
         // 手动记收支不允许 0/负/非法金额（"1e" 这类输入 Number() 为 NaN：静默 return 只会 busy 闪一下）
         const v = Number(yuan);
         if (!Number.isFinite(v) || v <= 0) {
-          toast("请输入正确的金额", "err");
+          toast(t("请输入正确的金额"), "err");
           return;
         }
         payload = { direction, yuan: v, category };
       }
       else if (key === "mood") payload = { label: mood };
-      else if (key === "diet") payload = { meal, text: t, kcal: null };
-      else if (key === "people") payload = { name: t, type: pType };
+      else if (key === "diet") payload = { meal, text: textVal, kcal: null };
+      else if (key === "people") payload = { name: textVal, type: pType };
       try {
         await onManual(key, payload);
       } catch {
@@ -133,12 +136,12 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
       case "schedule":
         return (
           <div className="space-y-1.5">
-            {wrap("事项", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="做了什么" className={inputCls} />)}
+            {wrap(t("事项"), <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("做了什么")} className={inputCls} />)}
             <div className="flex items-end gap-1.5">
-              {wrap("开始", <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
-              {wrap("结束", <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
+              {wrap(t("开始"), <input type="time" value={start} onChange={(e) => setStart(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
+              {wrap(t("结束"), <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
               <button onClick={() => submitManual(key)} disabled={busy || !text.trim()} className={`${btnMini} mb-0.5`}>
-                <Plus size={12} /> 添加
+                <Plus size={12} /> {t("添加")}
               </button>
             </div>
           </div>
@@ -146,11 +149,11 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
       case "todo":
         return (
           <div className="space-y-1.5">
-            {wrap("todo", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="要做什么" className={inputCls} />)}
+            {wrap("todo", <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("要做什么")} className={inputCls} />)}
             <div className="flex items-end gap-1.5">
-              {wrap("截止（可空）", <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} className={`${inputCls} flex-1`} />)}
+              {wrap(t("截止（可空）"), <input type="datetime-local" value={due} onChange={(e) => setDue(e.target.value)} className={`${inputCls} flex-1`} />)}
               <button onClick={() => submitManual(key)} disabled={busy || !text.trim()} className={`${btnMini} mb-0.5`}>
-                <Plus size={12} /> 添加
+                <Plus size={12} /> {t("添加")}
               </button>
             </div>
           </div>
@@ -160,26 +163,26 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               {wrap(
-                "类型",
+                t("类型"),
                 <select value={direction} onChange={(e) => setDirection(e.target.value)} className={inputCls}>
-                  <option value="out">支出</option>
-                  <option value="in">收入</option>
+                  <option value="out">{t("支出")}</option>
+                  <option value="in">{t("收入")}</option>
                 </select>,
               )}
               {wrap(
-                "类别",
+                t("类别"),
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
                   {TX_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{c}</option>
+                    <option key={c} value={c}>{txCatLabel(c, getLang())}</option>
                   ))}
                 </select>,
               )}
             </div>
             <div className="flex items-end gap-1.5">
-              {wrap("金额（元）", <input type="number" min="0" step="0.01" value={yuan} onChange={(e) => setYuan(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
+              {wrap(t("金额（元）"), <input type="number" min="0" step="0.01" value={yuan} onChange={(e) => setYuan(e.target.value)} className={`${inputCls} w-24 flex-none`} />)}
               {/* 0/负金额禁提交（手动记收支必须为正，对齐 finance/forms 口径） */}
               <button onClick={() => submitManual(key)} disabled={busy || !yuan || Number(yuan) <= 0} className={`${btnMini} mb-0.5`}>
-                <Plus size={12} /> 添加
+                <Plus size={12} /> {t("添加")}
               </button>
             </div>
           </div>
@@ -199,7 +202,7 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
               ))}
             </div>
             <button onClick={() => submitManual(key)} disabled={busy || !mood} className={btnMini}>
-              <Plus size={12} /> 添加
+              <Plus size={12} /> {t("添加")}
             </button>
           </div>
         );
@@ -208,15 +211,15 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
               {wrap(
-                "餐次",
+                t("餐次"),
                 <select value={meal} onChange={(e) => setMeal(e.target.value)} className={inputCls}>
-                  {["早餐", "午餐", "晚餐", "加餐", "夜宵"].map((x) => <option key={x}>{x}</option>)}
+                  {["早餐", "午餐", "晚餐", "加餐", "夜宵"].map((x) => <option key={x} value={x}>{mealLabel(x, getLang())}</option>)}
                 </select>,
               )}
               {wrap("吃了什么", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="如 牛肉面一碗" className={inputCls} />)}
             </div>
             <button onClick={() => submitManual(key)} disabled={busy || !text.trim()} className={btnMini}>
-              <Plus size={12} /> 添加
+              <Plus size={12} /> {t("添加")}
             </button>
           </div>
         );
@@ -226,14 +229,14 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
             <div className="flex gap-1.5">
               {wrap("姓名", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="和谁在一起" className={inputCls} />)}
               {wrap(
-                "类型",
+                t("类型"),
                 <select value={pType} onChange={(e) => setPType(e.target.value)} className={inputCls}>
                   {["见面", "通话", "送礼", "收礼", "请客", "帮忙", "其他"].map((x) => <option key={x}>{x}</option>)}
                 </select>,
               )}
             </div>
             <button onClick={() => submitManual(key)} disabled={busy || !text.trim()} className={btnMini}>
-              <Plus size={12} /> 添加
+              <Plus size={12} /> {t("添加")}
             </button>
           </div>
         );

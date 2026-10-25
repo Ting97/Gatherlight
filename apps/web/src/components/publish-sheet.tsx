@@ -5,6 +5,7 @@ import { Camera, ImagePlus, RefreshCw, X } from "lucide-react";
 import { uploadImages } from "@/lib/image";
 import { useBodyScrollLock } from "@/components/ui/use-body-scroll-lock";
 import { useDismiss } from "./dismissable";
+import { t, tpl } from "@/i18n";
 
 /**
  * 发布输入面板（REQ-009 滚动：全端统一移动式交互）——悬浮圆圈点按=空面板；长按语音松开=转写文字带入预览，
@@ -92,7 +93,7 @@ export default function PublishSheet({
    *  （开销可忽略，闭包恒最新；注释旧版宣称「稳定引用不重订阅」与实现相反，已如实更正） */
   const cancel = useCallback(() => {
     if (value.trim() && value.trim() !== initialRef.current.trim()) {
-      notify?.({ ok: true, text: "已取消，未保存" });
+      notify?.({ ok: true, text: t("已取消，未保存") });
     }
     // 取消路径也要释放已选图片的 blob URL（发布成功/逐张移除路径已 revoke，这里补齐）——revoke 在 updater 外
     imagesRef.current.forEach((i) => URL.revokeObjectURL(i.url));
@@ -106,29 +107,29 @@ export default function PublishSheet({
 
   function addImages(files: File[]) {
     if (images.length >= 9) {
-      setSheetMsg("最多 9 张");
+      setSheetMsg(t("最多 9 张"));
       return;
     }
     const imgs = files
       .filter((f) => /^image\/(jpeg|png|webp|gif)$/.test(f.type))
       .slice(0, 9 - images.length)
       .map((file) => ({ file, url: URL.createObjectURL(file), status: "ready" as const }));
-    if (!imgs.length) setSheetMsg("仅支持 jpg/png/webp/gif 图片");
-    else if (imgs.length < files.length) setSheetMsg("最多添加 9 张，多余图片已忽略");
+    if (!imgs.length) setSheetMsg(t("仅支持 jpg/png/webp/gif 图片"));
+    else if (imgs.length < files.length) setSheetMsg(t("最多添加 9 张，多余图片已忽略"));
     setImages((prev) => [...prev, ...imgs]);
   }
 
   async function publish() {
-    const t = value.trim();
+    const publishText = value.trim();
     if (!t || busy || uploading) return;
     // 动态已发出（lastEntryId 在）且仍有失败图：此时再「发布」会重复发一条同文动态——
     // 按钮此时已改为「重传图片」语义（见下方 disabled/文案），这里兜底短路
     if (lastEntryId.current && images.some((i) => i.status === "error")) return;
     const files = images.filter((i) => i.status !== "error").map((i) => i.file);
-    const entryId = await onPublish(t);
+    const entryId = await onPublish(publishText);
     if (!entryId) {
       // 失败保留面板与已输文本（旧实现直接 onClose 会把没发出去的内容弄丢），错误原因在主页横幅
-      setSheetMsg("发布失败，内容已保留，可直接重试");
+      setSheetMsg(t("发布失败，内容已保留，可直接重试"));
       return;
     }
     lastEntryId.current = entryId;
@@ -159,7 +160,7 @@ export default function PublishSheet({
             .filter((i) => !fileSet.has(i.file) || failedSet.has(i.file))
             .map((i) => (fileSet.has(i.file) ? { ...i, status: "error" as const } : i)),
         );
-        setSheetMsg("动态已发布；部分图片上传失败，可「↻ 重试」或关闭面板");
+        setSheetMsg(t("动态已发布；部分图片上传失败，可「↻ 重试」或关闭面板"));
         return;
       }
       onClose();
@@ -205,15 +206,15 @@ export default function PublishSheet({
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="记录此刻"
+        aria-label={t("记录此刻")}
         className="safe-bottom anim-modal-pop fixed inset-x-0 bottom-0 z-[56] rounded-t-2xl border-t border-line-soft bg-surface p-4 pb-5 shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-line-soft"
       >
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-ink-soft">记录此刻</h3>
+          <h3 className="text-sm font-semibold text-ink-soft">{t("记录此刻")}</h3>
           <button
             type="button"
             onClick={cancel}
-            aria-label="关闭"
+            aria-label={t("关闭")}
             className="rounded-full p-1 text-ink-dim hover:bg-white/5 hover:text-ink"
           >
             <X size={14} />
@@ -221,9 +222,9 @@ export default function PublishSheet({
         </div>
         {voiceSeconds != null && (
           <p className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-micro text-accent">
-            🎤 语音已附加 {Math.floor(voiceSeconds / 60)}:{String(voiceSeconds % 60).padStart(2, "0")}
+            🎤 {tpl("语音已附加 {dur}", { dur: `${Math.floor(voiceSeconds / 60)}:${String(voiceSeconds % 60).padStart(2, "0")}` })}
             {onRemoveVoice && (
-              <button onClick={onRemoveVoice} title="移除语音" className="rounded-full bg-black/30 px-1 leading-none text-white">
+              <button onClick={onRemoveVoice} title={t("移除语音")} className="rounded-full bg-black/30 px-1 leading-none text-white">
                 ✕
               </button>
             )}
@@ -243,7 +244,7 @@ export default function PublishSheet({
           }}
           rows={3}
           maxLength={2000}
-          placeholder='说点什么…（试试"刚跑完步40分钟，心情不错"、"明天下午三点看牙"）'
+          placeholder={t('说点什么…（试试"刚跑完步40分钟，心情不错"、"明天下午三点看牙"）')}
           className="input-glow w-full resize-none rounded-xl border border-line-soft bg-surface/60 px-4 py-3 text-sm outline-none placeholder:text-ink-faint"
         />
         {/* 接近上限才显示字数，平时不干扰 */}
@@ -278,13 +279,13 @@ export default function PublishSheet({
                       setImages((prev) => prev.filter((x) => x.url !== img.url));
                     }}
                     className="tap-lg absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white"
-                    aria-label="移除"
+                    aria-label={t("移除")}
                   >
                     <X size={10} />
                   </button>
                 )}
                 {img.status === "uploading" && (
-                  <span className="absolute inset-x-0 bottom-0 bg-black/50 text-center text-micro text-white">上传中…</span>
+                  <span className="absolute inset-x-0 bottom-0 bg-black/50 text-center text-micro text-white">{t("上传中…")}</span>
                 )}
               </span>
             ))}
@@ -295,7 +296,7 @@ export default function PublishSheet({
         <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <label
-              title="从相册选择（最多 9 张）"
+              title={t("从相册选择（最多 9 张）")}
               className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-line-soft bg-surface/60 text-ink-dim transition active:border-sky-500/60"
             >
               <ImagePlus size={16} aria-hidden />

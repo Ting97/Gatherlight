@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import AssistantChat, { SCOPE_META, type ChatScope } from "@/app/assistant/chat-core";
+import AssistantChat, { SCOPE_META, SCOPE_META_EN, type ChatScope } from "@/app/assistant/chat-core";
 import { useSession } from "@/shared/session";
+import { useLang } from "@/i18n";
 
 /**
  * 助手悬浮 Dock（REQ-015 追加；REQ-019 分域参数化）：
@@ -17,7 +18,8 @@ export default function AssistantDock({ scope = "global" }: { scope?: ChatScope 
   const [mounted, setMounted] = useState(false); // 首次点开才挂载聊天核心（不预拉 /api/chat）
   const [open, setOpen] = useState(false);
   const mqRef = useRef<MediaQueryList | null>(null);
-  const meta = SCOPE_META[scope];
+  const { lang } = useLang();
+  const meta = (lang === "en" ? SCOPE_META_EN : SCOPE_META)[scope];
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 640px)");

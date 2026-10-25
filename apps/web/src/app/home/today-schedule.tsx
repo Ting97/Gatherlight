@@ -14,6 +14,7 @@ import type { Activity, Block } from "@/lib/types";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import { zhTime } from "./kit";
 import type { BlockDraft } from "./types";
+import { t, tpl } from "@/i18n";
 
 interface Props {
   blocks: Block[];
@@ -55,7 +56,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
     const [sh, sm] = editing.start.split(":").map(Number);
     const [eh, em] = editing.end.split(":").map(Number);
     if ([sh, sm, eh, em].some((n) => !Number.isFinite(n)) || sh > 23 || eh > 23 || sm > 59 || em > 59) {
-      toast("请填写完整的开始与结束时间", "err");
+      toast(t("请填写完整的开始与结束时间"), "err");
       return;
     }
     // 跨天块（23:00→次日 00:30）end 钟点 ≤ start 是合法次日语义，不走同日校验；
@@ -76,13 +77,13 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
       });
       if (!storedCrossDay && crossDay) toast(`已按跨天块保存：${editing.start} → 次日 ${editing.end}`);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "保存失败", "err");
+      toast(e instanceof Error ? e.message : t("保存失败"), "err");
       return;
     } finally {
       setSaving(false);
     }
     setEditing(null);
-    if (!(!storedCrossDay && crossDay)) toast("💾 日程已更新");
+    if (!(!storedCrossDay && crossDay)) toast(t("💾 日程已更新"));
     await load();
   }
 
@@ -91,7 +92,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
     try {
       await api(`/api/blocks/${b.id}`, "DELETE");
     } catch {
-      toast("删除失败", "err");
+      toast(t("删除失败"), "err");
       return;
     }
     toast(`🗑 已删除「${b.title}」`);
@@ -103,7 +104,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
     try {
       await api("/api/blocks", "POST", payload);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "补录失败", "err");
+      toast(e instanceof Error ? e.message : t("补录失败"), "err");
       return false;
     }
     toast(`✍️ 已补录：${payload.title}`);
@@ -157,7 +158,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
     // setListSaving(false) 永不执行 → 按钮永久卡「保存中…」（只能刷新页面）
     const badTime = [sh, sm, eh, em].some((n) => !Number.isFinite(n)) || sh > 23 || eh > 23 || sm > 59 || em > 59;
     if (badTime) {
-      toast("请填写完整的开始与结束时间", "err");
+      toast(t("请填写完整的开始与结束时间"), "err");
       return;
     }
     setListSaving(true);
@@ -185,16 +186,16 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
       <div className="mb-3 flex flex-wrap items-center justify-between gap-y-1">
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
           <span className="inline-flex items-center gap-1">
-            <Clock size={14} className="text-accent" aria-hidden /> 今日日程{" "}
+            <Clock size={14} className="text-accent" aria-hidden /> {t("今日日程")}{" "}
             <span className="whitespace-nowrap text-xs font-normal text-ink-dim">
               {blocks.length} 段 · 共 {zhDuration(blocks.reduce((s, b) => s + b.duration_min, 0))}
             </span>
           </span>
-          {todayKcal > 0 && <TagChip icon={<Utensils size={12} />} label={`今日 ≈${todayKcal} kcal`} tone="amber" size="sm" className="whitespace-nowrap" />}
+          {todayKcal > 0 && <TagChip icon={<Utensils size={12} />} label={tpl("今日 ≈{n} kcal", { n: todayKcal })} tone="amber" size="sm" className="whitespace-nowrap" />}
         </h2>
         <div className="flex shrink-0 rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs">
-          <FilterChip variant="pill" active={view === "timeline"} onClick={() => setView("timeline")} label="时间轴" />
-          <FilterChip variant="pill" active={view === "list"} onClick={() => setView("list")} label="列表" />
+          <FilterChip variant="pill" active={view === "timeline"} onClick={() => setView("timeline")} label={t("时间轴")} />
+          <FilterChip variant="pill" active={view === "list"} onClick={() => setView("list")} label={t("列表")} />
         </div>
       </div>
 
@@ -235,7 +236,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
           </div>
           {blocks.length === 0 && (
             <p className="py-4 text-center text-xs text-ink-faint">
-              还没有记录 —— 说句"刚做完…"，点「＋ 新增日程」，或去完成一个 todo
+              {t('还没有记录 —— 说句"刚做完…"，点「＋ 新增日程」，或去完成一个 todo')}
             </p>
           )}
           <ul className="space-y-1.5">
@@ -248,7 +249,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
                       value={editing.title}
                       onChange={(e) => setEditing({ ...editing, title: e.target.value })}
                       className="min-w-32 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-sm outline-none focus:border-sky-500"
-                      placeholder="标题"
+                      placeholder={t("标题")}
                     />
                     <input
                       type="time"

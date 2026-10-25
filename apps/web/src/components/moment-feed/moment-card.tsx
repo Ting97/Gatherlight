@@ -19,6 +19,7 @@ import { RecognitionSection } from "./recognition-section";
 import { PendingConfirms } from "./pending-confirms";
 import type { Activity } from "@/lib/types";
 import type { IntentTag, MenuPos } from "./types";
+import { t } from "@/i18n";
 
 /** 单条动态卡片：原文 + 心情 + AI 识别产物（日程/待办/金额/人物，均可修改/删除） */
 // memo：首页搜索框每键入会页级重渲染，卡片 50+ 时每键全量 reconcile——
@@ -41,10 +42,10 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
     m.todos.length > 0
       ? { icon: <ClipboardList size={14} />, label: "todo", tone: "sky" as const }
       : m.blocks.length > 0
-        ? { icon: <Clock size={14} />, label: "日程", tone: "sky" as const }
+        ? { icon: <Clock size={14} />, label: t("日程"), tone: "sky" as const }
         : m.mood
-          ? { icon: <Sparkles size={14} />, label: "心情", tone: "violet" as const }
-          : { icon: <NotebookPen size={14} />, label: "动态", tone: "slate" as const };
+          ? { icon: <Sparkles size={14} />, label: t("心情"), tone: "violet" as const }
+          : { icon: <NotebookPen size={14} />, label: t("动态"), tone: "slate" as const };
 
   // 卡内操作反馈 + 提交逻辑（识别/手动添加/删除），由 useCardActions 提供
   const { busyDomain, run, recognizeDomain, manualAdd, del, delArmed } = useCardActions(m, onRefresh);
@@ -63,7 +64,7 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
   const saveRaw = () =>
     run(async () => {
       const text = editRaw!.trim();
-      if (!text) throw new Error("内容不能为空");
+      if (!text) throw new Error(t("内容不能为空"));
       await api(`/api/feed/${m.id}`, "PATCH", { raw_text: text });
       setEditRaw(null);
       // 识别在后台进行（约数秒）：延迟两次刷新让新产物自动上墙（覆盖上一轮未触发的定时器）
@@ -74,7 +75,7 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
       ];
       // 重识别是后台 fire-and-forget：通知首页挂识别完成刷新轮（否则卡片停留「识别中」直到手动刷新）
       window.dispatchEvent(new CustomEvent("shiguang:entry-edited"));
-      return "✏️ 已保存，AI 正在重新识别全部信息…";
+      return t("✏️ 已保存，AI 正在重新识别全部信息…");
     });
 
   // 删除请求进行中：防双击双发 DELETE（第二次会 404 并在卡内报错误横幅）
@@ -84,7 +85,7 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
     setDeleting(true);
     return run(async () => {
       await api(`/api/feed/${m.id}`, "DELETE");
-      return "🗑 已删除这条动态及其识别结果";
+      return t("🗑 已删除这条动态及其识别结果");
     })
       .then((accepted) => {
         // run 重入锁被占（卡内其他操作进行中）：保持确认框打开，静默关闭会让人以为已删除
@@ -148,7 +149,7 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
                 onSetSpace={(spaceId) =>
                   void run(async () => {
                     await api(`/api/feed/${m.id}`, "PATCH", { spaceId });
-                    return spaceId ? `🎯 已归属空间` : "已移除空间归属";
+                    return spaceId ? t("🎯 已归属空间") : t("已移除空间归属");
                   })
                 }
                 onClose={() => setMenuOpen(false)}
@@ -166,13 +167,13 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
         {!m.analyzed_at &&
           (m.recognize_state === "timeout" ? (
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-faint">
-              <TagChip icon={<Bot size={12} />} label="识别未完成" tone="slate" size="sm" className="shrink-0" />
-              <span className="min-w-0 truncate">AI 当时未返回结果 · 点击原文可重新识别</span>
+              <TagChip icon={<Bot size={12} />} label={t("识别未完成")} tone="slate" size="sm" className="shrink-0" />
+              <span className="min-w-0 truncate">{t("AI 当时未返回结果 · 点击原文可重新识别")}</span>
             </p>
           ) : (
             <p className="mt-1.5 flex items-center gap-1.5 text-xs text-accent/80">
-              <TagChip icon={<Bot size={12} />} label="AI 识别中" tone="violet" size="sm" className="shrink-0" />
-              <span className="min-w-0 truncate">正在提取 日程 / 关系 / todo / 收支 / 心情 / 饮食…</span>
+              <TagChip icon={<Bot size={12} />} label={t("AI 识别中")} tone="violet" size="sm" className="shrink-0" />
+              <span className="min-w-0 truncate">{t("正在提取 日程 / 关系 / todo / 收支 / 心情 / 饮食…")}</span>
             </p>
           ))}
 
@@ -183,12 +184,12 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
           (m.recognitions.schedule.reason?.includes("已有日程") || m.recognitions.schedule.reason?.includes("时间冲突")) && (
             <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-micro text-warn/90">
               <TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1">未生成日程：{m.recognitions.schedule.reason}</span>
+              <span className="min-w-0 flex-1">{t("未生成日程：")}{m.recognitions.schedule.reason}</span>
               {/* 就地给出处理入口：跳日程页对应日（按记录时刻的北京日期，跨天冲突需自行翻页） */}
               <a
                 href={`/schedule?date=${bjYmd(m.created_at)}`}
                 className="flex shrink-0 items-center gap-0.5 whitespace-nowrap font-medium text-warn underline decoration-warn/40 underline-offset-2 transition hover:decoration-warn"
-                title="打开日程页调整时间"
+                title={t("打开日程页调整时间")}
               >
                 去调整 <ArrowRight size={11} aria-hidden />
               </a>
@@ -196,13 +197,13 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
                 onClick={() =>
                   run(async () => {
                     await api(`/api/feed/${m.id}/dismiss-conflict`, "POST");
-                    return "已关闭，不再提示";
+                    return t("已关闭，不再提示");
                   })
                 }
-                title="不再显示此提示"
+                title={t("不再显示此提示")}
                 className="shrink-0 rounded px-1 text-warn/60 transition hover:text-warn"
               >
-                <X size={12} aria-label="关闭" />
+                <X size={12} aria-label={t("关闭")} />
               </button>
             </div>
           )}

@@ -11,6 +11,7 @@ import type { TodayAction } from "@/lib/types";
 import SpacePicker from "./space-picker";
 import { api, ApiClientError } from "@/shared/api";
 import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, FileText, Repeat, RotateCcw } from "lucide-react";
+import { t, tpl } from "@/i18n";
 
 /**
  * 首页「今日行动清单」（REQ-001 R3 + REQ-002 N6）：
@@ -38,29 +39,29 @@ function ActionRow({
           <span
             className="flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-badge font-medium"
             style={{ backgroundColor: `${space.color}22`, color: space.color }}
-            title={`已关联空间「${space.name}」`}
+            title={tpl("已关联空间「{name}」", { name: space.name })}
           >
             {space.icon} {space.name}
           </span>
         )}
         {!a.parent_title && (
-          <span className="shrink-0 rounded-lg bg-slate-500/15 px-1.5 py-0.5 text-badge font-medium text-ink-dim" title="独立行动（不属于任何 todo）">
-            行动
+          <span className="shrink-0 rounded-lg bg-slate-500/15 px-1.5 py-0.5 text-badge font-medium text-ink-dim" title={t("独立行动（不属于任何 todo）")}>
+            {t("行动")}
           </span>
         )}
         {a.repeat_daily && (
-          <span className="flex shrink-0 items-center gap-0.5 rounded-lg bg-emerald-500/20 px-1.5 py-0.5 text-badge font-medium text-success" title="每日重复">
+          <span className="flex shrink-0 items-center gap-0.5 rounded-lg bg-emerald-500/20 px-1.5 py-0.5 text-badge font-medium text-success" title={t("每日重复")}>
             <Repeat size={11} aria-hidden /> {a.repeat_done_count > 0 ? `×${a.repeat_done_count}` : ""}
           </span>
         )}
         {a.note && (
-          <span className="shrink-0 text-ink-faint" title="有描述">
+          <span className="shrink-0 text-ink-faint" title={t("有描述")}>
             <FileText size={11} aria-hidden />
           </span>
         )}
         <button
           onClick={(e) => onMenu(a, e.currentTarget)}
-          aria-label="操作菜单"
+          aria-label={t("操作菜单")}
           className="tap-lg press ml-auto shrink-0 rounded p-1 text-ink-faint transition hover:bg-wash hover:text-ink"
         >
           <Ellipsis size={14} />
@@ -68,7 +69,7 @@ function ActionRow({
       </p>
       {(a.parent_title || tag) && (
         <p className="mt-0.5 flex items-center gap-1.5 text-micro text-ink-faint">
-          {a.parent_title && <span className="min-w-0 truncate">来自「{a.parent_title}」</span>}
+          {a.parent_title && <span className="min-w-0 truncate">{tpl("来自「{title}」", { title: a.parent_title })}</span>}
           {tag && <span className={`shrink-0 ${tag.cls}`}>{tag.text}</span>}
         </p>
       )}
@@ -102,7 +103,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
     } catch (e) {
       if (seq !== loadSeq.current) return;
       setActions([]);
-      notify({ ok: false, text: `行动清单加载失败：${e instanceof Error ? e.message : e}` });
+      notify({ ok: false, text: tpl("行动清单加载失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }) });
     }
     // 空间列表（徽标 + 归类选择器）：失败不阻塞行动清单
     try {
@@ -164,7 +165,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
   async function removeAction(a: TodayAction) {
     try {
       await api(`/api/todos/${a.id}`, "DELETE");
-      notify({ ok: true, text: "🗑 行动已删除" });
+      notify({ ok: true, text: t("🗑 行动已删除") });
       await load();
     } catch (e) {
       notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -236,10 +237,10 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
   /** 菜单删除：确认弹窗 → DELETE（行内两步确认保留） */
   async function menuRemove(a: { id: string; title: string }, isChild: boolean) {
     const ok = await confirmDialog({
-      title: isChild ? "删除行动" : "删除 todo",
+      title: isChild ? t("删除行动") : t("删除 todo"),
       message: isChild ? `「${a.title}」` : `「${a.title}」
 其下行动将一并删除。`,
-      confirmText: "删除",
+      confirmText: t("删除"),
     });
     if (!ok) return;
     await removeAction(a as TodayAction);
@@ -336,11 +337,11 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
             busy={false}
             onPick={async (sid) => {
               setPickerRow(null);
-              await patchTodo(pickerRow.id, { spaceId: sid }, "🎯 已关联空间");
+              await patchTodo(pickerRow.id, { spaceId: sid }, t("🎯 已关联空间"));
             }}
             onRemove={async () => {
               setPickerRow(null);
-              await patchTodo(pickerRow.id, { spaceId: null }, "已移除空间归属");
+              await patchTodo(pickerRow.id, { spaceId: null }, t("已移除空间归属"));
             }}
             onClose={() => setPickerRow(null)}
           />,
@@ -375,7 +376,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
       </button>
 
       {!collapsed && (actions === null ? (
-        <p className="py-2 text-xs text-ink-dim">加载中…</p>
+        <p className="py-2 text-xs text-ink-dim">{t("加载中…")}</p>
       ) : (
         <>
           {/* N6：添加行动行（回车即建，默认标记今日） */}
@@ -388,7 +389,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                 if (e.key === "Enter" && !e.nativeEvent.isComposing) void addAction();
               }}
               maxLength={200}
-              placeholder="添加行动，回车保存"
+              placeholder={t("添加行动，回车保存")}
               className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
             />
             {newTitle.trim() && (
@@ -397,14 +398,14 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                 disabled={adding}
                 className="btn-primary shrink-0 rounded-lg px-3 py-1 text-micro font-medium disabled:opacity-50"
               >
-                {adding ? "保存中…" : "添加"}
+                {adding ? t("保存中…") : t("添加")}
               </button>
             )}
           </div>
 
           {pending.length === 0 && done.length === 0 ? (
             <div className="py-2 text-center">
-              <p className="text-xs text-ink-dim">今天还没有行动 —— 在上面直接添加一条（自动标记今日 ☀️），或在 todo 里 ✨ 拆解出可执行的行动</p>
+              <p className="text-xs text-ink-dim">{t("今天还没有行动 —— 在上面直接添加一条（自动标记今日 ☀️），或在 todo 里 ✨ 拆解出可执行的行动")}</p>
             </div>
           ) : (
             <>
@@ -420,7 +421,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                           onClose={() => {
                             // 与 startEdit 同口径（本地 datetime-local 串）：原来用 UTC 切片比较，UTC+8 下恒不相等
                             const dirty = editTitle !== a.title || editDue !== isoToLocalInput(a.due_at);
-                            if (dirty) notify({ ok: true, text: "已取消，未保存" });
+                            if (dirty) notify({ ok: true, text: t("已取消，未保存") });
                             setEditingId(null);
                           }}
                           className="min-w-0 flex-1 rounded-lg border border-sky-500/40 bg-elevated/60 p-2"
@@ -437,7 +438,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                               if (e.key === "Escape" && !e.nativeEvent.isComposing) {
                                 e.stopPropagation();
                                 const dirty = editTitle !== a.title || editDue !== isoToLocalInput(a.due_at);
-                                if (dirty) notify({ ok: true, text: "已取消，未保存" });
+                                if (dirty) notify({ ok: true, text: t("已取消，未保存") });
                                 setEditingId(null);
                               }
                             }}
@@ -451,8 +452,8 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                               className="rounded border border-line-strong bg-surface px-2 py-1 text-micro tabular-nums outline-none focus:border-sky-500"
                             />
                             <div className="ml-auto flex gap-2">
-                              <button onClick={() => setEditingId(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
-                              <button onClick={() => void saveEdit()} disabled={!editTitle.trim() || editSaving} className="rounded bg-sky-600 px-2.5 py-1 text-micro font-medium text-white hover:bg-sky-500 disabled:opacity-50">保存</button>
+                              <button onClick={() => setEditingId(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">{t("取消")}</button>
+                              <button onClick={() => void saveEdit()} disabled={!editTitle.trim() || editSaving} className="rounded bg-sky-600 px-2.5 py-1 text-micro font-medium text-white hover:bg-sky-500 disabled:opacity-50">{t("保存")}</button>
                             </div>
                           </div>
                         </Dismissable>
@@ -471,7 +472,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
               {/* 今日已完成 */}
               {done.length > 0 && (
                 <details className="mt-2 border-t border-line-soft pt-2">
-                  <summary className="cursor-pointer text-xs text-ink-dim">今日已完成 {done.length} 项（可恢复）</summary>
+                  <summary className="cursor-pointer text-xs text-ink-dim">{tpl("今日已完成 {n} 项（可恢复）", { n: done.length })}</summary>
                   <ul className="mt-1.5 space-y-1">
                     {done.map((a) => (
                       <li key={a.id} className="group flex items-center gap-3 rounded-lg px-2 py-1">
@@ -483,7 +484,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
                         <button
                           onClick={() => toggleDone(a)}
                           disabled={busyId === a.id}
-                          title="恢复为未完成"
+                          title={t("恢复为未完成")}
                           className="row-actions hidden shrink-0 rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-warn group-hover:block disabled:opacity-50"
                         >
                           <RotateCcw size={12} />

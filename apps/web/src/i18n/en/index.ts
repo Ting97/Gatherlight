@@ -6,10 +6,16 @@ import * as common from "./common";
 import * as errors from "./errors";
 import * as login from "./login";
 import * as profile from "./profile";
+import * as home from "./home";
+import * as assistant from "./assistant";
+import * as finance from "./finance";
 
 export const EN: Record<string, string> = {
   ...common.EN,
   ...errors.EN,
   ...login.EN,
   ...profile.EN,
+  ...home.EN,
+  ...assistant.EN,
+  ...finance.EN,
 };

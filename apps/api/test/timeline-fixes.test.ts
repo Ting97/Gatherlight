@@ -352,8 +352,8 @@ test("timeline-fix：deleteFeed 按派生行事件日失效复盘缓存（历史
   // 预置昨日/今日两条 day 复盘缓存：deleteFeed 后两条都必须被失效（昨日按块 start_at、今日按 created_at）
   for (const k of [yKey, tKey]) {
     await pool.query(
-      `insert into review_caches (user_id, kind, period_key, review) values ($1,'day',$2,'{"summary":"t","highlights":[],"suggestions":[]}')
-       on conflict (user_id, kind, period_key) do nothing`,
+      `insert into review_caches (user_id, kind, period_key, lang, review) values ($1,'day',$2,'zh','{"summary":"t","highlights":[],"suggestions":[]}')
+       on conflict (user_id, kind, period_key, lang) do nothing`,
       [U1, k],
     );
   }

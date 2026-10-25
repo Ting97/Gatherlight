@@ -9,6 +9,7 @@ import { useHoverCapable } from "./use-hover-capable";
 import { combineHM, combineHmEndCrossDay } from "@/lib/bj-time"; // 北京口径版：本地 setHours 在海外设备会偏 8 小时（与日程页同源）
 import { dayPrefix, zhClock } from "./kit";
 import type { DelFn, RunFn } from "./types";
+import { t } from "@/i18n";
 
 /** 日程块行内编辑态 */
 interface EditBlockState {
@@ -43,7 +44,7 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
               value={editBlock.title}
               onChange={(e) => setEditBlock({ ...editBlock, title: e.target.value })}
               className="min-w-28 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
-              placeholder="标题"
+              placeholder={t("标题")}
             />
             <input
               type="time"
@@ -51,9 +52,9 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
               onChange={(e) => setEditBlock({ ...editBlock, start: e.target.value })}
               className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
             />
-            <span className="text-ink-dim" title="结束早于开始自动按次日（跨日程）">至</span>
+            <span className="text-ink-dim" title={t("结束早于开始自动按次日（跨日程）")}>{t("至")}</span>
             {editBlock.end <= editBlock.start && (
-              <span className="rounded bg-sky-500/15 px-1 text-badge text-accent" title="结束早于开始，保存后自动 +1 天">次日 +1</span>
+              <span className="rounded bg-sky-500/15 px-1 text-badge text-accent" title={t("结束早于开始，保存后自动 +1 天")}>{t("次日 +1")}</span>
             )}
             <input
               type="time"
@@ -71,7 +72,7 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
               ))}
             </select>
             <span className="flex gap-1">
-              <button onClick={() => setEditBlock(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
+              <button onClick={() => setEditBlock(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">{t("取消")}</button>
               <button
                 onClick={() =>
                   run(async () => {
@@ -83,7 +84,7 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
                       activityId: editBlock.activityId,
                     });
                     setEditBlock(null);
-                    return "💾 日程已更新";
+                    return t("💾 日程已更新");
                   })
                 }
                 className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"

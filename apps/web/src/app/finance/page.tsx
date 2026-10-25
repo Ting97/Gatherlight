@@ -25,6 +25,7 @@ import { OverviewCard } from "../../components/finance/display-overview";
 import { AccountsCard } from "../../components/finance/accounts-card";
 import { DraftConfirmSection } from "../../components/finance/tx-confirm-list";
 import { ConfirmedTxSection } from "../../components/finance/tx-confirmed-list";
+import { t as tr, tpl } from "@/i18n";
 
 export default function FinancePage() {
   // SSG 防 hydration mismatch：nowMonth() 作初值会把构建月烤进静态导出 HTML，跨月后客户端水合必失配。
@@ -112,7 +113,7 @@ export default function FinancePage() {
     setConfirmBusy(true); // 提交期间锁按钮：防双击双发 PATCH 重复确认
     try {
       await api(`/api/transactions/${t.id}`, "PATCH", { confirm: true });
-      toast(`✅ 已确认：${t.direction === "out" ? "支出" : "收入"} ¥${yuan(t.amount_cents)}`);
+      toast(tpl("✅ 已确认：{dir} ¥{amt}", { dir: t.direction === "out" ? tr("支出") : tr("收入"), amt: yuan(t.amount_cents) }));
       await load();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -146,7 +147,7 @@ export default function FinancePage() {
     if (!arm.arm(t.id)) return;
     try {
       await api(`/api/transactions/${t.id}`, "DELETE");
-      toast("🗑 已删除流水");
+      toast(tr("🗑 已删除流水"));
       await load();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -160,10 +161,10 @@ export default function FinancePage() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title="财务"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            title={tr("财务")}
+            desc={tr("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel="返回首页"
+            backLabel={tr("返回首页")}
           />
         </div>
       </main>
@@ -177,9 +178,9 @@ export default function FinancePage() {
         <div className="mx-auto max-w-2xl px-5 py-8">
           {loadErr ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-danger">加载失败：{loadErr}</p>
+              <p className="text-sm text-danger">{tr("加载失败：")}{loadErr}</p>
               <button onClick={() => void load()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
-                重试
+                {tr("重试")}
               </button>
             </div>
           ) : (
@@ -195,9 +196,9 @@ export default function FinancePage() {
       <div className="mx-auto max-w-2xl px-5 py-8">
         <header className="mb-5 text-center">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">财务</span>
+            {tr("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{tr("财务")}</span>
           </h1>
-          <p className="mt-2 text-xs text-ink-dim">动态里说的钱都在这里 —— 确认草稿、管账户、看月度结构</p>
+          <p className="mt-2 text-xs text-ink-dim">{tr("动态里说的钱都在这里 —— 确认草稿、管账户、看月度结构")}</p>
         </header>
 
         <FinanceTabs />
@@ -205,13 +206,13 @@ export default function FinancePage() {
         {/* 月份导航 + 记一笔（窄屏自动换行，避免按钮溢出） */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <button onClick={() => gotoMonth(-1)} aria-label="上一月" className="rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-ink-mute transition hover:border-sky-500/50 hover:text-accent"><ChevronLeft size={13} /></button>
+            <button onClick={() => gotoMonth(-1)} aria-label={tr("上一月")} className="rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-ink-mute transition hover:border-sky-500/50 hover:text-accent"><ChevronLeft size={13} /></button>
             <span className="min-w-24 text-center text-sm font-semibold text-ink tabular-nums">{monthTitle(month)}</span>
-            <button onClick={() => gotoMonth(1)} aria-label="下一月" className="rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-ink-mute transition hover:border-sky-500/50 hover:text-accent"><ChevronRight size={13} /></button>
+            <button onClick={() => gotoMonth(1)} aria-label={tr("下一月")} className="rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-ink-mute transition hover:border-sky-500/50 hover:text-accent"><ChevronRight size={13} /></button>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             <button onClick={() => setAdding(true)} className="btn-primary flex items-center gap-1 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium">
-              <Plus size={13} aria-hidden /> 记一笔
+              <Plus size={13} aria-hidden /> {tr("记一笔")}
             </button>
           </div>
         </div>
@@ -219,9 +220,9 @@ export default function FinancePage() {
         {/* 已有数据时的刷新失败提示（首次加载失败走上方整页错误态） */}
         {loadErr && (
           <div className="msg-banner msg-banner-err mb-4">
-            加载失败：{loadErr}
+            {tr("加载失败：")}{loadErr}
             <button onClick={() => void load()} className="ml-2 underline underline-offset-2">
-              重试
+              {tr("重试")}
             </button>
           </div>
         )}
@@ -245,7 +246,7 @@ export default function FinancePage() {
           editingBudget={editingBudget}
           onEditBudget={setEditingBudget}
           onBudgetSaved={async () => {
-            toast("💾 月度上限已保存");
+            toast(tr("💾 月度上限已保存"));
             await load();
           }}
         />
@@ -275,7 +276,7 @@ export default function FinancePage() {
           onSubmitEdit={async (t, payload) => {
             await api(`/api/transactions/${t.id}`, "PATCH", payload);
             setEditing(null);
-            toast("💾 流水已更新");
+            toast(tr("💾 流水已更新"));
             await load();
           }}
           onRemove={removeTx}
@@ -284,7 +285,7 @@ export default function FinancePage() {
 
         {/* 手动记账弹层 */}
         {adding && (
-          <Modal title="记一笔" onClose={() => setAdding(false)} busy={txBusy}>
+          <Modal title={tr("记一笔")} onClose={() => setAdding(false)} busy={txBusy}>
             <TxForm
               accounts={ov.accounts}
               onCancel={() => setAdding(false)}
@@ -298,7 +299,7 @@ export default function FinancePage() {
                   return;
                 }
                 setAdding(false);
-                toast("✅ 已记一笔");
+                toast(tr("✅ 已记一笔"));
                 await load();
               }}
             />
@@ -308,7 +309,7 @@ export default function FinancePage() {
 
         {/* 账户管理弹层 */}
         {managingAccount && (
-          <Modal title="账户管理" onClose={() => setManagingAccount(false)}>
+          <Modal title={tr("账户管理")} onClose={() => setManagingAccount(false)}>
             <AccountManager
               accounts={ov.accounts}
               onChanged={async () => {
@@ -319,7 +320,7 @@ export default function FinancePage() {
         )}
 
 <footer className="mt-10 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">拾光 · 财务</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">{tr("拾光 · 财务")}</span>
         </footer>
       </div>
       {/* 财务管家（REQ-019 FR-C4） */}
