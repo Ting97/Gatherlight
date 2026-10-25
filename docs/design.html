@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gatherlight Design · Architecture &amp; Business Diagrams</title>
+<style>
+:root {
+  --background:#ffffff; --foreground:#1a2333; --card:#ffffff;
+  --muted:#eef2f7; --muted-foreground:#5d6b82; --border:#dde4ee;
+  --blue:#2563eb; --orange:#c2620c; --green:#177f4c; --red:#c53030; --purple:#6d47e0; --yellow:#9a7b0a;
+  --viz-series-1:#2f6fed; --viz-series-2:#7c5cfc; --viz-series-3:#c34d8c; --viz-series-4:#b57417;
+  --viz-series-5:#149e6d; --viz-series-6:#0d90ab;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background:#0d1420; --foreground:#e4eaf4; --card:#121b2b;
+    --muted:#1a2436; --muted-foreground:#96a3ba; --border:#28364d;
+    --blue:#7ca7ff; --orange:#f0a04e; --green:#3ecf9a; --red:#f08080; --purple:#a68cff; --yellow:#e3c25b;
+    --viz-series-1:#6b9cff; --viz-series-2:#a68cff; --viz-series-3:#ef8ec0; --viz-series-4:#eaa752;
+    --viz-series-5:#3ecf9a; --viz-series-6:#45c6e0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--background); color:var(--foreground);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px; line-height:1.6; }
+.wrap { max-width:960px; margin:0 auto; padding:34px 22px 76px; }
+h1 { font-size:24px; font-weight:500; margin:0 0 6px; }
+h2 { font-size:18px; font-weight:500; margin:26px 0 10px; }
+h3 { font-size:15px; font-weight:500; margin:18px 0 10px; }
+p { margin:8px 0; }
+hr { border:0; border-top:1px solid var(--border); margin:24px 0; }
+code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--muted); padding:1px 6px; border-radius:5px; }
+.text-small { font-size:12.5px; }
+.text-muted { color:var(--muted-foreground); }
+.nav-pills { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 18px; padding:0; }
+.nav-pills .nav-link { appearance:none; border:1px solid var(--border); background:transparent;
+  color:var(--muted-foreground); border-radius:999px; padding:5px 15px; font:inherit; font-size:13px;
+  line-height:1.4; cursor:pointer; }
+.nav-pills .nav-link:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.nav-pills .nav-link.active { background:var(--foreground); border-color:var(--foreground); color:var(--background); }
+.viz-badge { display:inline-block; padding:3px 12px; border-radius:999px; font-size:12.5px;
+  background:color-mix(in srgb, var(--foreground) 9%, transparent); }
+.table-responsive { overflow-x:auto; }
+.table { width:100%; border-collapse:collapse; font-size:13px; }
+.table th { text-align:left; font-weight:500; color:var(--muted-foreground);
+  border-bottom:1px solid var(--border); padding:6px 10px; white-space:nowrap; }
+.table td { border-bottom:1px solid var(--border); padding:8px 10px; vertical-align:top; }
+.table-sm th, .table-sm td { padding:5px 8px; }
+[role="tabpanel"][hidden] { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Gatherlight Design Document</h1>
+<p class="text-small text-muted">Self-hosted personal life OS — your life, your data, your AI · one-sentence capture → five-domain recognition → domain assistants · npm workspaces monorepo / Next.js 15 / PostgreSQL / OpenAI-compatible model service</p>
+<hr>
+
+<div id="gl-arch">
+  <style>
+    #gl-arch .layer { display: grid; grid-template-columns: 104px 1fr; gap: 12px; align-items: center; }
+    #gl-arch .llabel { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; color: var(--muted-foreground); }
+    #gl-arch .llabel .lk { font-weight: 500; color: var(--foreground); }
+    #gl-arch .lbody { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-arch .node { border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; }
+    #gl-arch .node b { font-weight: 500; }
+    #gl-arch .node .nd { display: block; color: var(--muted-foreground); }
+    #gl-arch .dom { text-align: left; min-width: 128px; }
+    #gl-arch .dom b { display: block; }
+    #gl-arch .lconn { width: 0; height: 16px; border-left: 2px dashed var(--border); margin: 3px auto; }
+    #gl-arch .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+    #gl-arch .fnode { width: 100%; max-width: 620px; text-align: center; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    #gl-arch .fnode b { font-weight: 500; }
+    #gl-arch .fnode .fd { color: var(--muted-foreground); }
+    #gl-arch .vlink { height: 24px; display: flex; flex-direction: column; align-items: center; }
+    #gl-arch .vlink::before { content: ""; width: 2px; flex: 1; background: var(--border); }
+    #gl-arch .vlink::after { content: ""; border: 5px solid transparent; border-top: 6px solid var(--muted-foreground); }
+    #gl-arch .tee { position: relative; height: 26px; width: 100%; max-width: 620px; margin: 0 auto; }
+    #gl-arch .tee .stem { position: absolute; top: 0; left: 50%; width: 2px; height: 13px; background: var(--border); margin-left: -1px; }
+    #gl-arch .tee .bar { position: absolute; top: 13px; left: 25%; right: 25%; height: 2px; background: var(--border); }
+    #gl-arch .tee .stub { position: absolute; top: 13px; width: 2px; height: 13px; background: var(--border); }
+    #gl-arch .tee .stub.l { left: 25%; }
+    #gl-arch .tee .stub.r { left: 75%; }
+    #gl-arch .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    @media (max-width: 560px) { #gl-arch .branches { grid-template-columns: 1fr; } }
+    #gl-arch .branch { display: flex; flex-direction: column; align-items: center; }
+    #gl-arch .branch .fnode { max-width: none; }
+    #gl-arch .hsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #gl-arch .hlink { display: inline-flex; align-items: center; flex: none; }
+    #gl-arch .hlink::before { content: ""; width: 14px; height: 2px; background: var(--border); }
+    #gl-arch .hlink::after { content: ""; border: 4px solid transparent; border-left: 5px solid var(--muted-foreground); }
+    #gl-arch .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-arch .chip { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+    #gl-arch .guard { border-radius: 10px; padding: 10px 14px; background: color-mix(in srgb, var(--viz-series-1) 10%, transparent); border: 1px solid var(--border); }
+    #gl-arch .subhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    #gl-arch .subhead h3 { margin: 0; }
+    #gl-arch .gap-v { height: 18px; }
+  </style>
+
+  <h2>Gatherlight Technical Architecture</h2>
+  <p class="text-small text-muted">npm workspaces monorepo · TypeScript strict · Next.js 15 · PostgreSQL · OpenAI-compatible model service (swappable endpoint)</p>
+
+  <div class="nav nav-pills" role="tablist" aria-label="Architecture views">
+    <button class="nav-link active" id="gl-arch-t1" role="tab" aria-controls="gl-arch-p1" aria-selected="true" type="button">Layered Architecture</button>
+    <button class="nav-link" id="gl-arch-t2" role="tab" aria-controls="gl-arch-p2" aria-selected="false" type="button">Module Structure</button>
+    <button class="nav-link" id="gl-arch-t3" role="tab" aria-controls="gl-arch-p3" aria-selected="false" type="button">Key Flows</button>
+    <button class="nav-link" id="gl-arch-t4" role="tab" aria-controls="gl-arch-p4" aria-selected="false" type="button">Deployment &amp; Engineering</button>
+  </div>
+
+  <div id="gl-arch-p1" role="tabpanel" aria-labelledby="gl-arch-t1">
+    <h3>Six-layer view</h3>
+    <div class="layer">
+      <div class="llabel"><span class="lk">Client</span><span class="text-small">devices</span></div>
+      <div class="lbody">
+        <div class="node"><b>Desktop / mobile browsers</b></div>
+        <div class="node"><b>PWA</b><span class="nd text-small">installable · Service Worker offline cache · voice input</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">Frontend</span><span class="text-small">apps/web</span></div>
+      <div class="lbody">
+        <div class="node"><b>Next.js 15 App Router static export</b><span class="nd text-small">build output out/, no runtime server</span></div>
+        <div class="node"><b>16 page routes</b><span class="nd text-small">Home / Calendar / To-dos / People / Finance / Fitness / Spaces / Assistant / Admin…</span></div>
+        <div class="node"><b>Bilingual i18n dictionaries</b><span class="nd text-small">14 domain modules · custom bilingual DatePicker</span></div>
+        <div class="node"><b>design-tokens design tokens</b></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">API Layer</span><span class="text-small">apps/api</span></div>
+      <div class="lbody">
+        <div class="node"><b>Next.js standalone server</b><span class="nd text-small">same-origin /api routes + hosts the frontend static build</span></div>
+        <div class="node"><b>95 /api routes</b></div>
+        <div class="node"><b>middleware</b><span class="nd text-small">Bearer session auth · CORS · security policies</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">Domain Layer</span><span class="text-small">src/server · 11 domains</span></div>
+      <div class="lbody">
+        <div class="node dom"><b>identity</b><span class="nd text-small">auth / email codes</span></div>
+        <div class="node dom"><b>time</b><span class="nd text-small">time blocks / to-dos</span></div>
+        <div class="node dom"><b>people</b><span class="nd text-small">people graph</span></div>
+        <div class="node dom"><b>finance</b><span class="nd text-small">transactions / budgets</span></div>
+        <div class="node dom"><b>fitness</b><span class="nd text-small">fitness / sleep</span></div>
+        <div class="node dom"><b>goal</b><span class="nd text-small">goal spaces</span></div>
+        <div class="node dom"><b>timeline</b><span class="nd text-small">moment feed / recognition</span></div>
+        <div class="node dom"><b>insight</b><span class="nd text-small">reviews / weekly reports</span></div>
+        <div class="node dom"><b>chat</b><span class="nd text-small">domain assistants</span></div>
+        <div class="node dom"><b>ai</b><span class="nd text-small">AI gateway / audit / quotas</span></div>
+        <div class="node dom"><b>platform</b><span class="nd text-small">DB / config / module toggles</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">Shared Packages</span><span class="text-small">packages</span></div>
+      <div class="lbody">
+        <div class="node"><b>ai</b><span class="nd text-small">pure AI core: zod contracts / prompts / model access / rule fallbacks</span></div>
+        <div class="node"><b>shared</b><span class="nd text-small">cross-platform pure functions: dates / lunar calendar / CSV / graph / API client</span></div>
+        <div class="node"><b>db</b><span class="nd text-small">69 handwritten SQL migrations + runner (no ORM)</span></div>
+        <div class="node"><b>design-tokens</b><span class="nd text-small">token generator + drift checks</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">Infrastructure</span><span class="text-small">external deps</span></div>
+      <div class="lbody">
+        <div class="node"><b>PostgreSQL 13+</b><span class="nd text-small">the only business data store</span></div>
+        <div class="node"><b>Model service (OpenAI-compatible)</b><span class="nd text-small">Nebius Token Factory · NVIDIA Nemotron / Zhipu GLM, endpoint decoupled via env vars</span></div>
+        <div class="node"><b>SMTP</b><span class="nd text-small">email verification codes (optional)</span></div>
+        <div class="node"><b>Local file storage</b><span class="nd text-small">UPLOAD_DIR: moment images / audio</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gl-arch-p2" role="tabpanel" aria-labelledby="gl-arch-t2" hidden>
+    <h3>Monorepo module structure</h3>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr><th>Module</th><th>Role</th><th>Size</th><th>Highlights</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>apps/web</code></td><td>Frontend (static export)</td><td>210 files · 27.4k lines</td><td>16 page routes · 50+ components (four calendar views / todo board / orbit graph / moment feed) · EN/中文 i18n · PWA</td></tr>
+          <tr><td><code>apps/api</code></td><td>Server (API + static hosting)</td><td>183 files · 22.5k lines</td><td><code>src/server</code> split into 11 domains · 95 routes · auth middleware</td></tr>
+          <tr><td><code>packages/ai</code></td><td>AI core (pure package, no runtime deps)</td><td>23 files · 5.9k lines</td><td>zod five-domain contracts (tolerant) · <code>glm.ts</code> model access (SDK / legacy dual transport) · prompts · time inference · mood rule fallback · Jev backup link</td></tr>
+          <tr><td><code>packages/shared</code></td><td>Cross-platform types &amp; pure functions</td><td>23 files · 2.7k lines</td><td>Beijing-timezone dates · lunar calendar · CSV import · relationship graph · reminders · Bearer / CORS · API client</td></tr>
+          <tr><td><code>packages/db</code></td><td>Database layer</td><td>69 migrations</td><td>handwritten SQL + migration runner (tsx, no ORM)</td></tr>
+          <tr><td><code>packages/design-tokens</code></td><td>Design tokens</td><td>generator</td><td>token source + <code>tokens:verify</code> drift check (CI gate)</td></tr>
+          <tr><td><code>scripts/qa</code></td><td>Demo data &amp; audits</td><td>7 scripts</td><td>six-domain demo seeds · i18n audit</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-small text-muted">Dependency direction: apps → packages (ai / shared / db never depend back); AI logic lives in a pure package so node:test covers it directly.</p>
+  </div>
+
+  <div id="gl-arch-p3" role="tabpanel" aria-labelledby="gl-arch-t3" hidden>
+    <div class="subhead"><h3>Flow A · One-sentence five-domain capture</h3><span class="text-small text-muted">timeline domain</span></div>
+    <div class="flow">
+      <div class="fnode"><b>User's casual note</b><span class="fd text-small">moment-feed input: text / voice / image (entries can carry audio and multiple images)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Preprocessing</b><span class="fd text-small">voice → ASR transcription (ffmpeg transcode fallback); image → vision model</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>LLM five-domain recognition</b><span class="fd text-small">per-domain applicable + confidence · tolerant zod contracts (non-numeric confidence coerced to 0.5 / string-boolean phantoms rejected) · rule-engine fallback (mood / time inference)</span></div>
+      <div class="tee"><span class="stem"></span><span class="bar"></span><span class="stub l"></span><span class="stub r"></span></div>
+      <div class="branches">
+        <div class="branch">
+          <span class="viz-badge">confidence ≥ 0.6</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>Auto-written into the domain</b></div>
+        </div>
+        <div class="branch">
+          <span class="viz-badge">confidence &lt; 0.6</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>Pending queue</b><span class="fd text-small">recorded only after human confirmation (editable)</span></div>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Landed in five domains</b><span class="fd text-small">🕒 time blocks · 📋 to-dos · 💰 transactions · 😊 mood · 🍽 diet (plus people / favor recognition)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Downstream consumption</b><span class="fd text-small">moment feed · calendar conflict detection · budget alerts · favor ledger · AI weekly reports &amp; periodic reviews</span></div>
+    </div>
+    <hr>
+    <div class="subhead"><h3>Flow B · Domain assistant Q&amp;A</h3><span class="text-small text-muted">chat domain</span></div>
+    <div class="flow">
+      <div class="fnode"><b>User asks</b><span class="fd text-small">six assistants: Global / Goals / Schedule / People / Finance / Fitness</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>chat agent</b><span class="fd text-small">domain system prompt (hot-reloadable from admin) + conversation history + user vocabulary</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Tool calls (OpenAI tools protocol)</b><span class="fd text-small">20 read-only tools query the database directly: 15 query_* + 5 get_* → answers grounded in real data</span></div>
+      <div class="vlink"></div>
+      <div class="fnode guard"><b>Trust boundary</b><span class="fd text-small">the AI never writes business data directly — creations / edits become proposal cards (e.g. propose_fitness_plan), written only after user confirmation, with an audit log entry</span></div>
+    </div>
+  </div>
+
+  <div id="gl-arch-p4" role="tabpanel" aria-labelledby="gl-arch-t4" hidden>
+    <div class="subhead"><h3>CI pipeline</h3><span class="text-small text-muted">GitHub Actions · main / PRs</span></div>
+    <div class="hsteps">
+      <span class="chip">npm ci</span><span class="hlink"></span>
+      <span class="chip">lint (ESLint 9)</span><span class="hlink"></span>
+      <span class="chip">typecheck (3 tsconfigs)</span><span class="hlink"></span>
+      <span class="chip">design-token drift check</span><span class="hlink"></span>
+      <span class="chip">test (39 test files + PostgreSQL 13 service container)</span><span class="hlink"></span>
+      <span class="chip">build (web static export + api standalone)</span>
+    </div>
+    <p class="text-small text-muted">Red blocks merge: any failure in lint / types / tokens / tests / build stops the pipeline.</p>
+    <hr>
+    <div class="subhead"><h3>Production deployment</h3><span class="text-small text-muted">single-node self-hosting</span></div>
+    <div class="flow">
+      <div class="fnode"><b>systemd unit</b><span class="fd text-small">env injection (DATABASE_URL / API keys / APP_ENV…)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>node standalone server.js · :3100</b><span class="fd text-small">same-origin /api routes + hosts the web static build (STATIC_DIR)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>External dependencies</b><span class="fd text-small">PostgreSQL · model service · SMTP · UPLOAD_DIR (kept outside the dual-tar release directory so deploys never lose uploads)</span></div>
+    </div>
+    <hr>
+    <div class="subhead"><h3>Security &amp; governance</h3><span class="text-small text-muted">built-in guardrails</span></div>
+    <div class="chips">
+      <span class="chip">SETUP_TOKEN one-time bootstrap gate</span>
+      <span class="chip">AUTH_DISABLED refuses to start in production</span>
+      <span class="chip">Bearer sessions + log out all devices</span>
+      <span class="chip">User upstream credentials AES-256-GCM encrypted</span>
+      <span class="chip">AI audit logs</span>
+      <span class="chip">Quotas (chat / plan / review)</span>
+      <span class="chip">Hot-reloaded prompts (preview / optimize / rollback)</span>
+      <span class="chip">Data export JSON / Markdown</span>
+    </div>
+  </div>
+</div>
+
+<hr>
+
+<div id="gl-biz">
+  <style>
+    #gl-biz .dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+    #gl-biz .domain { border-radius: 10px; border: 1px solid var(--border); padding: 12px 14px; background: color-mix(in srgb, var(--dc) 12%, transparent); }
+    #gl-biz .dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    #gl-biz .dhead .dn { font-weight: 500; }
+    #gl-biz .dhead .dtag { color: var(--muted-foreground); }
+    #gl-biz .dfeat { color: var(--muted-foreground); }
+    #gl-biz .cross { border-radius: 10px; padding: 10px 14px; border: 1px dashed var(--border); }
+    #gl-biz .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+    #gl-biz .fnode { width: 100%; max-width: 620px; text-align: center; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    #gl-biz .fnode b { font-weight: 500; }
+    #gl-biz .fnode .fd { color: var(--muted-foreground); }
+    #gl-biz .vlink { height: 24px; display: flex; flex-direction: column; align-items: center; }
+    #gl-biz .vlink::before { content: ""; width: 2px; flex: 1; background: var(--border); }
+    #gl-biz .vlink::after { content: ""; border: 5px solid transparent; border-top: 6px solid var(--muted-foreground); }
+    #gl-biz .tee { position: relative; height: 26px; width: 100%; max-width: 620px; margin: 0 auto; }
+    #gl-biz .tee .stem { position: absolute; top: 0; left: 50%; width: 2px; height: 13px; background: var(--border); margin-left: -1px; }
+    #gl-biz .tee .bar { position: absolute; top: 13px; left: 25%; right: 25%; height: 2px; background: var(--border); }
+    #gl-biz .tee .stub { position: absolute; top: 13px; width: 2px; height: 13px; background: var(--border); }
+    #gl-biz .tee .stub.l { left: 25%; }
+    #gl-biz .tee .stub.r { left: 75%; }
+    #gl-biz .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    @media (max-width: 560px) { #gl-biz .branches { grid-template-columns: 1fr; } }
+    #gl-biz .branch { display: flex; flex-direction: column; align-items: center; }
+    #gl-biz .branch .fnode { max-width: none; }
+    #gl-biz .domchips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    #gl-biz .dchip { border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px; }
+    #gl-biz .tools { border-radius: 10px; padding: 12px 14px; border: 1px solid var(--border); }
+    #gl-biz .tools.ro { background: color-mix(in srgb, var(--green) 10%, transparent); }
+    #gl-biz .tools.wo { background: color-mix(in srgb, var(--orange) 12%, transparent); }
+    #gl-biz .tgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+    #gl-biz .tname { font-weight: 500; margin-bottom: 4px; }
+    #gl-biz .tlist { color: var(--muted-foreground); }
+    #gl-biz .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-biz .chip { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+    #gl-biz .hsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #gl-biz .hlink { display: inline-flex; align-items: center; flex: none; }
+    #gl-biz .hlink::before { content: ""; width: 14px; height: 2px; background: var(--border); }
+    #gl-biz .hlink::after { content: ""; border: 4px solid transparent; border-left: 5px solid var(--muted-foreground); }
+    #gl-biz .subhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    #gl-biz .subhead h3 { margin: 0; }
+  </style>
+
+  <h2>Gatherlight Business Design</h2>
+  <p class="text-small text-muted">Personal life OS: one-sentence capture → five-domain recognition → domain assistants · all data stays on your own server</p>
+
+  <div class="nav nav-pills" role="tablist" aria-label="Business design views">
+    <button class="nav-link active" id="gl-biz-t1" role="tab" aria-controls="gl-biz-p1" aria-selected="true" type="button">Business Overview</button>
+    <button class="nav-link" id="gl-biz-t2" role="tab" aria-controls="gl-biz-p2" aria-selected="false" type="button">Core Capture Flow</button>
+    <button class="nav-link" id="gl-biz-t3" role="tab" aria-controls="gl-biz-p3" aria-selected="false" type="button">AI Trust Boundary</button>
+    <button class="nav-link" id="gl-biz-t4" role="tab" aria-controls="gl-biz-p4" aria-selected="false" type="button">Roles &amp; Operations</button>
+  </div>
+
+  <div id="gl-biz-p1" role="tabpanel" aria-labelledby="gl-biz-t1">
+    <h3>Six business domains + cross-cutting capabilities</h3>
+    <div class="dgrid">
+      <div class="domain" style="--dc: var(--viz-series-1)">
+        <div class="dhead"><span aria-hidden="true">🕒</span><span class="dn">Time &amp; To-dos</span><span class="dtag text-small">time</span></div>
+        <div class="dfeat text-small">Day / week / month / year calendar views · conflict detection · today's action list · subtask breakdown · daily repeats</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-2)">
+        <div class="dhead"><span aria-hidden="true">🎯</span><span class="dn">Goal Spaces</span><span class="dtag text-small">goal</span></div>
+        <div class="dfeat text-small">A dedicated space per big goal · aggregates actions / reflections / moments · progress cards · AI goal breakdown</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-3)">
+        <div class="dhead"><span aria-hidden="true">👥</span><span class="dn">People Graph</span><span class="dtag text-small">people</span></div>
+        <div class="dfeat text-small">Ego-centered orbit map (draggable) · contact profiles · solar &amp; lunar birthdays · anniversaries · favor ledger</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-4)">
+        <div class="dhead"><span aria-hidden="true">💰</span><span class="dn">Finance &amp; Budgets</span><span class="dtag text-small">finance</span></div>
+        <div class="dfeat text-small">Multi-account · category stats · monthly budgets &amp; alerts · Alipay / WeChat Pay CSV import · AI weekly report</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-5)">
+        <div class="dhead"><span aria-hidden="true">🏋️</span><span class="dn">Fitness &amp; Sleep</span><span class="dtag text-small">fitness</span></div>
+        <div class="dfeat text-small">Training plans &amp; logs · body metrics · sleep &amp; mood scores · SynFit (Xunji) Open API sync</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-6)">
+        <div class="dhead"><span aria-hidden="true">📝</span><span class="dn">Moment Feed</span><span class="dtag text-small">timeline</span></div>
+        <div class="dfeat text-small">One-sentence capture (text / voice / image) · entry point of five-domain recognition · pending queue · conflict patrol</div>
+      </div>
+    </div>
+    <p class="text-small" style="margin-bottom:6px">Cross-cutting capabilities (spanning all six domains)</p>
+    <div class="cross">
+      <div class="chips">
+        <span class="chip">Domain AI assistants ×6</span>
+        <span class="chip">Per-user module toggles</span>
+        <span class="chip">Periodic reviews &amp; insights</span>
+        <span class="chip">Data export JSON / Markdown</span>
+        <span class="chip">Bilingual EN / 中文</span>
+        <span class="chip">PWA offline</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="gl-biz-p2" role="tabpanel" aria-labelledby="gl-biz-t2" hidden>
+    <div class="subhead"><h3>Core business flow · from one sentence to review</h3><span class="text-small text-muted">low-confidence results are never auto-recorded</span></div>
+    <div class="flow">
+      <div class="fnode"><b>A casual one-liner</b><span class="fd text-small">moment-feed input: text · voice (ASR transcription) · image (vision recognition)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>AI five-domain recognition</b><span class="fd text-small">each domain judged independently for "applicable + confidence"; nothing is force-classified</span></div>
+      <div class="tee"><span class="stem"></span><span class="bar"></span><span class="stub l"></span><span class="stub r"></span></div>
+      <div class="branches">
+        <div class="branch">
+          <span class="viz-badge">confidence ≥ 0.6 · auto-recorded</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>Written directly into the modules</b><span class="fd text-small">users can correct anything at any time within each module</span></div>
+        </div>
+        <div class="branch">
+          <span class="viz-badge">confidence &lt; 0.6 · needs confirmation</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>Pending queue</b><span class="fd text-small">enters the books only after human confirmation (content editable)</span></div>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode">
+        <b>Landed in five domains + people</b>
+        <div class="domchips" style="margin-top:8px">
+          <span class="dchip">🕒 Time blocks</span>
+          <span class="dchip">📋 To-dos</span>
+          <span class="dchip">💰 Transactions</span>
+          <span class="dchip">😊 Mood</span>
+          <span class="dchip">🍽 Diet</span>
+          <span class="dchip">👥 Social favors</span>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Automatic follow-ups</b><span class="fd text-small">calendar conflict detection · budget overrun alerts · favor ledger · birthday / anniversary reminders (lunar supported)</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>Periodic reviews</b><span class="fd text-small">AI weekly finance report · goal &amp; time reviews (result caching + generation quotas)</span></div>
+    </div>
+  </div>
+
+  <div id="gl-biz-p3" role="tabpanel" aria-labelledby="gl-biz-t3" hidden>
+    <div class="subhead"><h3>AI trust boundary</h3><span class="text-small text-muted">read-only direct queries · every write goes through user confirmation</span></div>
+    <div class="tgrid">
+      <div class="tools ro">
+        <div class="tname">Read-only query tools × 20 (callable directly by the AI)</div>
+        <div class="tlist text-small">
+          Time: query_time_blocks · query_todos · get_todo_detail<br>
+          Finance: query_transactions · query_accounts · query_budgets<br>
+          People: query_contacts · query_interactions<br>
+          Moments: query_entries · query_mood · query_diet · get_review<br>
+          Goals: query_goals<br>
+          Fitness: query_fitness_logs · query_fitness_plans · query_fitness_body_metrics · query_xunji_trains · get_fitness_exercises · get_fitness_goals<br>
+          General: get_user_profile
+        </div>
+      </div>
+      <div class="tools wo">
+        <div class="tname">Proposal tools × 1 (user confirmation required)</div>
+        <div class="tlist text-small">
+          propose_fitness_plan etc. → proposal confirmation card → user confirms → written to the business DB + audit log<br><br>
+          The AI holds no channel to write business data directly
+        </div>
+      </div>
+    </div>
+    <p class="text-small" style="margin-top:12px; margin-bottom:6px">Governance</p>
+    <div class="chips">
+      <span class="chip">AI audit logs</span>
+      <span class="chip">Quotas (chat / plan / review)</span>
+      <span class="chip">Hot-reloaded prompts (preview / optimize / rollback)</span>
+      <span class="chip">Jev backup link (shadow-mode comparison)</span>
+    </div>
+  </div>
+
+  <div id="gl-biz-p4" role="tabpanel" aria-labelledby="gl-biz-t4" hidden>
+    <div class="subhead"><h3>User journey</h3><span class="text-small text-muted">open registration · no invite code needed</span></div>
+    <div class="hsteps">
+      <span class="chip">Register (email + password, optional code)</span><span class="hlink"></span>
+      <span class="chip">Set module preferences</span><span class="hlink"></span>
+      <span class="chip">Daily one-sentence capture</span><span class="hlink"></span>
+      <span class="chip">Domain Q&amp;A and proposals</span><span class="hlink"></span>
+      <span class="chip">Reviews &amp; insights</span><span class="hlink"></span>
+      <span class="chip">Export JSON / MD · log out all devices</span>
+    </div>
+    <hr>
+    <div class="subhead"><h3>Admin console</h3><span class="text-small text-muted">/admin</span></div>
+    <div class="chips">
+      <span class="chip">Hot-reloaded prompts (optimize / preview / restore)</span>
+      <span class="chip">AI audit &amp; mode switching</span>
+      <span class="chip">Quota &amp; plan management</span>
+      <span class="chip">Master module toggles</span>
+      <span class="chip">Data panels / catalog / export</span>
+      <span class="chip">Invite-code traceability (auto-generated per registered user)</span>
+      <span class="chip">Marketing pages</span>
+    </div>
+    <p class="text-small text-muted" style="margin-top:10px">Bootstrap: the first admin is created via the SETUP_TOKEN-gated setup endpoint; the token is invalidated immediately after.</p>
+  </div>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.nav-pills').forEach(function (list) {
+  list.addEventListener('click', function (e) {
+    var btn = e.target ? e.target.closest('.nav-link') : null;
+    if (!btn || !list.contains(btn)) return;
+    var target = btn.getAttribute('aria-controls');
+    list.querySelectorAll('.nav-link').forEach(function (b) {
+      var on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    list.querySelectorAll('.nav-link').forEach(function (b) {
+      var p = document.getElementById(b.getAttribute('aria-controls'));
+      if (p) p.hidden = (b.getAttribute('aria-controls') !== target);
+    });
+  });
+});
+</script>
+</body>
+</html>

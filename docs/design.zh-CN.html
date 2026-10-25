@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gatherlight 设计方案 · 架构与业务设计图</title>
+<style>
+:root {
+  --background:#ffffff; --foreground:#1a2333; --card:#ffffff;
+  --muted:#eef2f7; --muted-foreground:#5d6b82; --border:#dde4ee;
+  --blue:#2563eb; --orange:#c2620c; --green:#177f4c; --red:#c53030; --purple:#6d47e0; --yellow:#9a7b0a;
+  --viz-series-1:#2f6fed; --viz-series-2:#7c5cfc; --viz-series-3:#c34d8c; --viz-series-4:#b57417;
+  --viz-series-5:#149e6d; --viz-series-6:#0d90ab;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background:#0d1420; --foreground:#e4eaf4; --card:#121b2b;
+    --muted:#1a2436; --muted-foreground:#96a3ba; --border:#28364d;
+    --blue:#7ca7ff; --orange:#f0a04e; --green:#3ecf9a; --red:#f08080; --purple:#a68cff; --yellow:#e3c25b;
+    --viz-series-1:#6b9cff; --viz-series-2:#a68cff; --viz-series-3:#ef8ec0; --viz-series-4:#eaa752;
+    --viz-series-5:#3ecf9a; --viz-series-6:#45c6e0;
+  }
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--background); color:var(--foreground);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  font-size:14px; line-height:1.6; }
+.wrap { max-width:960px; margin:0 auto; padding:34px 22px 76px; }
+h1 { font-size:24px; font-weight:500; margin:0 0 6px; }
+h2 { font-size:18px; font-weight:500; margin:26px 0 10px; }
+h3 { font-size:15px; font-weight:500; margin:18px 0 10px; }
+p { margin:8px 0; }
+hr { border:0; border-top:1px solid var(--border); margin:24px 0; }
+code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px;
+  background:var(--muted); padding:1px 6px; border-radius:5px; }
+.text-small { font-size:12.5px; }
+.text-muted { color:var(--muted-foreground); }
+.nav-pills { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 18px; padding:0; }
+.nav-pills .nav-link { appearance:none; border:1px solid var(--border); background:transparent;
+  color:var(--muted-foreground); border-radius:999px; padding:5px 15px; font:inherit; font-size:13px;
+  line-height:1.4; cursor:pointer; }
+.nav-pills .nav-link:focus-visible { outline:2px solid var(--blue); outline-offset:2px; }
+.nav-pills .nav-link.active { background:var(--foreground); border-color:var(--foreground); color:var(--background); }
+.viz-badge { display:inline-block; padding:3px 12px; border-radius:999px; font-size:12.5px;
+  background:color-mix(in srgb, var(--foreground) 9%, transparent); }
+.table-responsive { overflow-x:auto; }
+.table { width:100%; border-collapse:collapse; font-size:13px; }
+.table th { text-align:left; font-weight:500; color:var(--muted-foreground);
+  border-bottom:1px solid var(--border); padding:6px 10px; white-space:nowrap; }
+.table td { border-bottom:1px solid var(--border); padding:8px 10px; vertical-align:top; }
+.table-sm th, .table-sm td { padding:5px 8px; }
+[role="tabpanel"][hidden] { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Gatherlight（叙间拾光）设计方案</h1>
+<p class="text-small text-muted">自托管个人经营系统 · 一句话捕获 → 五域识别 → 分域助手 · npm workspaces monorepo / Next.js 15 / PostgreSQL / OpenAI 兼容模型服务</p>
+<hr>
+<div id="gl-arch">
+  <style>
+    #gl-arch .layer { display: grid; grid-template-columns: 104px 1fr; gap: 12px; align-items: center; }
+    #gl-arch .llabel { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; color: var(--muted-foreground); }
+    #gl-arch .llabel .lk { font-weight: 500; color: var(--foreground); }
+    #gl-arch .lbody { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-arch .node { border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px; }
+    #gl-arch .node b { font-weight: 500; }
+    #gl-arch .node .nd { display: block; color: var(--muted-foreground); }
+    #gl-arch .dom { text-align: left; min-width: 128px; }
+    #gl-arch .dom b { display: block; }
+    #gl-arch .lconn { width: 0; height: 16px; border-left: 2px dashed var(--border); margin: 3px auto; }
+    #gl-arch .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+    #gl-arch .fnode { width: 100%; max-width: 620px; text-align: center; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    #gl-arch .fnode b { font-weight: 500; }
+    #gl-arch .fnode .fd { color: var(--muted-foreground); }
+    #gl-arch .vlink { height: 24px; display: flex; flex-direction: column; align-items: center; }
+    #gl-arch .vlink::before { content: ""; width: 2px; flex: 1; background: var(--border); }
+    #gl-arch .vlink::after { content: ""; border: 5px solid transparent; border-top: 6px solid var(--muted-foreground); }
+    #gl-arch .tee { position: relative; height: 26px; width: 100%; max-width: 620px; margin: 0 auto; }
+    #gl-arch .tee .stem { position: absolute; top: 0; left: 50%; width: 2px; height: 13px; background: var(--border); margin-left: -1px; }
+    #gl-arch .tee .bar { position: absolute; top: 13px; left: 25%; right: 25%; height: 2px; background: var(--border); }
+    #gl-arch .tee .stub { position: absolute; top: 13px; width: 2px; height: 13px; background: var(--border); }
+    #gl-arch .tee .stub.l { left: 25%; }
+    #gl-arch .tee .stub.r { left: 75%; }
+    #gl-arch .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    @media (max-width: 560px) { #gl-arch .branches { grid-template-columns: 1fr; } }
+    #gl-arch .branch { display: flex; flex-direction: column; align-items: center; }
+    #gl-arch .branch .fnode { max-width: none; }
+    #gl-arch .hsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #gl-arch .hlink { display: inline-flex; align-items: center; flex: none; }
+    #gl-arch .hlink::before { content: ""; width: 14px; height: 2px; background: var(--border); }
+    #gl-arch .hlink::after { content: ""; border: 4px solid transparent; border-left: 5px solid var(--muted-foreground); }
+    #gl-arch .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-arch .chip { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+    #gl-arch .guard { border-radius: 10px; padding: 10px 14px; background: color-mix(in srgb, var(--viz-series-1) 10%, transparent); border: 1px solid var(--border); }
+    #gl-arch .subhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    #gl-arch .subhead h3 { margin: 0; }
+    #gl-arch .gap-v { height: 18px; }
+  </style>
+
+  <h2>Gatherlight 技术架构设计图</h2>
+  <p class="text-small text-muted">npm workspaces monorepo · TypeScript strict · Next.js 15 · PostgreSQL · OpenAI 兼容模型服务（端点可替换）</p>
+
+  <div class="nav nav-pills" role="tablist" aria-label="技术架构视图">
+    <button class="nav-link active" id="gl-arch-t1" role="tab" aria-controls="gl-arch-p1" aria-selected="true" type="button">分层架构</button>
+    <button class="nav-link" id="gl-arch-t2" role="tab" aria-controls="gl-arch-p2" aria-selected="false" type="button">模块结构</button>
+    <button class="nav-link" id="gl-arch-t3" role="tab" aria-controls="gl-arch-p3" aria-selected="false" type="button">关键链路</button>
+    <button class="nav-link" id="gl-arch-t4" role="tab" aria-controls="gl-arch-p4" aria-selected="false" type="button">部署与工程</button>
+  </div>
+
+  <div id="gl-arch-p1" role="tabpanel" aria-labelledby="gl-arch-t1">
+    <h3>六层分层视图</h3>
+    <div class="layer">
+      <div class="llabel"><span class="lk">用户终端</span><span class="text-small">浏览器</span></div>
+      <div class="lbody">
+        <div class="node"><b>桌面 / 移动浏览器</b></div>
+        <div class="node"><b>PWA</b><span class="nd text-small">可安装 · Service Worker 离线缓存 · 语音录入</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">前端展示</span><span class="text-small">apps/web</span></div>
+      <div class="lbody">
+        <div class="node"><b>Next.js 15 App Router 静态导出</b><span class="nd text-small">构建产物 out/，无运行时服务</span></div>
+        <div class="node"><b>16 个页面路由</b><span class="nd text-small">首页 / 日历 / 待办 / 人际 / 财务 / 健身 / 空间 / 助手 / 管理后台…</span></div>
+        <div class="node"><b>中英 i18n 字典</b><span class="nd text-small">14 个域模块 · 自定义双语 DatePicker</span></div>
+        <div class="node"><b>design-tokens 设计令牌</b></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">服务接入</span><span class="text-small">apps/api</span></div>
+      <div class="lbody">
+        <div class="node"><b>Next.js standalone 服务</b><span class="nd text-small">同源托管 /api 路由与前端静态产物</span></div>
+        <div class="node"><b>95 条 /api 路由</b></div>
+        <div class="node"><b>middleware</b><span class="nd text-small">Bearer 会话鉴权 · CORS · 安全策略</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">业务域层</span><span class="text-small">src/server · 11 域</span></div>
+      <div class="lbody">
+        <div class="node dom"><b>identity</b><span class="nd text-small">认证 / 邮箱验证码</span></div>
+        <div class="node dom"><b>time</b><span class="nd text-small">时间块 / 待办</span></div>
+        <div class="node dom"><b>people</b><span class="nd text-small">人际图谱</span></div>
+        <div class="node dom"><b>finance</b><span class="nd text-small">收支 / 预算</span></div>
+        <div class="node dom"><b>fitness</b><span class="nd text-small">健身 / 睡眠</span></div>
+        <div class="node dom"><b>goal</b><span class="nd text-small">目标空间</span></div>
+        <div class="node dom"><b>timeline</b><span class="nd text-small">动态流 / 识别</span></div>
+        <div class="node dom"><b>insight</b><span class="nd text-small">复盘 / 周报</span></div>
+        <div class="node dom"><b>chat</b><span class="nd text-small">分域助手</span></div>
+        <div class="node dom"><b>ai</b><span class="nd text-small">AI 网关 / 审计 / 配额</span></div>
+        <div class="node dom"><b>platform</b><span class="nd text-small">DB / 配置 / 模块开关</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">复用包层</span><span class="text-small">packages</span></div>
+      <div class="lbody">
+        <div class="node"><b>ai</b><span class="nd text-small">AI 内核纯包：zod 契约 / 提示词 / 模型接入 / 规则兜底</span></div>
+        <div class="node"><b>shared</b><span class="nd text-small">跨端纯函数：日期 / 农历 / CSV / 图谱 / API 客户端</span></div>
+        <div class="node"><b>db</b><span class="nd text-small">69 个手写 SQL 迁移 + runner（无 ORM）</span></div>
+        <div class="node"><b>design-tokens</b><span class="nd text-small">令牌生成器 + 漂移校验</span></div>
+      </div>
+    </div>
+    <div class="lconn"></div>
+    <div class="layer">
+      <div class="llabel"><span class="lk">基础设施</span><span class="text-small">外部依赖</span></div>
+      <div class="lbody">
+        <div class="node"><b>PostgreSQL 13+</b><span class="nd text-small">唯一业务数据存储</span></div>
+        <div class="node"><b>模型服务（OpenAI 兼容）</b><span class="nd text-small">Nebius Token Factory · NVIDIA Nemotron / 智谱 GLM，端点环境变量解耦</span></div>
+        <div class="node"><b>SMTP</b><span class="nd text-small">邮箱验证码（可选）</span></div>
+        <div class="node"><b>本地文件存储</b><span class="nd text-small">UPLOAD_DIR：动态图片 / 音频</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="gl-arch-p2" role="tabpanel" aria-labelledby="gl-arch-t2" hidden>
+    <h3>Monorepo 模块结构</h3>
+    <div class="table-responsive">
+      <table class="table table-sm">
+        <thead>
+          <tr><th>模块</th><th>职责</th><th>规模</th><th>关键内容</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>apps/web</code></td><td>前端（静态导出）</td><td>210 文件 · 2.74 万行</td><td>16 个页面路由 · 50+ 组件（日历四视图 / 待办看板 / 关系轨道图 / 动态流）· 中英 i18n · PWA</td></tr>
+          <tr><td><code>apps/api</code></td><td>服务端（API + 静态托管）</td><td>183 文件 · 2.25 万行</td><td><code>src/server</code> 11 域拆分 · 95 条路由 · middleware 鉴权</td></tr>
+          <tr><td><code>packages/ai</code></td><td>AI 内核（纯包，无运行时依赖）</td><td>23 文件 · 0.59 万行</td><td>zod 五域契约（容错）· <code>glm.ts</code> 模型接入（SDK / legacy 双传输）· 提示词 · 时间推断 · 心情规则兜底 · Jev 备链路</td></tr>
+          <tr><td><code>packages/shared</code></td><td>跨端类型与纯函数</td><td>23 文件 · 0.27 万行</td><td>北京时区日期 · 农历 · CSV 导入 · 关系图谱 · 提醒 · Bearer / CORS · API 客户端</td></tr>
+          <tr><td><code>packages/db</code></td><td>数据库层</td><td>69 个迁移</td><td>手写 SQL + 迁移 runner（tsx 执行，无 ORM）</td></tr>
+          <tr><td><code>packages/design-tokens</code></td><td>设计令牌</td><td>生成器</td><td>令牌源 + <code>tokens:verify</code> 漂移校验（CI 卡点）</td></tr>
+          <tr><td><code>scripts/qa</code></td><td>演示与审计</td><td>7 个脚本</td><td>六域演示数据 seed · i18n 审计</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="text-small text-muted">依赖方向：apps → packages（ai / shared / db 互不反向依赖）；AI 逻辑集中在纯包，便于 node:test 直接覆盖。</p>
+  </div>
+
+  <div id="gl-arch-p3" role="tabpanel" aria-labelledby="gl-arch-t3" hidden>
+    <div class="subhead"><h3>链路 A · 一句话五域录入</h3><span class="text-small text-muted">timeline 域</span></div>
+    <div class="flow">
+      <div class="fnode"><b>用户随口记录</b><span class="fd text-small">动态流输入：文字 / 语音 / 图片（entry 可附音频与多图）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>预处理</b><span class="fd text-small">语音 → ASR 转写（ffmpeg 转码兜底）；图片 → 视觉模型</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>LLM 五域识别</b><span class="fd text-small">每域独立判定 applicable + confidence · zod 契约容错（非数字置信度降 0.5 / 拒绝字符串布尔幻影）· 规则引擎兜底（心情 / 时间推断）</span></div>
+      <div class="tee"><span class="stem"></span><span class="bar"></span><span class="stub l"></span><span class="stub r"></span></div>
+      <div class="branches">
+        <div class="branch">
+          <span class="viz-badge">置信度 ≥ 0.6</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>自动写入对应域</b></div>
+        </div>
+        <div class="branch">
+          <span class="viz-badge">置信度 &lt; 0.6</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>待确认队列</b><span class="fd text-small">人工确认（可修改）后才入账</span></div>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>五域落库</b><span class="fd text-small">🕒 日程时间块 · 📋 待办 · 💰 收支流水 · 😊 心情 · 🍽 饮食（另识别人际往来）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>联动与消费</b><span class="fd text-small">动态流 Feed · 日历冲突检测 · 预算预警 · 人情往来账 · AI 周报与周期复盘</span></div>
+    </div>
+    <hr>
+    <div class="subhead"><h3>链路 B · 分域助手问答</h3><span class="text-small text-muted">chat 域</span></div>
+    <div class="flow">
+      <div class="fnode"><b>用户提问</b><span class="fd text-small">六域助手：全局 / 目标 / 日程 / 人际 / 财务 / 健身</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>chat agent</b><span class="fd text-small">域内系统提示词（管理端可热更）+ 会话历史 + 用户词汇</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>工具调用（OpenAI tools 协议）</b><span class="fd text-small">20 个只读工具直查数据库：query_* 15 个 + get_* 5 个 → 基于真实数据生成回答</span></div>
+      <div class="vlink"></div>
+      <div class="fnode guard"><b>信任边界</b><span class="fd text-small">AI 永不直接写业务数据 —— 需创建 / 修改时产出提案卡（如 propose_fitness_plan），用户确认后才写入并记录审计日志</span></div>
+    </div>
+  </div>
+
+  <div id="gl-arch-p4" role="tabpanel" aria-labelledby="gl-arch-t4" hidden>
+    <div class="subhead"><h3>CI 流水线</h3><span class="text-small text-muted">GitHub Actions · main / PR</span></div>
+    <div class="hsteps">
+      <span class="chip">npm ci</span><span class="hlink"></span>
+      <span class="chip">lint（ESLint 9）</span><span class="hlink"></span>
+      <span class="chip">typecheck（3 个 tsconfig）</span><span class="hlink"></span>
+      <span class="chip">设计令牌漂移检查</span><span class="hlink"></span>
+      <span class="chip">test（39 个测试文件 + PostgreSQL 13 service 容器）</span><span class="hlink"></span>
+      <span class="chip">build（web 静态导出 + api standalone）</span>
+    </div>
+    <p class="text-small text-muted">红不过合：lint / 类型 / 令牌 / 测试 / 构建任一失败即阻断。</p>
+    <hr>
+    <div class="subhead"><h3>生产部署</h3><span class="text-small text-muted">单机自托管</span></div>
+    <div class="flow">
+      <div class="fnode"><b>systemd 服务单元</b><span class="fd text-small">env 注入（DATABASE_URL / API Key / APP_ENV…）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>node standalone server.js · :3100</b><span class="fd text-small">同源提供 /api 路由 + 托管 web 静态产物（STATIC_DIR）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>外部依赖</b><span class="fd text-small">PostgreSQL · 模型服务 · SMTP · UPLOAD_DIR（独立于双 tar 发布目录，防发版丢图片）</span></div>
+    </div>
+    <hr>
+    <div class="subhead"><h3>安全与治理</h3><span class="text-small text-muted">内置约束</span></div>
+    <div class="chips">
+      <span class="chip">SETUP_TOKEN 一次性初始化门禁</span>
+      <span class="chip">AUTH_DISABLED 生产拒绝启动</span>
+      <span class="chip">Bearer 会话 + 全端登出</span>
+      <span class="chip">用户上游凭据 AES-256-GCM 加密</span>
+      <span class="chip">AI 审计日志</span>
+      <span class="chip">配额（chat / plan / review）</span>
+      <span class="chip">提示词热更（预览 / 优化 / 回滚）</span>
+      <span class="chip">数据导出 JSON / Markdown</span>
+    </div>
+  </div>
+</div>
+
+<hr>
+<div id="gl-biz">
+  <style>
+    #gl-biz .dgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+    #gl-biz .domain { border-radius: 10px; border: 1px solid var(--border); padding: 12px 14px; background: color-mix(in srgb, var(--dc) 12%, transparent); }
+    #gl-biz .dhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    #gl-biz .dhead .dn { font-weight: 500; }
+    #gl-biz .dhead .dtag { color: var(--muted-foreground); }
+    #gl-biz .dfeat { color: var(--muted-foreground); }
+    #gl-biz .cross { border-radius: 10px; padding: 10px 14px; border: 1px dashed var(--border); }
+    #gl-biz .flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+    #gl-biz .fnode { width: 100%; max-width: 620px; text-align: center; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; }
+    #gl-biz .fnode b { font-weight: 500; }
+    #gl-biz .fnode .fd { color: var(--muted-foreground); }
+    #gl-biz .vlink { height: 24px; display: flex; flex-direction: column; align-items: center; }
+    #gl-biz .vlink::before { content: ""; width: 2px; flex: 1; background: var(--border); }
+    #gl-biz .vlink::after { content: ""; border: 5px solid transparent; border-top: 6px solid var(--muted-foreground); }
+    #gl-biz .tee { position: relative; height: 26px; width: 100%; max-width: 620px; margin: 0 auto; }
+    #gl-biz .tee .stem { position: absolute; top: 0; left: 50%; width: 2px; height: 13px; background: var(--border); margin-left: -1px; }
+    #gl-biz .tee .bar { position: absolute; top: 13px; left: 25%; right: 25%; height: 2px; background: var(--border); }
+    #gl-biz .tee .stub { position: absolute; top: 13px; width: 2px; height: 13px; background: var(--border); }
+    #gl-biz .tee .stub.l { left: 25%; }
+    #gl-biz .tee .stub.r { left: 75%; }
+    #gl-biz .branches { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; }
+    @media (max-width: 560px) { #gl-biz .branches { grid-template-columns: 1fr; } }
+    #gl-biz .branch { display: flex; flex-direction: column; align-items: center; }
+    #gl-biz .branch .fnode { max-width: none; }
+    #gl-biz .domchips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+    #gl-biz .dchip { border: 1px solid var(--border); border-radius: 999px; padding: 5px 13px; }
+    #gl-biz .tools { border-radius: 10px; padding: 12px 14px; border: 1px solid var(--border); }
+    #gl-biz .tools.ro { background: color-mix(in srgb, var(--green) 10%, transparent); }
+    #gl-biz .tools.wo { background: color-mix(in srgb, var(--orange) 12%, transparent); }
+    #gl-biz .tgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 12px; }
+    #gl-biz .tname { font-weight: 500; margin-bottom: 4px; }
+    #gl-biz .tlist { color: var(--muted-foreground); }
+    #gl-biz .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    #gl-biz .chip { border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; }
+    #gl-biz .hsteps { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #gl-biz .hlink { display: inline-flex; align-items: center; flex: none; }
+    #gl-biz .hlink::before { content: ""; width: 14px; height: 2px; background: var(--border); }
+    #gl-biz .hlink::after { content: ""; border: 4px solid transparent; border-left: 5px solid var(--muted-foreground); }
+    #gl-biz .subhead { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+    #gl-biz .subhead h3 { margin: 0; }
+  </style>
+
+  <h2>Gatherlight 业务设计图</h2>
+  <p class="text-small text-muted">个人经营系统：一句话捕获 → 五域识别 → 分域助手 · 数据全部留在自己服务器</p>
+
+  <div class="nav nav-pills" role="tablist" aria-label="业务设计视图">
+    <button class="nav-link active" id="gl-biz-t1" role="tab" aria-controls="gl-biz-p1" aria-selected="true" type="button">业务全景</button>
+    <button class="nav-link" id="gl-biz-t2" role="tab" aria-controls="gl-biz-p2" aria-selected="false" type="button">核心捕获流</button>
+    <button class="nav-link" id="gl-biz-t3" role="tab" aria-controls="gl-biz-p3" aria-selected="false" type="button">AI 信任边界</button>
+    <button class="nav-link" id="gl-biz-t4" role="tab" aria-controls="gl-biz-p4" aria-selected="false" type="button">角色与运营</button>
+  </div>
+
+  <div id="gl-biz-p1" role="tabpanel" aria-labelledby="gl-biz-t1">
+    <h3>六大业务域 + 横切能力</h3>
+    <div class="dgrid">
+      <div class="domain" style="--dc: var(--viz-series-1)">
+        <div class="dhead"><span aria-hidden="true">🕒</span><span class="dn">时间与待办</span><span class="dtag text-small">time</span></div>
+        <div class="dfeat text-small">日 / 周 / 月 / 年四种日历视图 · 冲突检测 · 今日行动清单 · 子任务拆解 · 每日重复</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-2)">
+        <div class="dhead"><span aria-hidden="true">🎯</span><span class="dn">目标空间</span><span class="dtag text-small">goal</span></div>
+        <div class="dfeat text-small">为大目标建专属空间 · 聚合行动 / 感悟 / 动态 · 进度卡片 · AI 目标拆解</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-3)">
+        <div class="dhead"><span aria-hidden="true">👥</span><span class="dn">人际图谱</span><span class="dtag text-small">people</span></div>
+        <div class="dfeat text-small">以我为中心的关系轨道图（可拖拽摆位）· 联系人档案 · 阳历 / 农历生日 · 纪念日 · 人情往来账</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-4)">
+        <div class="dhead"><span aria-hidden="true">💰</span><span class="dn">收支与预算</span><span class="dtag text-small">finance</span></div>
+        <div class="dfeat text-small">多账户 · 分类统计 · 月度预算与预警 · 支付宝 / 微信 CSV 账单导入 · AI 收支周报</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-5)">
+        <div class="dhead"><span aria-hidden="true">🏋️</span><span class="dn">健身与睡眠</span><span class="dtag text-small">fitness</span></div>
+        <div class="dfeat text-small">训练计划与记录 · 身体指标 · 睡眠与感受得分 · 训记（SynFit）Open API 同步</div>
+      </div>
+      <div class="domain" style="--dc: var(--viz-series-6)">
+        <div class="dhead"><span aria-hidden="true">📝</span><span class="dn">动态流</span><span class="dtag text-small">timeline</span></div>
+        <div class="dfeat text-small">一句话随记（文字 / 语音 / 图片）· 五域识别入口 · 待确认队列 · 冲突巡检</div>
+      </div>
+    </div>
+    <p class="text-small" style="margin-bottom:6px">横切能力（贯穿六域）</p>
+    <div class="cross">
+      <div class="chips">
+        <span class="chip">分域 AI 助手 ×6</span>
+        <span class="chip">模块按用户开关</span>
+        <span class="chip">周期复盘与洞察</span>
+        <span class="chip">数据导出 JSON / Markdown</span>
+        <span class="chip">中英双语</span>
+        <span class="chip">PWA 离线</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="gl-biz-p2" role="tabpanel" aria-labelledby="gl-biz-t2" hidden>
+    <div class="subhead"><h3>核心业务流 · 一句话捕获到复盘</h3><span class="text-small text-muted">低置信度不自动入账</span></div>
+    <div class="flow">
+      <div class="fnode"><b>随口一句话</b><span class="fd text-small">动态流输入：文字 · 语音（ASR 转写）· 图片（视觉识别）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>AI 五域识别</b><span class="fd text-small">每域独立判定「是否涉及 + 置信度」，识别不出不强制归类</span></div>
+      <div class="tee"><span class="stem"></span><span class="bar"></span><span class="stub l"></span><span class="stub r"></span></div>
+      <div class="branches">
+        <div class="branch">
+          <span class="viz-badge">置信度 ≥ 0.6 · 自动入域</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>直接记入对应模块</b><span class="fd text-small">用户可在各模块内随时修正</span></div>
+        </div>
+        <div class="branch">
+          <span class="viz-badge">置信度 &lt; 0.6 · 待确认</span>
+          <div class="vlink"></div>
+          <div class="fnode"><b>待确认队列</b><span class="fd text-small">人工确认（可修改内容）后才真正入账</span></div>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode">
+        <b>五大域 + 人际落库</b>
+        <div class="domchips" style="margin-top:8px">
+          <span class="dchip">🕒 日程时间块</span>
+          <span class="dchip">📋 待办</span>
+          <span class="dchip">💰 收支流水</span>
+          <span class="dchip">😊 心情</span>
+          <span class="dchip">🍽 饮食</span>
+          <span class="dchip">👥 人情往来</span>
+        </div>
+      </div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>自动联动</b><span class="fd text-small">日历冲突检测 · 预算超支预警 · 人情往来记账 · 生日 / 纪念日提醒（含农历）</span></div>
+      <div class="vlink"></div>
+      <div class="fnode"><b>周期复盘</b><span class="fd text-small">AI 收支周报 · 目标与时间复盘（结果缓存 + 生成配额控制）</span></div>
+    </div>
+  </div>
+
+  <div id="gl-biz-p3" role="tabpanel" aria-labelledby="gl-biz-t3" hidden>
+    <div class="subhead"><h3>AI 信任边界</h3><span class="text-small text-muted">只读直查 · 写操作必须经用户确认</span></div>
+    <div class="tgrid">
+      <div class="tools ro">
+        <div class="tname">只读查询工具 × 20（AI 可直接调用）</div>
+        <div class="tlist text-small">
+          时间：query_time_blocks · query_todos · get_todo_detail<br>
+          财务：query_transactions · query_accounts · query_budgets<br>
+          人际：query_contacts · query_interactions<br>
+          动态：query_entries · query_mood · query_diet · get_review<br>
+          目标：query_goals<br>
+          健身：query_fitness_logs · query_fitness_plans · query_fitness_body_metrics · query_xunji_trains · get_fitness_exercises · get_fitness_goals<br>
+          通用：get_user_profile
+        </div>
+      </div>
+      <div class="tools wo">
+        <div class="tname">提案工具 × 1（必须用户确认）</div>
+        <div class="tlist text-small">
+          propose_fitness_plan 等 → 生成提案确认卡 → 用户点确认 → 写入业务库 + 审计日志<br><br>
+          AI 不持有任何直接写入业务数据的通道
+        </div>
+      </div>
+    </div>
+    <p class="text-small" style="margin-top:12px; margin-bottom:6px">治理手段</p>
+    <div class="chips">
+      <span class="chip">AI 审计日志</span>
+      <span class="chip">配额（chat / plan / review）</span>
+      <span class="chip">提示词热更（预览 / 优化 / 回滚）</span>
+      <span class="chip">Jev 备链路（shadow 模式对照）</span>
+    </div>
+  </div>
+
+  <div id="gl-biz-p4" role="tabpanel" aria-labelledby="gl-biz-t4" hidden>
+    <div class="subhead"><h3>用户旅程</h3><span class="text-small text-muted">注册开放 · 无需邀请码</span></div>
+    <div class="hsteps">
+      <span class="chip">注册（邮箱 + 密码，可选验证码）</span><span class="hlink"></span>
+      <span class="chip">设置模块偏好</span><span class="hlink"></span>
+      <span class="chip">日常一句话捕获</span><span class="hlink"></span>
+      <span class="chip">分域问答与提案</span><span class="hlink"></span>
+      <span class="chip">复盘洞察</span><span class="hlink"></span>
+      <span class="chip">导出 JSON / MD · 全端登出</span>
+    </div>
+    <hr>
+    <div class="subhead"><h3>管理员后台</h3><span class="text-small text-muted">/admin</span></div>
+    <div class="chips">
+      <span class="chip">提示词热更（optimize / preview / restore）</span>
+      <span class="chip">AI 审计与模式切换</span>
+      <span class="chip">配额与套餐管理</span>
+      <span class="chip">模块总开关</span>
+      <span class="chip">数据面板 / 目录 / 导出</span>
+      <span class="chip">邀请码追溯（每位注册用户自动生成记录）</span>
+      <span class="chip">营销页管理</span>
+    </div>
+    <p class="text-small text-muted" style="margin-top:10px">初始化：首个管理员经 SETUP_TOKEN 门禁的 setup 接口创建，令牌即失效。</p>
+  </div>
+</div>
+
+</div>
+<script>
+document.querySelectorAll('.nav-pills').forEach(function (list) {
+  list.addEventListener('click', function (e) {
+    var btn = e.target ? e.target.closest('.nav-link') : null;
+    if (!btn || !list.contains(btn)) return;
+    var target = btn.getAttribute('aria-controls');
+    list.querySelectorAll('.nav-link').forEach(function (b) {
+      var on = b === btn;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    list.querySelectorAll('.nav-link').forEach(function (b) {
+      var p = document.getElementById(b.getAttribute('aria-controls'));
+      if (p) p.hidden = (b.getAttribute('aria-controls') !== target);
+    });
+  });
+});
+</script>
+</body>
+</html>
