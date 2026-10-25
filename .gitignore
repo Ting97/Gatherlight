@@ -4,6 +4,7 @@ node_modules/
 # secrets — 任何密钥入库即事故
 .env
 .env.*
+!.env.example
 
 # build outputs
 .next/

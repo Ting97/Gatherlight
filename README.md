@@ -1,100 +1,129 @@
-# xujianshiguang（叙笺拾光）
+**English** | [中文](./README.zh-CN.md)
+
+# xujianshiguang (叙笺拾光)
 
 > **Your life, your data, your AI** — a self-hosted life assistant powered by NVIDIA Nemotron on Nebius Token Factory.
 
-拾光是一个**自托管的个人经营系统**：把日常随口一句话交给 AI，自动识别其中的日程、待办、收支、心情、饮食并记入对应模块；分域 AI 助手基于你自己的结构化数据问答、查询与提案。所有数据留在你自己的服务器和数据库里。
+**Live demo: <https://xujianshiguang.ting97.cn>** (English UI by default; switch to Chinese anytime from the header)
 
-本仓库是 [Nebius x NVIDIA Global AI Hackathon 2026](https://nebiusglobalaihackathon.devpost.com/) 的参赛项目（Personal AI 赛道）。
+| Account | Credentials | Purpose |
+|---|---|---|
+| Demo user | `en-demo@ting97.cn` / `en-demo-2026` | Pre-seeded with six domains of English demo data — start here |
+| Admin | `admin@ting97.cn` / `admin1234` | Admin console: prompt hot-reload, AI audit log, quotas, module switches |
 
-## 核心功能
+Open registration is also enabled — sign up with any email address, no invite code required.
 
-- **一句话五域识别**：动态流里随口记录（文字/语音），AI 自动识别 → 🕒 日程时间块、📋 待办、💰 收支流水、😊 心情、🍽 饮食；低置信度进入「待确认」，人工确认才入账
-- **时间与待办**：日/周/月/年四种日历视图、冲突检测、今日行动清单、子任务拆解与每日重复
-- **目标空间**：为大目标（考研上岸、副业过万…）建专属空间，聚合行动、感悟与动态，进度卡片
-- **人际图谱**：以你为中心的关系轨道图（可拖动摆位），联系人档案（阳历/农历生日、纪念日、人情往来账）
-- **收支与预算**：多账户、分类统计、月度预算与预警、支付宝/微信支付 CSV 账单导入、AI 收支周报
-- **健身与睡眠**：训练计划与记录、每日睡眠与感受得分，支持对接训记（SynFit）Open API 同步
-- **分域 AI 助手**：全局/目标/日程/人际/财务/健身六个域助手，20 个只读查询工具 + 提案确认卡（AI 不直接写业务数据，提案经你确认生效）
-- **模块开关**：子模块可按用户粒度开启/关闭；管理员后台支持提示词热更、AI 审计与配额
-- **数据自主**：自建账号体系（邮箱 + 密码，开放注册）、数据导出（JSON / Markdown）、全端登出
+This repository is our entry for the [Nebius x NVIDIA Global AI Hackathon 2026](https://nebiusglobalaihackathon.devpost.com/) (Personal AI track).
 
-## 技术栈
+## What it is
 
-- **前端**：Next.js 15（App Router，静态导出）
-- **服务端**：Next.js standalone 托管 API 与静态资源（`src/server/<domain>` 九域拆分）
-- **AI 内核**：独立纯包 `packages/ai`——zod 契约 + OpenAI 兼容模型接入 + 规则引擎兜底；工具调用走标准 OpenAI tools 协议
-- **数据库**：PostgreSQL（手写 SQL 迁移 + runner，`packages/db`）
-- **工程**：npm workspaces monorepo、TypeScript strict、node:test、GitHub Actions CI
+xujianshiguang is a **self-hosted personal life OS**. Type one casual sentence into the moment feed — *"Morning run 40 minutes, feeling great, lunch with Emma cost 260"* — and the AI extracts 🕒 schedule blocks, 📋 todos, 💰 transactions, 😊 mood and 🍽 meals into the right modules. Low-confidence extractions land in a **pending-confirmation** area: nothing is recorded until a human approves it.
 
-## 快速开始
+Six domain AI assistants (global / goals / time / people / finance / fitness) answer questions **from your own structured data** through read-only query tools. When an assistant wants to change something, it files a proposal card that you approve — the AI never writes business data directly.
 
-环境要求：Node ≥ 20、PostgreSQL 13+。
+All data stays in your own PostgreSQL database. The UI is bilingual (English / 中文) and every AI output follows the interface language.
 
-```bash
-npm install                       # 安装依赖
-cp .env.example .env              # 配置环境变量（见下方说明）
-npm run db:migrate -- --fresh     # 新库建表（⚠️ 会清空目标库）
-npm run dev                       # 本地开发（web）
-npm run dev:api                   # 本地开发（api）
+## How it uses Nebius & NVIDIA
+
+- All runtime LLM calls go to **Nebius Token Factory** (`https://api.tokenfactory.nebius.com/v1`), an OpenAI-compatible endpoint
+- Model: **`nvidia/nemotron-3-super-120b-a12b`** (NVIDIA open model) — used for domain assistants, moment extraction, periodic reviews and goal decomposition
+- Function calling over the standard OpenAI tools protocol: 20 read-only query tools (`query_transactions`, `query_calendar`, `query_contacts`, …) plus confirmable proposal tools
+- The model layer is endpoint-agnostic: point `ZHIPUAI_BASE_URL` at any OpenAI-compatible service (e.g. Zhipu GLM) — zero code change
+- Nemotron-3 is a thinking model; for latency-sensitive tasks we disable thinking via `reasoning_effort: "none"` and fall back to its `reasoning` field (`packages/ai/src/glm.ts`)
+
+```env
+ZHIPUAI_BASE_URL=https://api.tokenfactory.nebius.com/v1
+ZHIPUAI_API_KEY=<your Nebius Token Factory key>
+GLM_MODEL=nvidia/nemotron-3-super-120b-a12b
 ```
 
-生产构建与运行：
+## Core features
+
+- **One sentence, five domains** — record moments in the feed (text, or voice when an ASR-capable endpoint is configured); the AI extracts them into 🕒 schedule blocks, 📋 todos, 💰 transactions, 😊 mood and 🍽 meals. Low-confidence items wait in "pending confirmation" and only enter the books after a human approves
+- **Time & todos** — day/week/month/year calendar views, conflict detection, today's action list, subtask breakdown and daily repeats
+- **Goal spaces** — a dedicated space for each big goal (pass the exam, launch a side business…), aggregating its actions, reflections and moments with progress cards
+- **People graph** — a draggable orbit map centered on you; contact profiles with solar/lunar birthdays, anniversaries and a gift-exchange ledger
+- **Finance & budgeting** — multi-account bookkeeping, category stats, monthly budgets with alerts, Alipay/WeChat Pay CSV import, AI weekly finance review
+- **Fitness & sleep** — training plans and logs, daily sleep tracking with feel/score, sync via the Xunji (SynFit) Open API
+- **Domain AI assistants** — six assistants (global/goal/time/people/finance/fitness) with 20 read-only query tools + proposal confirmation cards (the AI never writes business data directly; proposals take effect only after you approve)
+- **Module switches** — modules can be toggled per user; the admin console supports prompt hot-reload, AI audit and quotas
+- **Data ownership** — self-hosted accounts (email + password, open registration), data export (JSON / Markdown), sign out everywhere
+
+## Tech stack
+
+- **Frontend**: Next.js 15 (App Router, static export)
+- **Server**: Next.js standalone hosting the API and static assets (`src/server/<domain>`, nine domains)
+- **AI core**: standalone pure package `packages/ai` — zod contracts + OpenAI-compatible model access + a rule-engine fallback; tool calling over the standard OpenAI tools protocol
+- **Database**: PostgreSQL (hand-written SQL migrations + runner, `packages/db`)
+- **Engineering**: npm workspaces monorepo, TypeScript strict, node:test, GitHub Actions CI
+
+## Quick start
+
+Requirements: Node ≥ 20, PostgreSQL 13+.
+
+```bash
+npm install                       # install dependencies
+cp .env.example .env              # configure environment variables (see below)
+npm run db:migrate -- --fresh     # create tables on a new database (⚠️ wipes the target DB)
+npm run dev                       # local development (web)
+npm run dev:api                   # local development (api)
+```
+
+Production build and run:
 
 ```bash
 npm run build
 set -a && source .env && set +a && PORT=3100 node apps/api/.next/standalone/apps/api/server.js
 ```
 
-关键环境变量（完整见 `.env.example`）：
+Key environment variables (see `.env.example` for the full list):
 
-| 变量 | 说明 |
+| Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | PostgreSQL 连接串（必填） |
-| `ZHIPUAI_API_KEY` | OpenAI 兼容模型服务的 API key（AI 功能必需） |
-| `SETUP_TOKEN` | 初始化一次性令牌：首个管理员经 `POST /api/auth/setup`（`x-setup-token` 请求头携带）创建后失效 |
-| `EMAIL_SMTP_*` | 邮箱验证码 SMTP 通道（未配置时注册免验证码直接创建） |
-| `AUTH_DISABLED` | 仅本地开发可用；生产非空会拒绝启动 |
+| `DATABASE_URL` | PostgreSQL connection string (required) |
+| `ZHIPUAI_API_KEY` | API key for the OpenAI-compatible model endpoint (required for AI features) |
+| `SETUP_TOKEN` | one-time bootstrap token: the first admin is created via `POST /api/auth/setup` (sent in the `x-setup-token` header), after which the token is invalidated |
+| `EMAIL_SMTP_*` | SMTP channel for email verification codes (if unset, registration skips the code) |
+| `AUTH_DISABLED` | local development only; a non-empty value in production refuses to start |
 
-**初始化管理员**：服务启动后，用 `SETUP_TOKEN` 调用
+**Create the first admin** — after the service starts, call setup with your `SETUP_TOKEN`:
 
 ```bash
 curl -X POST http://127.0.0.1:3100/api/auth/setup \
-  -H "content-type: application/json" -H "x-setup-token: <你的 SETUP_TOKEN>" \
+  -H "content-type: application/json" -H "x-setup-token: <your SETUP_TOKEN>" \
   -d '{"nickname":"admin","email":"admin@example.com","password":"your-password"}'
 ```
 
-之后即可用邮箱在 `/login` 注册使用——注册开放，无需邀请码（系统会为每位注册用户自动生成一条邀请码记录便于追溯）。
+After that, anyone can register at `/login` with an email — registration is open and needs no invite code (the system auto-generates an invite-code record per user for auditability).
 
-**演示数据**：`scripts/qa/seed-*-gui.mjs` 六个脚本可对任意环境灌入各模块演示数据：
+**Demo data**: the scripts under `scripts/qa/` seed every module with demo data against any environment:
 
 ```bash
-BASE_URL=https://your-host SEED_EMAIL=you@example.com SEED_PASSWORD=xxx node scripts/qa/seed-finance-gui.mjs
+BASE_URL=https://your-host SEED_EMAIL=you@example.com SEED_PASSWORD=xxx node scripts/qa/seed-demo-en.mjs
 ```
 
-## 目录结构
+## Repository layout
 
 ```
 apps/
-  web/        # 前端（Next.js 静态导出）
-  api/        # 服务端（API + 静态托管，src/server 九域）
+  web/        # frontend (Next.js static export)
+  api/        # server (API + static hosting, nine domains under src/server)
 packages/
-  ai/         # AI 内核纯包（契约/提示词/模型接入/规则兜底）
-  shared/     # 跨端类型与纯函数（日期/农历/CSV/图谱/API 客户端）
-  db/         # schema.sql + SQL 迁移 + runner
-  design-tokens/ # 设计令牌源与生成器
-scripts/qa/   # 演示数据种子脚本
+  ai/         # AI core, pure package (contracts / prompts / model access / rule fallback)
+  shared/     # cross-end types & pure functions (dates / lunar calendar / CSV / graph / API client)
+  db/         # schema.sql + SQL migrations + runner
+  design-tokens/ # design token sources & generator
+scripts/qa/   # demo data seed scripts
 ```
 
-## 参赛时间线
+## Hackathon timeline
 
-| 节点 | 时间 |
+| Milestone | Time |
 |---|---|
-| 提交截止 | 2026-10-30 10:00 AM PT（北京时间 10-31 01:00） |
-| 评审期 | 2026-12-01 ～ 12-15（demo 须存活） |
-| 公布 | 约 2027-01-11 |
+| Submission deadline | 2026-10-30 10:00 AM PT (Oct 31, 01:00 Beijing time) |
+| Judging period | 2026-12-01 – 12-15 (demo must stay alive) |
+| Winners announced | ~2027-01-11 |
 
-## 许可证
+## License
 
 [Apache-2.0](./LICENSE)
-
-> ⚠️ 本 README 当前为中文版，正式提交前将替换为英文参赛版（架构说明、快速启动、模型接入用法）。
