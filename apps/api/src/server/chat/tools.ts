@@ -180,7 +180,7 @@ const queryTransactions: ChatTool = {
     );
     // 金额单位统一「分」（整数）——提示词已约定模型表述时换算为元；::bigint 经 pg 返回字符串，统一转回数字
     const numRow = (r: { cents: unknown }) => ({ ...r, cents: Number(r.cents) });
-    return { range: { from, to }, totals: totals.map(numRow), byCategory: byCategory.map(numRow), detail: detail.map(numRow), centsUnit: "分（1元=100分）" };
+    return { range: { from, to }, totals: totals.map(numRow), byCategory: byCategory.map(numRow), detail: detail.map(numRow), centsUnit: "分（1元=100分）/ cents (1 yuan = 100 cents)" };
   },
 };
 
@@ -370,7 +370,7 @@ const queryInteractions: ChatTool = {
         ...r,
         cents: r.cents == null ? null : Number(r.cents),
       })),
-      centsUnit: "分（1元=100分）",
+      centsUnit: "分（1元=100分）/ cents (1 yuan = 100 cents)",
     };
   },
 };
@@ -513,7 +513,7 @@ const queryAccounts: ChatTool = {
       items: rows,
       totalBalanceCents: rows.reduce((a: number, r: { balance_cents: string | number }) => a + Number(r.balance_cents), 0),
       balanceNote: "余额=期初口径（流水不入账，与财务页一致）",
-      centsUnit: "分（1元=100分）",
+      centsUnit: "分（1元=100分）/ cents (1 yuan = 100 cents)",
     };
   },
 };
@@ -547,7 +547,7 @@ const queryBudgets: ChatTool = {
       remainCents: limitCents - spentCents,
       usedPct: limitCents ? Math.round((spentCents / limitCents) * 100) : null,
       alertThreshold: budget[0].alert_threshold,
-      centsUnit: "分（1元=100分）",
+      centsUnit: "分（1元=100分）/ cents (1 yuan = 100 cents)",
     };
   },
 };
@@ -620,7 +620,7 @@ const queryFitnessPlans: ChatTool = {
        group by status`,
       [ctx.userId, start.slice(0, 10), end.slice(0, 10)],
     );
-    return { range: { from: fromBj, to: toBj }, items: rows, stats, unitHint: "距离米、配速秒每公里、重量克（模型表述换算 km/分钟/配速/kg）" };
+    return { range: { from: fromBj, to: toBj }, items: rows, stats, unitHint: "距离米、配速秒每公里、重量克（模型表述换算 km/分钟/配速/kg）/ distances in meters, pace in sec/km, weights in grams (convert to km/min·pace/kg in your reply)" };
   },
 };
 
@@ -802,7 +802,7 @@ const queryXunjiTrains: ChatTool = {
         };
       }),
     );
-    return { date: target, count: items.length, items, unitHint: "重量 kg、次数为每组实练值" };
+    return { date: target, count: items.length, items, unitHint: "重量 kg、次数为每组实练值 / weight in kg, reps are per-set actuals" };
   },
 };
 

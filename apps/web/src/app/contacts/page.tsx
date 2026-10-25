@@ -17,6 +17,8 @@ import { yuan } from "@/lib/finance";
 import { GROUP_TONE } from "@/lib/group-tone";
 import { bjDayIdx } from "@/lib/bj-time"; // 实现单源 @shiguangri/shared（UTC+8 推算，禁本地 getter）
 import AssistantDock from "@/components/assistant-dock";
+import { t, getLang } from "@/i18n";
+import { contactGroupLabel } from "@shiguangri/shared/i18n-enum";
 
 interface Contact {
   id: string;
@@ -44,12 +46,12 @@ function relTime(iso: string): string {
   const t = Date.parse(iso);
   const diffMs = Date.now() - t;
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return "刚刚";
+  if (min < 1) return getLang() === "en" ? "just now" : "刚刚";
   if (min < 60) return `${min}分钟前`;
   const h = Math.floor(min / 60);
   if (h < 24) return `${h}小时前`;
   const days = bjDayIdx(Date.now()) - bjDayIdx(t);
-  if (days === 1) return "昨天";
+  if (days === 1) return getLang() === "en" ? "yesterday" : "昨天";
   const d = new Date(t + 8 * 3600_000);
   return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
 }
@@ -112,10 +114,10 @@ export default function ContactsPage() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title="人际"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            title={t("人际")}
+            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel="返回首页"
+            backLabel={t("返回首页")}
           />
         </div>
       </main>
@@ -127,7 +129,7 @@ export default function ContactsPage() {
       <div className="mx-auto max-w-2xl px-5 py-8">
         <header className="mb-6 text-center">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">人际</span>
+            {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("人际")}</span>
           </h1>
           <p className="mt-2 text-xs text-ink-dim">
             动态里提到的人都在这里 —— 分组档案、生日提醒、往来时间线
@@ -135,8 +137,8 @@ export default function ContactsPage() {
           {/* 列表 | 图谱 视图切换 */}
           <div className="mt-4 inline-flex rounded-full border border-line-soft bg-surface/70 p-1 text-xs">
             {([
-              ["list", "列表"],
-              ["graph", "图谱"],
+              ["list", t("列表")],
+              ["graph", t("图谱")],
             ] as const).map(([v, label]) => (
               <FilterChip
                 key={v}
@@ -161,9 +163,9 @@ export default function ContactsPage() {
                   key={g.name}
                   variant="filter"
                   active={selected}
-                  title={isAll ? "显示全部分组" : "点击加入/移出筛选（可多选）"}
+                  title={isAll ? t("显示全部分组") : t("点击加入/移出筛选（可多选）")}
                   icon={isAll ? undefined : <span className="text-xs leading-none">{GROUP_EMOJI[g.name] ?? "👤"}</span>}
-                  label={isAll ? "全部" : g.name}
+                  label={isAll ? t("全部") : contactGroupLabel(g.name, getLang())}
                   count={g.count}
                   onClick={() => {
                     if (isAll) {
@@ -185,7 +187,7 @@ export default function ContactsPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="搜索姓名/备注…"
+              placeholder={t("搜索姓名/备注…")}
               className="w-36 rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-sky-500"
             />
             <button onClick={() => setEditing("new")} className="btn-primary whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium">
@@ -227,7 +229,7 @@ export default function ContactsPage() {
               </p>
             )}
             {contacts.length > 0 && filtered.length === 0 && (
-              <p className="empty-state py-6">没有匹配的联系人</p>
+              <p className="empty-state py-6">{t("没有匹配的联系人")}</p>
             )}
           </>
         ) : contacts.length === 0 ? (
@@ -269,10 +271,10 @@ export default function ContactsPage() {
                   <p className="mt-2.5 truncate text-xs text-ink-mute">
                     {c.last_at ? (
                       <>
-                        <span className="text-ink-dim">{relTime(c.last_at)}</span> · {displaySummary(c.last_summary) || "往来"}
+                        <span className="text-ink-dim">{relTime(c.last_at)}</span> · {displaySummary(c.last_summary) || t("往来")}
                       </>
                     ) : (
-                      <span className="text-ink-faint">暂无往来记录</span>
+                      <span className="text-ink-faint">{t("暂无往来记录")}</span>
                     )}
                   </p>
                   {Number(c.gift_net_cents) !== 0 && (
@@ -302,7 +304,7 @@ export default function ContactsPage() {
         )}
 
 <footer className="mt-10 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">拾光 · 人际</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">{t("拾光 · 人际")}</span>
         </footer>
       </div>
       {/* 人际管家（REQ-019 FR-C4） */}

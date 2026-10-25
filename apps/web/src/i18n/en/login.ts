@@ -19,6 +19,8 @@ export const EN: Record<string, string> = {
   "一致": "match",
   "不一致": "mismatch",
   "注册并登录": "Sign up & in",
+  "隐藏密码": "Hide password",
+  "查看明文": "Show password",
   "登录": "Sign in",
   "处理中…": "Working…",
   "已有账号？": "Already have an account?",

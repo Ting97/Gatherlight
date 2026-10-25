@@ -44,6 +44,8 @@ const at = (offset, hm) => {
 };
 
 // ---------- 1. Moments (English, through the AI extraction pipeline) ----------
+// idempotent: skip posting if any seed moment already exists
+const { entries: existingEntries } = await j("GET", "/api/feed?limit=100").catch(() => ({ entries: [] }));
 const MOMENTS = [
   "Morning run 40 minutes at an easy pace, feeling great",
   "Taxi to the office, paid 32 yuan",
@@ -54,8 +56,10 @@ const MOMENTS = [
   "A bit anxious about Friday's demo, need to rehearse twice tomorrow",
   "Evening gym: 45 min strength (squats/bench) + 15 min stretching",
 ];
+const have = new Set((existingEntries || []).map((e) => e.raw_text ?? e.text ?? ""));
 for (const m of MOMENTS) {
-  await j("POST", "/api/entries", { text: m });
+  if (have.has(m)) { console.log("[seed] moment exists, skip", m.slice(0, 40)); continue; }
+  await j("POST", "/api/parse", { text: m });
   console.log("[seed] moment ✓", m.slice(0, 40));
 }
 // give the async AI pipeline a moment, then report recognition results
@@ -84,37 +88,48 @@ await j("POST", "/api/todos", { title: "Trim slide deck to 10 pages", parentId: 
 console.log("[seed] todos ×4");
 
 // ---------- 4. Contacts & interactions ----------
-const emma = await j("POST", "/api/contacts", { name: "Emma", group: "朋友", importance: 5, note: "College roommate, runs marathons" });
-const ryan = await j("POST", "/api/contacts", { name: "Ryan", group: "同事", importance: 4, note: "Backend lead" });
-await j("POST", "/api/contacts", { name: "Mom", group: "家人", importance: 5, birthday: "1968-03-12" });
-await j("POST", "/api/interactions", { contactId: emma.contact.id, type: "聚餐", note: "Ramen lunch", interactedAt: at(0, "12:30") });
-await j("POST", "/api/interactions", { contactId: ryan.contact.id, type: "工作", note: "API refactor pairing", interactedAt: at(-1, "15:00") });
+// AI extraction may have auto-created contacts (people domain) — find-or-create
+const { contacts: existing } = await j("GET", "/api/contacts");
+const findOrCreate = async (name, body) => {
+  const hit = (existing || []).find((c) => c.name === name);
+  if (hit) return hit;
+  const r = await j("POST", "/api/contacts", { name, ...body });
+  return r.contact ?? r;
+};
+const emma = await findOrCreate("Emma", { group: "朋友", importance: 5, note: "College roommate, runs marathons" });
+const ryan = await findOrCreate("Ryan", { group: "同事", importance: 4, note: "Backend lead" });
+await findOrCreate("Mom", { group: "家人", importance: 5, birthday: "1968-03-12" });
+await j("POST", `/api/contacts/${emma.id}/interactions`, { type: "聚餐", note: "Ramen lunch", interactedAt: at(0, "12:30") });
+await j("POST", `/api/contacts/${ryan.id}/interactions`, { type: "工作", note: "API refactor pairing", interactedAt: at(-1, "15:00") });
 console.log("[seed] contacts ×3 + interactions ×2");
 
 // ---------- 5. Goal spaces ----------
 const run = await j("POST", "/api/spaces", { name: "Run a sub-4 marathon", description: "Build base mileage and lose 3kg first" });
 await j("POST", "/api/todos", { title: "Weekly long run 25km", spaceId: run.space.id, dueAt: at(2, "07:00") });
-await j("POST", `/api/spaces/${run.space.id}/reflections`, { text: "Week 6 base building done. Legs feel fresh — the easy-paced runs are paying off." });
+await j("POST", `/api/spaces/${run.space.id}/reflections`, { content: "Week 6 base building done. Legs feel fresh — the easy-paced runs are paying off." });
 console.log("[seed] goal space ✓");
 
 // ---------- 6. Time blocks ----------
+const { activities } = await j("GET", "/api/activities");
+const actId = (id) => activities.find((a) => a.id === id)?.id ?? activities[0]?.id ?? "other";
 const BLK = [
-  { title: "Deep work: API refactor", activity: "work", start: at(0, "09:00"), end: at(0, "11:30") },
-  { title: "Lunch with Emma", activity: "social", start: at(0, "12:00"), end: at(0, "13:00") },
-  { title: "Strength training", activity: "fitness", start: at(0, "18:30"), end: at(0, "19:30") },
-  { title: "Reading", activity: "study", start: at(-1, "21:00"), end: at(-1, "22:00") },
+  { title: "Deep work: API refactor", activityId: actId("work"), startAt: at(0, "09:00"), endAt: at(0, "11:30") },
+  { title: "Lunch with Emma", activityId: actId("social"), startAt: at(0, "12:00"), endAt: at(0, "13:00") },
+  { title: "Strength training", activityId: actId("fitness"), startAt: at(0, "18:30"), endAt: at(0, "19:30") },
+  { title: "Reading", activityId: actId("study"), startAt: at(-1, "21:00"), endAt: at(-1, "22:00") },
 ];
-for (const b of BLK) await j("POST", "/api/blocks", b);
+for (const b of BLK) await j("POST", "/api/blocks", b).catch((e) => console.log("[seed] block skipped (conflict):", String(e).slice(0, 80)));
 console.log(`[seed] time blocks ×${BLK.length}`);
 
 // ---------- 7. Fitness & sleep ----------
 await j("POST", "/api/fitness/sleep", { date: dayYmd(0), hours: 7.5, feeling: "good", score: 82 });
 await j("POST", "/api/fitness/sleep", { date: dayYmd(-1), hours: 6.5, feeling: "ok", score: 70 });
-await j("POST", "/api/fitness/metrics", { date: dayYmd(0), weightKg: 71.2 });
+await j("POST", "/api/fitness/metrics", { measuredOn: dayYmd(0), weightKg: 71.2 });
 await j("POST", "/api/fitness/plans", {
-  date: dayYmd(1),
-  title: "Leg day",
-  items: [{ name: "Back squat", sets: 4, reps: 8, weightKg: 80 }],
+  planDate: dayYmd(1),
+  moduleCode: "strength",
+  source: "manual",
+  content: { title: "Leg day", durationMin: 55, exercises: [{ name: "Back squat", sets: 4, repsText: "8", weightG: 80000, rir: 2 }] },
 });
 console.log("[seed] fitness & sleep ✓");
 

@@ -9,6 +9,7 @@ import * as profile from "./profile";
 import * as home from "./home";
 import * as assistant from "./assistant";
 import * as finance from "./finance";
+import * as pages2 from "./pages2";
 
 export const EN: Record<string, string> = {
   ...common.EN,
@@ -18,4 +19,5 @@ export const EN: Record<string, string> = {
   ...home.EN,
   ...assistant.EN,
   ...finance.EN,
+  ...pages2.EN,
 };

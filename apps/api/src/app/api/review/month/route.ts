@@ -92,7 +92,7 @@ export const POST = withModule("insight", async (req, { user }) => {
   // ---- 画像更新（越用越懂用户）：月报生成成功后合并记忆，异步不阻塞响应 ----
   if (!cached) {
     const reviewText = JSON.stringify(review);
-    void updateProfileFromReview(user.id, `${month}月`, userPrompt, reviewText);
+    void updateProfileFromReview(user.id, `${month}月`, userPrompt, reviewText, lang);
   }
 
   return NextResponse.json({ review, cached, generatedAt, range: { from, to } });

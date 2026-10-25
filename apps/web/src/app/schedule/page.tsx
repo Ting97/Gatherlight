@@ -10,6 +10,7 @@ import SubNav from "@/components/sub-nav";
 import AssistantDock from "@/components/assistant-dock";
 import { useSession } from "@/shared/session";
 import ModuleLocked from "@/components/module-locked";
+import { t } from "@/i18n";
 
 /**
  * 日程模块：日历（时间统计四视图）+ TODO（待办管理）+ 分类（活动分类管理）。
@@ -18,9 +19,9 @@ import ModuleLocked from "@/components/module-locked";
 
 type Tab = "calendar" | "todo" | "categories";
 const TABS: [Tab, string][] = [
-  ["calendar", "日历"],
+  ["calendar", t("日历")],
   ["todo", "todo"],
-  ["categories", "分类"],
+  ["categories", t("分类")],
 ];
 
 export default function SchedulePage() {
@@ -53,10 +54,10 @@ export default function SchedulePage() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title="日程"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            title={t("日程")}
+            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel="返回首页"
+            backLabel={t("返回首页")}
           />
         </div>
       </main>
@@ -75,7 +76,7 @@ export default function SchedulePage() {
           <p className="mt-2 text-xs text-ink-dim">时间去了哪、todo 推进如何 —— 日历 · 看板 · 分类</p>
           <SubNav
             className="mt-3"
-            ariaLabel="日程子导航"
+            ariaLabel={t("日程子导航")}
             value={tab}
             onChange={(k) => setTab(k as Tab)}
             items={TABS.map(([v, label]) => ({

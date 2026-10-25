@@ -45,11 +45,11 @@ export const TYPE_EMOJI: Record<InteractionType, string> = {
 /** 语音提及自动建档时的分组推断：命中返回组名，未命中返回 null（调用方落「朋友」默认） */
 export function inferGroupFromName(name: string): ContactGroup | null {
   if (!name) return null;
-  if (/(同事|领导|老板|上司|下属|甲乙方)/.test(name)) return "同事";
-  if (/(客户|甲方|乙方)/.test(name)) return "客户";
-  if (/(同学|室友|校友)/.test(name)) return "同学";
+  if (/(同事|领导|老板|上司|下属|甲乙方|colleague|coworker|boss|manager|teammate)/i.test(name)) return "同事";
+  if (/(客户|甲方|乙方|client|customer|account)/i.test(name)) return "客户";
+  if (/(同学|室友|校友|classmate|roommate|schoolmate)/i.test(name)) return "同学";
   if (
-    /(爸爸|妈妈|爸妈|老爸|老妈|父亲|母亲|爷爷|奶奶|外公|外婆|姥姥|姥爷|哥哥|姐姐|弟弟|妹妹|兄弟|姐妹|儿子|女儿|老婆|老公|媳妇|女婿|岳父|岳母)/.test(name) ||
+    /(爸爸|妈妈|爸妈|老爸|老妈|父亲|母亲|爷爷|奶奶|外公|外婆|姥姥|姥爷|哥哥|姐姐|弟弟|妹妹|兄弟|姐妹|儿子|女儿|老婆|老公|媳妇|女婿|岳父|岳母|mom|dad|mother|father|brother|sister|son|daughter|wife|husband|grandma|grandpa)/i.test(name) ||
     /(伯|叔|姑|舅|姨|嫂|婶)/.test(name)
   ) {
     return "家人";

@@ -10,7 +10,7 @@ export function langDirective(lang: OutputLang): string {
   return [
     "",
     "## Language",
-    "IMPORTANT: Respond in English. Exception: enumerated fields whose allowed values are given in Chinese (e.g. category, meal, contact group) MUST keep the exact Chinese value from the given list — they are stored as-is.",
+    "IMPORTANT: Respond in English. Exceptions: (1) enumerated fields whose allowed values are given in Chinese (e.g. category, meal, contact group) MUST keep the exact Chinese value in structured output — they are stored as-is; (2) when quoting such Chinese values in your prose, show the English translation (e.g. 购物 → Shopping).",
     "",
   ].join("\n");
 }
@@ -20,6 +20,7 @@ export function langDirective(lang: OutputLang): string {
 export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。用户像发朋友圈一样随口说一句话。请对这句话做**五个独立判断**，严格输出 JSON。你是唯一的判断者——输出会被直接落库，没有规则引擎替你纠错，请严格按下方标准判定。
 
 ## 判定总则（最重要）
+- **语言跟随**：所有自由文本字段（schedule.title、todo 相关标题、diet.items[].name、finance.counterparty、mood.label）必须与用户输入同语言——英文输入输出英文，中文输入输出中文。枚举字段（category/meal/activity）仍取给定中文值。
 - 五个域互相独立：一句话可以同时命中任意多个域，也可以一个都不命中。
 - 每个域先在 reasoning 里写一句判断依据，再给结论。
 - **识别不出来就 applicable=false / null，禁止为了填而填，禁止脑补；判断为命中的域必须给全字段，缺字段视为整体不合格（会被打回重答）。**
@@ -55,7 +56,7 @@ export const EXTRACT_SYSTEM_PROMPT = `你是"拾光"App 的记录解析引擎。
   "todo": { "applicable": bool, "due": "YYYY-MM-DDTHH:MM"或null, "confidence": 0~1 },
   "finance": { "hasAmount": bool, "direction": "out|in或null", "amountCents": 正数或null, "category": "优先取用户消息「常用分类」之一，都没有才给 餐饮/交通/人情往来/学习/购物/娱乐/其他，或null", "counterparty": "或null", "occurredDate": "YYYY-MM-DD"或null(话术带日期才给), "confidence": 0~1 },
   "mood": { "label": "情绪词或null", "score": -100~100或null, "confidence": 0~1 },
-  "diet": { "applicable": bool, "meal": "早餐|午餐|晚餐|加餐|夜宵|未知", "items": [ { "name": "食物", "amount": "分量或null", "kcal": 整数或null } ], "totalKcal": 合计或null, "confidence": 0~1 },
+  "diet": { "applicable": bool, "meal": "早餐|午餐|晚餐|加餐|夜宵|未知", "items": [ { "name": "食物名（语言跟随用户输入）", "amount": "分量或null", "kcal": 整数或null } ], "totalKcal": 合计或null, "confidence": 0~1 },
   "people": [ { "name": "人名", "event": "吃饭/送礼/通话/帮忙…或null" } ],
   "ambiguity": "有歧义时用与用户输入相同的语言写一句追问，否则 null"
 }

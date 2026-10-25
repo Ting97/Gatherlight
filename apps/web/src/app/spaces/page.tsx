@@ -18,6 +18,7 @@ import { useSession } from "@/shared/session";
 import ModuleLocked from "@/components/module-locked";
 import { toast } from "@/shared/ui/toast";
 import Skeleton from "@/components/skeleton";
+import { t, tpl } from "@/i18n";
 
 /**
  * 目标空间列表（REQ-001 R3）：宏大目标（≥1 年）容器。
@@ -112,7 +113,7 @@ export default function SpacesPage() {
     const sportEditing = spaces?.find((s) => s.id === editingId)?.kind === "sport";
     // 目标日期早于开始日期拦截（二十轮 P3）：无校验时会存出「目标在开始前」的时间倒挂
     if (editing.startedAt && editing.targetDate && editing.targetDate < editing.startedAt) {
-      toast("目标日期不能早于开始日期", "err");
+      toast(t("目标日期不能早于开始日期"), "err");
       return;
     }
     const body = {
@@ -128,17 +129,17 @@ export default function SpacesPage() {
       await api<any>(editingId ? `/api/spaces/${editingId}` : "/api/spaces", editingId ? "PATCH" : "POST", body);
     } catch (e) {
       if (e instanceof ApiClientError) {
-        toast(e.message === "操作失败" ? "保存失败" : e.message, "err");
+        toast(e.message === "操作失败" ? t("保存失败") : e.message, "err");
         return;
       }
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      toast("网络异常，请稍后重试", "err");
+      toast(t("网络异常，请稍后重试"), "err");
       return;
     } finally {
       setSaving(false);
     }
     setEditing(null);
-    toast(editingId ? "空间已更新" : `空间「${editing.name}」已创建 🎯`);
+    toast(editingId ? t("空间已更新") : tpl("空间「{name}」已创建 🎯", { name: editing.name }));
     load();
   }
 
@@ -183,10 +184,10 @@ export default function SpacesPage() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title="目标"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            title={t("目标")}
+            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel="返回首页"
+            backLabel={t("返回首页")}
           />
         </div>
       </main>
@@ -205,7 +206,7 @@ export default function SpacesPage() {
         {/* 模块抬头：与动态/财务统一的居中 hero 样式 */}
         <header className="mb-5 text-center">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">目标</span>
+            {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("目标")}</span>
           </h1>
           <p className="mt-2 text-xs text-ink-dim">
             创建一个空间，专属于这个目标的 TODO·行动与感悟 —— 相关动态自动归属，见证每天的靠近
@@ -229,8 +230,8 @@ export default function SpacesPage() {
         ) : active.length === 0 ? (
           <div className="glass rounded-2xl p-10 text-center empty-state">
             <p className="text-4xl">🎯</p>
-            <p className="mt-3 text-sm font-medium">还没有目标空间</p>
-            <p className="mt-1 text-xs text-ink-dim">为一个大目标（考研上岸 / 副业过万 / 完成全马…）建一个空间，把它的 TODO·行动、感悟和动态都聚在专属容器里</p>
+            <p className="mt-3 text-sm font-medium">{t("还没有目标空间")}</p>
+            <p className="mt-1 text-xs text-ink-dim">{t("为一个大目标（考研上岸 / 副业过万 / 完成全马…）建一个空间，把它的 TODO·行动、感悟和动态都聚在专属容器里")}</p>
             <button onClick={openNew} className="btn-primary mt-4 rounded-xl px-5 py-2 text-sm font-medium">
               创建第一个空间
             </button>
@@ -263,14 +264,14 @@ export default function SpacesPage() {
                     await api<any>(`/api/spaces/${s.id}`, "PATCH", { name });
                   } catch (e) {
                     if (e instanceof ApiClientError) {
-                      toast(e.message === "操作失败" ? "重命名失败" : e.message, "err");
+                      toast(e.message === "操作失败" ? t("重命名失败") : e.message, "err");
                       return false;
                     }
                     // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-                    toast("网络异常，请稍后重试", "err");
+                    toast(t("网络异常，请稍后重试"), "err");
                     return false;
                   }
-                  toast("已重命名");
+                  toast(t("已重命名"));
                   await load();
                   return true;
                 }}
@@ -278,7 +279,7 @@ export default function SpacesPage() {
               />
             </span>
             {s.kind === "sport" ? (
-              <span className="ml-1.5 shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400">内置</span>
+              <span className="ml-1.5 shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400">{t("内置")}</span>
             ) : null}
                       <p className="mt-0.5 text-micro text-ink-dim">
                         {s.todo_total ?? 0} todo · {s.entry_count ?? 0} 动态 · 感悟 {s.reflection_count ?? 0}
@@ -306,7 +307,7 @@ export default function SpacesPage() {
                         );
                         setCardMenu(s);
                       }}
-                      title="更多操作"
+                      title={t("更多操作")}
                       className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 leading-none text-ink-dim transition hover:text-ink group-hover:block"
                     >
                       <Ellipsis size={14} />
@@ -325,8 +326,8 @@ export default function SpacesPage() {
                   ) : (
                     <div className="mt-3">
                       <div className="mb-1 flex justify-between text-badge tabular-nums text-ink-faint">
-                        <span>todo 进度</span>
-                        <span>{progress == null ? "暂无 todo" : `${progress}%`}</span>
+                        <span>{t("todo 进度")}</span>
+                        <span>{progress == null ? t("暂无 todo") : `${progress}%`}</span>
                       </div>
                       <div className="h-1.5 overflow-hidden rounded-full bg-elevated">
                         <div
@@ -360,7 +361,7 @@ export default function SpacesPage() {
                     onClick={() => remove(s)}
                     className={`rounded-lg px-2 py-1 ${armDelete.armedId === s.id ? "bg-rose-500/15 font-medium text-danger" : "text-ink-mute hover:bg-soft hover:text-danger"}`}
                   >
-                    {armDelete.armedId === s.id ? "确认删除?" : "删除"}
+                    {armDelete.armedId === s.id ? t("确认删除?") : t("删除")}
                   </button>
                 </li>
               ))}
@@ -371,7 +372,7 @@ export default function SpacesPage() {
         {/* 新建/编辑弹层（N3：点空白/Esc 取消，有改动轻提示） */}
         {editing && (
           <Modal
-            title={editingId ? "编辑空间" : "新建目标空间"}
+            title={editingId ? t("编辑空间") : t("新建目标空间")}
             onClose={() => {
               // dirty 判定覆盖全部草稿字段（旧版只比 name，改图标/颜色/日期/描述被静默丢弃）。
               // 新建以「EMPTY + 默认开始日（北京今天）」为基线：一打开就关闭不再误报「已取消，未保存」
@@ -390,7 +391,7 @@ export default function SpacesPage() {
                   editing.color !== EMPTY.color ||
                   editing.startedAt !== bjToday() ||
                   editing.targetDate !== EMPTY.targetDate;
-              if (dirty) toast("已取消，未保存", "info");
+              if (dirty) toast(t("已取消，未保存"), "info");
               setEditing(null);
             }}
           >
@@ -405,17 +406,17 @@ export default function SpacesPage() {
                 value={editing.name}
                 disabled={spaces?.find((s) => s.id === editingId)?.kind === "sport"}
                 onChange={(e) => setEditing({ ...editing, name: e.target.value.slice(0, 40) })}
-                placeholder="目标名称（如：考研上岸）"
+                placeholder={t("目标名称（如：考研上岸）")}
                 className="input-glow w-full rounded-xl border border-line-soft bg-surface/60 px-3 py-2 text-sm outline-none placeholder:text-ink-faint disabled:opacity-60"
               />
               <textarea
                 value={editing.description}
                 onChange={(e) => setEditing({ ...editing, description: e.target.value.slice(0, 300) })}
                 rows={2}
-                placeholder="描述（可空：为什么重要、衡量标准…）"
+                placeholder={t("描述（可空：为什么重要、衡量标准…）")}
                 className="input-glow mt-2 w-full resize-none rounded-xl border border-line-soft bg-surface/60 px-3 py-2 text-xs outline-none placeholder:text-ink-faint"
               />
-              <p className="mt-2.5 mb-1 text-micro text-ink-faint">图标</p>
+              <p className="mt-2.5 mb-1 text-micro text-ink-faint">{t("图标")}</p>
               <div className="flex flex-wrap gap-1.5">
                 {ICONS.map((ic) => (
                   <button
@@ -430,7 +431,7 @@ export default function SpacesPage() {
                   </button>
                 ))}
               </div>
-              <p className="mt-2.5 mb-1 text-micro text-ink-faint">颜色</p>
+              <p className="mt-2.5 mb-1 text-micro text-ink-faint">{t("颜色")}</p>
               <div className="flex gap-2">
                 {COLORS.map((c) => (
                   <button
@@ -472,7 +473,7 @@ export default function SpacesPage() {
                   disabled={!editing.name.trim() || saving}
                   className="btn-primary rounded-xl px-5 py-2 text-xs font-medium disabled:opacity-50"
                 >
-                  {saving ? "保存中…" : editingId ? "保存" : "创建"}
+                  {saving ? t("保存中…") : editingId ? t("保存") : t("创建")}
                 </button>
               </div>
               </form>
@@ -498,7 +499,7 @@ export default function SpacesPage() {
                   className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-ink transition hover:bg-wash"
                 >
                   <span className="flex w-5 shrink-0 justify-center"><Pencil size={14} /></span>
-                  <span className="min-w-0 flex-1">编辑空间</span>
+                  <span className="min-w-0 flex-1">{t("编辑空间")}</span>
                 </button>
                 {cardMenu.kind === "sport" ? null : (
                   <button
@@ -506,7 +507,7 @@ export default function SpacesPage() {
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-warn transition hover:bg-wash"
                   >
                     <span className="flex w-5 shrink-0 justify-center"><Archive size={14} /></span>
-                    <span className="min-w-0 flex-1">归档空间</span>
+                    <span className="min-w-0 flex-1">{t("归档空间")}</span>
                   </button>
                 )}
                 {cardMenu.kind === "sport" ? null : (

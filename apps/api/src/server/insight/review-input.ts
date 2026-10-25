@@ -229,6 +229,7 @@ export async function updateProfileFromReview(
   period: string,
   factsText: string,
   reviewText: string,
+  lang: "zh" | "en" = "zh",
 ): Promise<void> {
   try {
     // 输入装配（3-A）：profile_merge 三要素必需；画像条数上限可调（caps.profileItems）
@@ -245,7 +246,7 @@ export async function updateProfileFromReview(
     const t0 = Date.now();
     let usage: { prompt_tokens: number; completion_tokens: number } | null = null;
     const raw = await chat({
-      system: bundle.system,
+      system: lang === "en" ? `${bundle.system}\n${langDirective("en")}` : bundle.system,
       user: userPrompt,
       temperature: 0.2,
       maxTokens: 1200,

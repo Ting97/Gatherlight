@@ -230,7 +230,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPwd((v) => !v)}
-                  title={showPwd ? "隐藏密码" : "查看明文"}
+                  title={t(showPwd ? "隐藏密码" : "查看明文")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
                 >
                   {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -260,7 +260,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPwd((v) => !v)}
-                    title={showPwd ? "隐藏密码" : "查看明文"}
+                    title={t(showPwd ? "隐藏密码" : "查看明文")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
                   >
                     {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -293,19 +293,19 @@ export default function LoginPage() {
             )}
 
             <button onClick={submit} disabled={busy} className="btn-primary w-full rounded-xl py-2.5 text-sm font-medium">
-              {busy ? "处理中…" : isRegister ? "注册并登录" : "登录"}
+              {busy ? t("处理中…") : isRegister ? t("注册并登录") : t("登录")}
             </button>
           </div>
 
           <p className="mt-4 text-center text-micro text-ink-dim">
-            {isRegister ? "已有账号？" : "没有账号？"}
+            {isRegister ? t("已有账号？") : t("没有账号？")}
             <button
               onClick={() => {
                 setIsRegister(!isRegister);
               }}
               className="ml-1 text-accent hover:underline"
             >
-              {isRegister ? "去登录" : "直接注册"}
+              {isRegister ? t("去登录") : t("直接注册")}
             </button>
           </p>
         </div>

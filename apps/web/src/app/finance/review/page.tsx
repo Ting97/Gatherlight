@@ -11,6 +11,7 @@ import { addDays as sharedAddDays, bjToday as sharedBjToday, startOfWeek } from 
 import { fmtMoney } from "@/components/finance/kit";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t } from "@/i18n";
 
 /**
  * 收支复盘（REQ-003 3-F FR-C2.7；REQ-005 FR-4.4 更名）：日/周统计（纯 SQL）+ AI 收支周报（缓存/配额走复盘管线）。
@@ -105,7 +106,7 @@ export default function FinanceReviewPage() {
       } catch (e) {
         if (seq !== reviewSeq.current) return;
         const msg = e instanceof Error ? e.message : String(e);
-        toast(/timed out|timeout|aborted/i.test(msg) ? "生成超时：内容较多时需要 1~3 分钟，请再试一次" : msg, "err");
+        toast(/timed out|timeout|aborted/i.test(msg) ? t("生成超时：内容较多时需要 1~3 分钟，请再试一次") : msg, "err");
       } finally {
         setGenBusy(false);
       }
@@ -143,7 +144,7 @@ export default function FinanceReviewPage() {
     return (
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
-          <ModuleLocked title="收支复盘" desc="该模块由管理员授权后开放，可联系管理员开通。" />
+          <ModuleLocked title={t("收支复盘")} desc={t("该模块由管理员授权后开放，可联系管理员开通。")} />
         </div>
       </main>
     );
@@ -156,9 +157,9 @@ export default function FinanceReviewPage() {
         <div className="mx-auto max-w-2xl px-5 py-8">
           <header className="mb-5 text-center">
             <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-              拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">收支复盘</span>
+              {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("收支复盘")}</span>
             </h1>
-            <p className="mt-2 text-xs text-ink-dim">日/周收支结构与 AI 周报 —— 花在哪、怎么调</p>
+            <p className="mt-2 text-xs text-ink-dim">{t("日/周收支结构与 AI 周报 —— 花在哪、怎么调")}</p>
           </header>
           <FinanceTabs />
           <Skeleton rows={3} className="py-2" />
@@ -177,9 +178,9 @@ export default function FinanceReviewPage() {
       <div className="mx-auto max-w-2xl px-5 py-8">
         <header className="mb-5 text-center">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">收支复盘</span>
+            {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("收支复盘")}</span>
           </h1>
-          <p className="mt-2 text-xs text-ink-dim">日/周收支结构与 AI 周报 —— 花在哪、怎么调</p>
+          <p className="mt-2 text-xs text-ink-dim">{t("日/周收支结构与 AI 周报 —— 花在哪、怎么调")}</p>
         </header>
 
         <FinanceTabs />
@@ -187,18 +188,18 @@ export default function FinanceReviewPage() {
         {/* 日/周切换 + 日期导航 */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="inline-flex rounded-full border border-line-soft bg-surface/70 p-1">
-            <FilterChip label="日" active={period === "day"} onClick={() => setPeriod("day")} variant="pill" />
-            <FilterChip label="周" active={period === "week"} onClick={() => setPeriod("week")} variant="pill" />
+            <FilterChip label={t("日")} active={period === "day"} onClick={() => setPeriod("day")} variant="pill" />
+            <FilterChip label={t("周")} active={period === "week"} onClick={() => setPeriod("week")} variant="pill" />
           </div>
           <div className="flex items-center gap-2 text-xs">
-            <button onClick={() => setAnchor(addDays(anchor, period === "day" ? -1 : -7))} aria-label={period === "day" ? "上一日" : "上一周"} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 transition hover:border-sky-500/50">‹</button>
+            <button onClick={() => setAnchor(addDays(anchor, period === "day" ? -1 : -7))} aria-label={period === "day" ? t("上一日") : t("上一周")} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 transition hover:border-sky-500/50">‹</button>
             <span className="min-w-36 text-center font-semibold tabular-nums text-ink">
               {period === "day" ? anchor : `${md(rangeFrom)} ~ ${md(addDays(rangeFrom, 6))}`}
             </span>
             <button
               onClick={() => setAnchor(addDays(anchor, period === "day" ? 1 : 7))}
               disabled={period === "day" ? anchor >= bjToday() : mondayOf(anchor) >= mondayOf(bjToday())}
-              aria-label={period === "day" ? "下一日" : "下一周"}
+              aria-label={period === "day" ? t("下一日") : t("下一周")}
               className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 transition hover:border-sky-500/50 disabled:opacity-30"
             >
               ›
@@ -238,7 +239,7 @@ export default function FinanceReviewPage() {
             <section className="glass mb-4 rounded-2xl p-5">
               <div className="grid grid-cols-3 gap-3 text-center">
                 <div>
-                  <p className="text-micro text-ink-dim">{period === "day" ? "当日支出" : "本周支出"}</p>
+                  <p className="text-micro text-ink-dim">{period === "day" ? t("当日支出") : t("本周支出")}</p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-danger">{fmt(stats.totals.outCents)}</p>
                   {outMom != null && (
                     <p className={`mt-0.5 text-badge tabular-nums ${outMom > 0 ? "text-danger" : "text-success"}`}>
@@ -247,7 +248,7 @@ export default function FinanceReviewPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-micro text-ink-dim">{period === "day" ? "当日收入" : "本周收入"}</p>
+                  <p className="text-micro text-ink-dim">{period === "day" ? t("当日收入") : t("本周收入")}</p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-success">{fmt(stats.totals.inCents)}</p>
                   {inMom != null && (
                     <p className={`mt-0.5 text-badge tabular-nums ${inMom > 0 ? "text-success" : "text-danger"}`}>
@@ -256,7 +257,7 @@ export default function FinanceReviewPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-micro text-ink-dim">笔数</p>
+                  <p className="text-micro text-ink-dim">{t("笔数")}</p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-ink">{stats.totals.count}</p>
                   <p className="mt-0.5 text-badge text-ink-faint">
                     结余 <span className={stats.totals.inCents - stats.totals.outCents >= 0 ? "text-success" : "text-danger"}>{fmt(stats.totals.inCents - stats.totals.outCents)}</span>
@@ -268,7 +269,7 @@ export default function FinanceReviewPage() {
             {/* 周内日趋势 */}
             {period === "week" && (
               <section className="glass mb-4 rounded-2xl p-5">
-                <p className="mb-3"><TagChip icon={<BarChart3 size={12} />} label="日趋势" tone="sky" /></p>
+                <p className="mb-3"><TagChip icon={<BarChart3 size={12} />} label={t("日趋势")} tone="sky" /></p>
                 <div className="flex items-end justify-between gap-2">
                   {stats.daily.map((d) => (
                     <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -289,7 +290,7 @@ export default function FinanceReviewPage() {
                   ))}
                 </div>
                 <p className="mt-2 text-center text-micro text-ink-faint">
-                  <span className="text-danger">▮</span> 支出 <span className="text-success">▮</span> 收入
+                  <span className="text-danger">▮</span> {t("支出")} <span className="text-success">▮</span> {t("收入")}
                 </p>
               </section>
             )}
@@ -297,7 +298,7 @@ export default function FinanceReviewPage() {
             {/* 分类占比 */}
             {stats.byCategory.length > 0 && (
               <section className="glass mb-4 rounded-2xl p-5">
-                <p className="mb-3"><TagChip icon={<Puzzle size={12} />} label="支出分类" tone="rose" /></p>
+                <p className="mb-3"><TagChip icon={<Puzzle size={12} />} label={t("支出分类")} tone="rose" /></p>
                 <div className="flex h-2.5 w-full overflow-hidden rounded-full">
                   {stats.byCategory.map((s) => (
                     <div
@@ -326,7 +327,7 @@ export default function FinanceReviewPage() {
             <section className="mb-4 grid gap-4 sm:grid-cols-2">
               {stats.byAccount.length > 0 && (
                 <div className="glass rounded-2xl p-5">
-                  <p className="mb-3"><TagChip icon={<CreditCard size={12} />} label="账户分布" tone="sky" /></p>
+                  <p className="mb-3"><TagChip icon={<CreditCard size={12} />} label={t("账户分布")} tone="sky" /></p>
                   <ul className="space-y-1.5">
                     {stats.byAccount.map((a) => (
                       <li key={a.name} className="flex items-center gap-2 text-xs">
@@ -341,7 +342,7 @@ export default function FinanceReviewPage() {
               )}
               {stats.topCounterparties.length > 0 && (
                 <div className="glass rounded-2xl p-5">
-                  <p className="mb-3"><TagChip icon={<Handshake size={12} />} label="Top 对方" tone="violet" /></p>
+                  <p className="mb-3"><TagChip icon={<Handshake size={12} />} label={t("Top 对方")} tone="violet" /></p>
                   <ul className="space-y-1.5">
                     {stats.topCounterparties.map((p) => (
                       <li key={p.name} className="flex items-center gap-2 text-xs">
@@ -359,11 +360,11 @@ export default function FinanceReviewPage() {
             {period === "week" && (
               <section className="glass mb-4 rounded-2xl p-5">
                 <div className="mb-3 flex items-center justify-between">
-                  <TagChip icon={<Bot size={12} />} label="AI 交易周报" tone="emerald" />
+                  <TagChip icon={<Bot size={12} />} label={t("AI 交易周报")} tone="emerald" />
                   <span className="flex items-center gap-2">
                     {reviewMeta && reviewForThisWeek && (
                       <span className="text-badge text-ink-faint">
-                        {reviewMeta.cached ? "缓存" : "已生成"} · {bjMD(reviewMeta.generatedAt)}
+                        {reviewMeta.cached ? t("缓存") : t("已生成")} · {bjMD(reviewMeta.generatedAt)}
                       </span>
                     )}
                     <button
@@ -371,11 +372,11 @@ export default function FinanceReviewPage() {
                       disabled={genBusy}
                       className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-micro font-medium text-emerald-600 transition hover:bg-emerald-500/20 disabled:opacity-40 dark:text-emerald-400"
                     >
-                      {genBusy ? "生成中…" : reviewForThisWeek ? "重新生成" : "生成周报"}
+                      {genBusy ? t("生成中…") : reviewForThisWeek ? t("重新生成") : t("生成周报")}
                     </button>
                   </span>
                 </div>
-                {genBusy && !reviewForThisWeek && <p className="py-2 text-center text-xs text-ink-dim">正在读取本周流水并生成解读…</p>}
+                {genBusy && !reviewForThisWeek && <p className="py-2 text-center text-xs text-ink-dim">{t("正在读取本周流水并生成解读…")}</p>}
                 {reviewForThisWeek ? (
                   <div className="space-y-3">
                     <p className="text-sm leading-relaxed text-ink">{reviewForThisWeek.summary}</p>
@@ -395,7 +396,7 @@ export default function FinanceReviewPage() {
                     )}
                   </div>
                 ) : (
-                  !genBusy && <p className="py-2 text-center text-xs text-ink-faint">点「生成周报」让 AI 解读本周收支（走 AI 配额，结果缓存）</p>
+                  !genBusy && <p className="py-2 text-center text-xs text-ink-faint">{t("点「生成周报」让 AI 解读本周收支（走 AI 配额，结果缓存）")}</p>
                 )}
               </section>
             )}

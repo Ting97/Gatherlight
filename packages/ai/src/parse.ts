@@ -44,15 +44,15 @@ const DOMAIN_MODES = ["schedule", "todo", "finance", "mood", "diet", "people"] a
 // ---------- 规则引擎（灾难兜底，原样保留） ----------
 
 const RULE_KEYWORDS: Array<[RegExp, LlmExtractionT["schedule"]["activity"]]> = [
-  [/午睡|睡觉|补觉/, "sleep"],
-  [/通勤|路上|地铁|公交|打车/, "commute"],
-  [/开[了了个]*会|评审|周报|报告|代码|开发|编程|邮件|客户|上班|加班|项目/, "work"],
-  [/学|看书|阅读|读书|英语|上课|刷题|三章/, "study"],
-  [/跑|撸铁|健身|锻炼|球类|散步|拉伸/, "fitness"],
-  [/抖音|电影|游戏|刷手机|逛街/, "fun"],
-  [/打扫|买菜|超市|做饭|洗衣|房间|垃圾/, "chores"],
+  [/午睡|睡觉|补觉|nap|slept|sleep\b/i, "sleep"],
+  [/通勤|路上|地铁|公交|打车|commute|subway|metro|taxi|on the way/i, "commute"],
+  [/开[了了个]*会|评审|周报|报告|代码|开发|编程|邮件|客户|上班|加班|项目|meet(ing)?|standup|code|coding|develop|email|work(ed|ing)?|overtime|project/i, "work"],
+  [/学|看书|阅读|读书|英语|上课|刷题|三章|stud(y|ied)|read(ing)?|book|lesson|course/i, "study"],
+  [/跑|撸铁|健身|锻炼|球类|散步|拉伸|run(ning)?|jog|gym|workout|exercis|stretch|walk(ed)?/i, "fitness"],
+  [/抖音|电影|游戏|刷手机|逛街|tiktok|movie|film|game|shopping|brows/i, "fun"],
+  [/打扫|买菜|超市|做饭|洗衣|房间|垃圾|clean|grocer|supermarket|cook|laundry|dish|trash|chores/i, "chores"],
   // 人名不进关键词表（人物识别由联系人名单驱动，FR-D2.3）；爸妈为通用亲属称谓非演示人名
-  [/吃饭|聊|电话|爸妈|朋友|同事|随礼|满月|搬家|帮忙/, "social"],
+  [/吃饭|聊|电话|爸妈|朋友|同事|随礼|满月|搬家|帮忙|lunch|dinner|chat|call|friend|colleague|party|help(ed)?|gift/i, "social"],
 ];
 
 /** 规则人物识别（FR-D2.3）：演示人名已移除——由调用方传入的联系人名单动态生成；空名单不产人物。
