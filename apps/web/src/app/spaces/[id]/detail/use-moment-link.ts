@@ -1,0 +1,100 @@
+"use client";
+
+import { useRef, useState, useEffect } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import type { FeedMoment } from "@/lib/types";
+import { api, ApiClientError } from "@/shared/api";
+import type { Msg } from "./types";
+
+/** C1 关联动态浮层（自 detail.tsx 拆出）：浏览未归属动态并关联到本空间 */
+export function useMomentLink(opts: { id: string; load: () => Promise<void>; setMsg: Dispatch<SetStateAction<Msg>> }) {
+  const { id, load, setMsg } = opts;
+  const [momentLinkOpen, setMomentLinkOpen] = useState(false);
+  const [momentItems, setMomentItems] = useState<FeedMoment[]>([]);
+  const [momentTotal, setMomentTotal] = useState(0);
+  const [momentQuery, setMomentQuery] = useState("");
+  // 当前生效查询（防抖落定、真正生成 momentItems 的那个词）：「加载更多」必须复用它翻页，
+  // 用未防抖的实时输入词做 offset 会拿新词的偏移去翻旧词的页（错位混排）
+  const [momentQueryApplied, setMomentQueryApplied] = useState("");
+  const [momentLoading, setMomentLoading] = useState(false);
+  // seq 守卫：逐字符搜索时慢的旧响应可能后到，只让最新请求落地（同 use-home-data 范式）；
+  // 翻页 offset 只在查询签名一致时追加，改词后旧翻页结果不再混入新列表
+  const seqRef = useRef(0);
+
+  /** C1：加载未归属动态（关联动态浮层数据源；offset=-1 表示重查第一页） */
+  async function loadUnlinkedMoments(q: string, offset: number) {
+    const seq = ++seqRef.current;
+    const append = offset > 0;
+    setMomentLoading(true);
+    try {
+      const j = await api<any>(`/api/feed?spaceId=none&limit=20&offset=${Math.max(0, offset)}${q ? `&q=${encodeURIComponent(q)}` : ""}`, "GET");
+      if (seq !== seqRef.current) return; // 过期响应丢弃
+      setMomentQueryApplied(q); // 记录本批列表对应的生效查询（「加载更多」翻页复用）
+      const list = (j.moments as FeedMoment[]) ?? [];
+      setMomentTotal(j.total ?? list.length);
+      // 追加按 id 去重（use-space-data.loadMoreMoments 的 seen 范式）：浮层开着时在别处发布
+      // 新动态会使服务端列表头插、offset 整体错位一格，翻页带回的重复行不再拼接
+      setMomentItems((prev) => {
+        if (!append) return list;
+        const seen = new Set(prev.map((m) => m.id));
+        return [...prev, ...list.filter((m) => !seen.has(m.id))];
+      });
+    } catch (e) {
+      if (seq !== seqRef.current) return;
+      // 原 !r.ok 分支的固定提示；网络异常也收口为用户可见提示（裸 throw 会触发整页强刷丢状态）
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "加载失败，请稍后再试" });
+    } finally {
+      if (seq === seqRef.current) setMomentLoading(false);
+    }
+  }
+
+  /** C1：搜索框 onChange（400ms 防抖，输入停顿才请求；重查第一页） */
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 卸载清理：防抖挂起时关弹层/切页仍会发请求并 setState
+  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
+  function onMomentQueryChange(q: string) {
+    setMomentQuery(q);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void loadUnlinkedMoments(q, 0), 400);
+  }
+
+  /** C1：打开关联动态浮层（重置搜索与列表）。
+   * 先清挂起中的防抖：输入关键字 → 400ms 内关浮层 → 再打开时旧词回包（seq 更大）
+   * 会覆盖刚加载的全量列表——搜索框为空但列表仍是旧词过滤结果 */
+  function openMomentLink() {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setMomentQuery("");
+    setMomentQueryApplied("");
+    setMomentItems([]);
+    setMomentTotal(0);
+    setMomentLinkOpen(true);
+    void loadUnlinkedMoments("", 0);
+  }
+
+  /** C1：把未归属动态关联到本空间（成功后从浮层移除并刷新计数） */
+  async function linkMoment(momentId: string) {
+    try {
+      await api<any>(`/api/feed/${momentId}`, "PATCH", { spaceId: id });
+    } catch (e) {
+      if (e instanceof ApiClientError) {
+        setMsg({ ok: false, text: e.message === "操作失败" ? "关联失败" : e.message });
+        return;
+      }
+      // 网络异常收口（裸 throw → unhandled rejection → ChunkErrorReloader 整页刷新）
+      setMsg({ ok: false, text: "网络异常，请稍后重试" });
+      return;
+    }
+    setMomentItems((list) => list.filter((m) => m.id !== momentId));
+    setMomentTotal((n) => Math.max(0, n - 1));
+    setMsg({ ok: true, text: "🌱 动态已关联到本空间" });
+    await load();
+  }
+
+  return {
+    momentLinkOpen, setMomentLinkOpen,
+    momentItems, momentTotal, momentQuery, momentQueryApplied, onMomentQueryChange, momentLoading,
+    loadUnlinkedMoments, openMomentLink, linkMoment,
+  };
+}
+
+export type MomentLinkActions = ReturnType<typeof useMomentLink>;

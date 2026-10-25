@@ -1,0 +1,281 @@
+import { NextResponse } from "next/server";
+import { pool } from "@/server/platform/db";
+import { ACTIVITY_NAMES, toCstWallClock } from "@shiguangri/ai";
+import { withAdminParams, readJsonCapped } from "@/server/platform/http/route";
+import { ApiError } from "@/server/platform/http/errors";
+import { isValidCalendarDate } from "@/server/platform/http/datetime";
+import { isValidYearMonth } from "@/server/platform/http/validate";
+import { assembleUserPrompt, getPrompt, getPromptBundle, PROMPT_KEYS, writeAuditRecord, type PromptKey } from "@/server/ai";
+import { catListFromActivities, listUserActivities, listUserFinanceCats } from "@/server/ai";
+import { listContactNames } from "@/server/timeline";
+import { loadProfileBlock } from "@/server/insight";
+import { buildReviewCtx, type ReviewContentKind as ReviewKind } from "@/server/insight";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * POST /api/admin/prompts/[key]/preview {sample?, period?} —— 装配预览（REQ-003 FR-1.5）
+ * 按「当前生效三件套」走与线上同一条装配逻辑，返回最终 user 输入全文。
+ * 不调 LLM、零 token；结果不落库；audit 仅记 stage='prompt_preview' 计数，不记内容。
+ * sample 缺省时取管理员最近真实数据；period 供复盘类指定期间（日/周 YYYY-MM-DD、月 YYYY-MM、年 YYYY）。
+ */
+export const POST = withAdminParams(async (req, { user, params }) => {
+  const startedAt = Date.now();
+
+  const { key } = await params;
+  if (!PROMPT_KEYS.includes(key as PromptKey)) {
+    throw ApiError.notFound("未知的 prompt key");
+  }
+  const { sample, period } = (await readJsonCapped(req) as any) as { sample?: string; period?: string };
+  const bundle = await getPromptBundle(key as PromptKey);
+  const cfg = bundle.config;
+  const sampleText = sample?.trim() || null;
+
+  const latestEntry = async (): Promise<string | null> => {
+    const { rows } = await pool.query(
+      `select raw_text from entries where user_id = $1 order by created_at desc limit 1`,
+      [user.id],
+    );
+    return rows[0]?.raw_text ?? null;
+  };
+
+  let userPrompt = "";
+  let ctxOut: Record<string, string> = {};
+
+  if (key === "extract_full" || key.startsWith("extract_domain_")) {
+    const contactsOn = cfg.inject.contactList ?? false;
+    const contactNames = contactsOn ? await listContactNames(user.id, cfg.caps.contactCount ?? 100) : [];
+    // 与线上同源：分类对照/常用分类按用户数据装配（空表回落代码枚举）
+    const needCat = cfg.inject.catList && (key === "extract_full" || key === "extract_domain_schedule");
+    const userActs = needCat ? await listUserActivities(user.id) : [];
+    const catList = needCat
+      ? userActs.length
+        ? catListFromActivities(userActs.slice(0, cfg.caps.catCount ?? 50))
+        : (Object.keys(ACTIVITY_NAMES) as (keyof typeof ACTIVITY_NAMES)[])
+            .slice(0, cfg.caps.catCount ?? 50)
+            .map((k) => `${k}=${ACTIVITY_NAMES[k]}`)
+            .join("、")
+      : "";
+    const needCats = cfg.inject.financeCats && (key === "extract_full" || key === "extract_domain_finance");
+    const cats = needCats ? await listUserFinanceCats(user.id, cfg.caps.financeCatCount ?? 15) : [];
+    const financeCats = cats.length ? `\n常用分类（finance.category 优先从中选取）：${cats.join("、")}` : "";
+    const contactList =
+      contactsOn && contactNames.length
+        ? `\n已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`
+        : "";
+    const text = sampleText ?? (await latestEntry()) ?? "（管理员名下暂无动态，可粘贴样例话术）";
+    ctxOut = { nowCst: toCstWallClock(new Date()), catList, financeCats, contactList, text };
+    userPrompt = await assembleUserPrompt(key as PromptKey, bundle, ctxOut, { userId: user.id });
+  } else if (key.startsWith("review_")) {
+    const kind = key.slice("review_".length) as ReviewKind;
+    // period 形状合法但非真实日历日（如 2025-02-30）会进 buildReviewCtx ::date cast → 500，先拦成 400
+    if (period) {
+      const ok =
+        kind === "day" || kind === "week"
+          ? isValidCalendarDate(period)
+          : kind === "month"
+            ? isValidYearMonth(period)
+            : kind === "year"
+              ? /^\d{4}$/.test(period)
+              : true;
+      if (!ok) {
+        throw ApiError.badRequest("period 与该复盘周期不匹配（日/周 YYYY-MM-DD、月 YYYY-MM、年 YYYY）");
+      }
+    }
+    const built = await buildReviewCtx(
+      user.id,
+      kind,
+      {
+        date: kind === "day" || kind === "week" ? period || undefined : undefined,
+        month: kind === "month" ? period || undefined : undefined,
+        year: kind === "year" ? period || undefined : undefined,
+      },
+      bundle,
+    );
+    ctxOut = built.ctx;
+    userPrompt = built.userPrompt;
+  } else if (key === "trade_review_week") {
+    // 交易周报预览（QA 验收修复：原落入 prompt_optimizer 兜底导致模板/占位符错配返回原始模板）
+    // period 形状合法但非真实日历日 → mondayOf 产 NaN date → toISOString RangeError 500，先拦成 400
+    if (period && !isValidCalendarDate(period)) {
+      throw ApiError.badRequest("period 需为真实存在的 YYYY-MM-DD 日期");
+    }
+    const mondayOf = (dateStr: string) => {
+      const d = new Date(`${dateStr}T00:00:00Z`);
+      return new Date(d.getTime() - ((d.getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+    };
+    const addDays = (dateStr: string, n: number) =>
+      new Date(Date.parse(`${dateStr}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+    const from = mondayOf(period ?? new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10));
+    const to = addDays(from, 6);
+    const yuan = (cents: number) => `¥${(cents / 100).toFixed(0)}`;
+
+    const agg = (
+      await pool.query(
+        `select coalesce(sum(case when direction = 'in' then amount_cents else 0 end), 0)::bigint as inc,
+                coalesce(sum(case when direction = 'out' then amount_cents else 0 end), 0)::bigint as out,
+                count(*)::int as n
+         from transactions
+         where user_id = $1 and is_draft = false
+           and (occurred_at at time zone $2)::date between $3::date and $4::date`,
+        [user.id, "Asia/Shanghai", from, to],
+      )
+    ).rows[0];
+    const prev = (
+      await pool.query(
+        `select coalesce(sum(case when direction = 'in' then amount_cents else 0 end), 0)::bigint as inc,
+                coalesce(sum(case when direction = 'out' then amount_cents else 0 end), 0)::bigint as out
+         from transactions
+         where user_id = $1 and is_draft = false
+           and (occurred_at at time zone $2)::date between $3::date and $4::date`,
+        [user.id, "Asia/Shanghai", addDays(from, -7), addDays(from, -1)],
+      )
+    ).rows[0];
+    const cats = (
+      await pool.query(
+        `select category, sum(case when direction = 'out' then amount_cents else 0 end)::bigint as cents
+         from transactions
+         where user_id = $1 and is_draft = false
+           and (occurred_at at time zone $2)::date between $3::date and $4::date
+         group by category order by cents desc limit 5`,
+        [user.id, "Asia/Shanghai", from, to],
+      )
+    ).rows;
+    const momPct = (cur: number, base: number) =>
+      base > 0 ? `${cur >= base ? "+" : ""}${Math.round(((cur - base) / base) * 100)}%` : "—";
+    const facts = [
+      `交易周报 · 本周 ${from} ~ ${to}（周一至周日）`,
+      `总支出 ${yuan(Number(agg.out))}（上周 ${yuan(Number(prev.out))}，环比 ${momPct(Number(agg.out), Number(prev.out))}）`,
+      `总收入 ${yuan(Number(agg.inc))}（上周 ${yuan(Number(prev.inc))}，环比 ${momPct(Number(agg.inc), Number(prev.inc))}）`,
+      `笔数：共 ${agg.n} 笔`,
+      ...(cats.length ? [`支出分类 Top：${cats.map((c) => `${c.category} ${yuan(Number(c.cents))}`).join("、")}`] : []),
+    ].join("\n");
+
+    let txDetail = "";
+    if (cfg.inject.txDetail && cfg.caps.txCap !== 0) {
+      const rows = (
+        await pool.query(
+          `select to_char((occurred_at at time zone $2)::date, 'MM-DD') as d, direction, amount_cents, category, counterparty, note
+           from transactions
+           where user_id = $1 and is_draft = false
+             and (occurred_at at time zone $2)::date between $3::date and $4::date
+           order by occurred_at, id
+           limit $5`,
+          [user.id, "Asia/Shanghai", from, to, cfg.caps.txCap],
+        )
+      ).rows;
+      const total = (
+        await pool.query(
+          `select count(*)::int as n from transactions
+           where user_id = $1 and is_draft = false
+             and (occurred_at at time zone $2)::date between $3::date and $4::date`,
+          [user.id, "Asia/Shanghai", from, to],
+        )
+      ).rows[0].n;
+      const lines = rows.map(
+        (r) =>
+          `${r.d} ${r.direction === "out" ? "-" : "+"}${yuan(Number(r.amount_cents))} ${r.category}` +
+          `${r.counterparty ? ` ${r.counterparty}` : ""}${r.note ? `（${r.note}）` : ""}`,
+      );
+      if (total > rows.length) lines.push(`（另有 ${total - rows.length} 条流水未展示）`);
+      txDetail = lines.length > 0 ? `本周流水（时间升序）：\n${lines.join("\n")}` : "本周无流水明细。";
+    }
+    ctxOut = { facts, txDetail };
+    userPrompt = await assembleUserPrompt(key as PromptKey, bundle, ctxOut, { userId: user.id });
+  } else if (key === "todo_decompose" || key === "action_decompose") {
+    const isAction = key === "action_decompose";
+    const todo = (
+      await pool.query(
+        isAction
+          ? `select id, title, note, space_id, parent_todo_id from todos where user_id = $1 and kind = 'action' and status = 'pending' order by created_at desc limit 1`
+          : `select id, title, note, space_id from todos where user_id = $1 and parent_todo_id is null and status = 'pending' order by created_at desc limit 1`,
+        [user.id],
+      )
+    ).rows[0];
+    const title = todo?.title ?? sampleText ?? "（示例）整理书桌并归位物品";
+    const note = todo?.note ?? null;
+    const space = todo?.space_id
+      ? (await pool.query(`select name, description from goal_spaces where id = $1`, [todo.space_id])).rows[0]
+      : null;
+    const parent =
+      isAction && todo?.parent_todo_id
+        ? (await pool.query(`select title, note from todos where id = $1`, [todo.parent_todo_id])).rows[0]
+        : null;
+    // 去重清单口径与拆解路由一致（按同父兄弟 / 独立行动全体 / 顶层 todo 的子行动）
+    const existingTitles = todo
+      ? isAction
+        ? todo.parent_todo_id
+          ? (
+              await pool.query(
+                `select title from todos where user_id = $1 and parent_todo_id = $2 and kind = 'action' and id <> $3 and status = 'pending' order by sort`,
+                [user.id, todo.parent_todo_id, todo.id],
+              )
+            ).rows.map((r) => r.title)
+          : (
+              await pool.query(
+                `select title from todos where user_id = $1 and parent_todo_id is null and kind = 'action' and id <> $2 and status = 'pending' order by sort`,
+                [user.id, todo.id],
+              )
+            ).rows.map((r) => r.title)
+        : (
+            await pool.query(
+              `select title from todos where user_id = $1 and parent_todo_id = $2 and kind = 'action' and status = 'pending' order by sort`,
+              [user.id, todo.id],
+            )
+          ).rows.map((r) => r.title)
+      : [];
+    const listed = cfg.inject.existingBlock ? existingTitles.slice(0, cfg.caps.existingCount ?? 30) : [];
+    const profile = cfg.inject.profileBlock ? await loadProfileBlock(user.id) : null;
+    ctxOut = {
+      todoBlock: `${isAction ? `所属 todo：${parent?.title ?? ""}` : `todo：${title}`}${note || (isAction ? parent?.note : null) ? `\n相关描述：${note || parent?.note}` : ""}`,
+      spaceBlock: cfg.inject.spaceBlock && space ? `所属空间：${space.name}${space.description ? `（${space.description}）` : ""}` : "",
+      existingBlock: listed.length
+        ? `已有行动（禁止生成语义重复项）：\n${listed.map((t) => `- ${t}`).join("\n")}`
+        : cfg.inject.existingBlock
+          ? "已有行动：无"
+          : "",
+      profileBlock: profile ? `用户画像（供参考）：\n${profile}` : "",
+      target: isAction ? `「${title}」` : "上述 todo",
+      modeSuffix: "",
+    };
+    userPrompt = await assembleUserPrompt(key as PromptKey, bundle, ctxOut, { userId: user.id });
+  } else if (key === "space_classify") {
+    // 读侧钳制：caps 来自 DB 覆盖配置可能非整数/非正数，回退默认 20；limit 一律参数化防注入/拼接坏 SQL
+    const spaceCapCfg = cfg.caps.spaceCount ?? 20;
+    const spaceCap = Number.isInteger(spaceCapCfg) && spaceCapCfg > 0 ? spaceCapCfg : 20;
+    const { rows: spaces } = await pool.query(
+      `select id, name, description from goal_spaces where user_id = $1 and status = 'active' order by sort limit $2`,
+      [user.id, spaceCap],
+    );
+    const candidates = spaces
+      .map((s) => `- ${s.id}：${s.name}${s.description ? `（${s.description}）` : ""}`)
+      .join("\n");
+    const text = (sampleText ?? (await latestEntry()) ?? "（示例）今天背了两百个单词").slice(0, 500);
+    ctxOut = { candidates, text };
+    userPrompt = await assembleUserPrompt("space_classify", bundle, ctxOut, { userId: user.id });
+  } else if (key === "prompt_optimizer") {
+    // prompt_optimizer：current 为管理员粘贴的目标 prompt（缺省取当前生效的 system）
+    const contract =
+      "【必须保留的契约约束】\n保持原文中的输出 JSON 结构、字段名、枚举值与占位符完全不变。";
+    ctxOut = {
+      purpose: `示例（key=${key}）——「拾光」系统的 AI 提示词`,
+      contract,
+      current: sampleText ?? (await getPrompt(key as PromptKey)),
+      intent: "（无，按专家判断全面优化）",
+    };
+    userPrompt = await assembleUserPrompt("prompt_optimizer", bundle, ctxOut, { userId: user.id });
+  } else {
+    // 其余 key（profile_merge/extract_open_vocab/chat_*/fitness_plan_parse/xunji_name_match）
+    // 无真实装配分支——原兜底按 prompt_optimizer 的占位符表替换本 key 模板，产物残留 {facts} 等字面
+    // 占位符且混入 optimizer 段落，与线上装配完全不符、误导调优 → 显式 400 而非返回错误预览
+    throw ApiError.badRequest(`该 key（${key}）暂不支持装配预览，请直接查看当前生效模板`);
+  }
+
+  void writeAuditRecord({
+    userId: user.id, entryId: null, stage: "prompt_preview",
+    model: null, engine: "prompt-preview",
+    latencyMs: Date.now() - startedAt, ok: true,
+  });
+  return NextResponse.json({ ok: true, userPrompt, ctx: ctxOut, config: bundle.config });
+});

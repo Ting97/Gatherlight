@@ -1,0 +1,249 @@
+/**
+ * 迁移运行器（REQ-004 FR-A3 / 004 4-A）：终结手工 psql。
+ *   npm run db:migrate          增量执行 packages/db/migrations/*.sql 中未跑的
+ *   npm run db:migrate -- --status   只看差异不执行
+ * - 记录表 schema_migrations（035）；已执行文件的 checksum 变更即报错（防手改已上线迁移）
+ * - 首跑自举：表为空且已有业务表（profiles 存在）时把既有全部迁移按序回填（applied_by='backfill'），不重复执行；
+ *   真空库（无业务表）直接报错退出，须 --fresh 全量执行（防空库被回填成"已应用"的单向门）
+ * - 连接串取 DATABASE_URL；单条迁移整体事务执行，失败即停
+ */
+import { readFileSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Client } from "pg";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const MIGRATIONS_DIR = join(here, "migrations");
+const statusOnly = process.argv.includes("--status");
+// 空库全量真实执行（测试库/新环境初始化）——与自举回填的区别是 SQL 真正落库
+const freshApply = process.argv.includes("--fresh");
+
+// 连接串口径与 run-coverage.mjs / run-routes-smoke.mjs 一致：DATABASE_URL 优先，测试库环境（CI 只注入
+// SHIGUANGRI_TEST_DB）回退——此前 CI「Prepare test database」步 112 连败的根因即只认 DATABASE_URL
+const connectionString = process.env.DATABASE_URL ?? process.env.SHIGUANGRI_TEST_DB;
+const client = new Client({ connectionString, connectionTimeoutMillis: 5000 });
+
+const sha256 = (s: string) => createHash("sha256").update(s).digest("hex").slice(0, 16);
+
+/** 读迁移文件并归一化 CRLF→LF：checksum 与执行共用。
+ *  Windows 检出（autocrlf）会把工作树转成 CRLF——行尾敏感的 checksum 会让
+ *  Windows/Mac 两台部署机互斥报「已变更但曾应用」（2026-10-14 生产实测）。
+ *  SQL 语义不受行尾影响，归一化后跨平台 checksum 恒等。 */
+function readSql(path: string): string {
+  // UTF-8 BOM 同样污染 checksum 且 \uFEFF 进首语句报难定位的语法错误（二十轮，csv-import 同款剥离）
+  return readFileSync(path, "utf8")
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n");
+}
+
+/** 迁移文件自带事务语句会让 runner 的「单条迁移整体事务」契约失效：
+ *  文件内 commit; 会把外层事务提前提交，之后的记录表 insert 变成 autocommit——
+ *  中间失败即「已执行但未记录」，下次重跑非幂等迁移直接踩坏数据。统一由 runner 管理事务
+ *  （PG 语法变体 commit work;/rollback work;/begin transaction; 与裸形式等价，一并拦截——
+ *  十五轮补 begin transaction; 变体：旧正则 (work)? 漏接，放行进 runner 事务后文件内
+ *  commit; 提前提交 → 记录表 insert autocommit 落库、runner 收尾 commit 报「无事务进行中」假失败） */
+function assertNoInlineTx(sql: string, f: string) {
+  // 二十轮补带参数变体：`start transaction isolation level …` / `commit and chain` 带后随
+  // 子句时旧正则不命中，可绕过内联事务拦截（现存迁移无此形态，纯防御加固）
+  // do $$ … $$ 匿名块内的 begin/end 是 PL/pgSQL 语法而非事务语句——先剥离再检，
+  // 否则宽子句组 [^;]* 跨行吞到块内分号，误伤 024 一类幂等 do 块（fresh 全量被拦）
+  const noDoBlocks = sql.replace(/do\s*\$\$[\s\S]*?\$\$/gi, "");
+  if (/^\s*(begin|start\s+transaction|commit|rollback)(\s+(work|transaction|\S[^;]*))?\s*;/im.test(noDoBlocks)) {
+    console.error(`[migrate] ✗ ${f} 自带 begin/commit 语句——事务由 runner 统一管理，请移除文件内事务语句`);
+    process.exit(1);
+  }
+}
+
+async function ensureTable() {
+  await client.query(`
+    create table if not exists public.schema_migrations (
+      filename   text primary key,
+      applied_at timestamptz not null default now(),
+      checksum   text,
+      applied_by text not null default 'runner'
+    )`);
+}
+
+async function applied(): Promise<Map<string, string | null>> {
+  const { rows } = await client.query(`select filename, checksum from schema_migrations`);
+  return new Map(rows.map((r) => [r.filename, r.checksum]));
+}
+
+async function main() {
+  await client.connect();
+  await ensureTable();
+  // 并发防护：CI/CD 与开发者同时跑 db:migrate 会双双判定同一 pending 并重复执行。
+  // 阻塞式 pg_advisory_lock 无超时——对端进程挂死时部署迁移步会无限期卡住无输出
+  // （九轮"卡 20 分钟"同类形态）；改 try + 有限等待（30s），超时报错退出给出可行动文案
+  {
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      const r = await client.query(`select pg_try_advisory_lock(hashtext('shiguangri-migrate')) as ok`);
+      if (r.rows[0]?.ok) break;
+      if (Date.now() > deadline) {
+        console.error("[migrate] ✗ 获取迁移锁超时（30s）：另一个迁移进程可能挂起未释放，请排查后重试");
+        process.exit(1);
+      }
+      await new Promise((res) => setTimeout(res, 1000));
+    }
+  }
+  const done = await applied();
+  // 严格命名契约：只认 NNN-name.sql——目录里的杂文件（macOS tar 夹带的 ._x.sql 等）
+  // 一律忽略，不得进入 pending（曾经真实把 ._001 当迁移执行报 invalid message format）
+  const allSql = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql"));
+  const files = allSql
+    .filter((f) => /^\d{3}-.+\.sql$/.test(f))
+    .sort(); // 文件名序即执行序（NNN-name.sql）
+  // 口径告警：*.sql 却不合 NNN-name 命名的文件既不执行也不计入 manifest——静默忽略会让
+  // 手滑命名（65-fix.sql / 065 fix.sql）永远不被发现，而 manifest 若按 endsWith 统计就会出现
+  // 「已应用 < 清单数 → health 永久 migrationPending」（十三轮：manifest 与 runner 共用本过滤器）
+  for (const f of allSql) {
+    if (!files.includes(f)) console.error(`[migrate] ⚠ 目录存在不合命名契约的 .sql（已忽略）：${f}（应为 NNN-name.sql）`);
+  }
+
+  // 空库 + --fresh：schema.sql 建基线 + 全量迁移真实执行（测试库/新环境初始化）
+  // --status 优先：预检契约是只读，--fresh --status 组合不得真实落库（旧版会执行全部迁移）
+  if (statusOnly) {
+    const pendingAll = files.filter((f) => !done.has(f));
+    console.log(
+      done.size === 0
+        ? freshApply
+          ? `[migrate]（--status 只读预检）空库 + --fresh：将执行 schema.sql + ${files.length} 个迁移`
+          : `[migrate] 未初始化：${files.length} 个既有迁移待回填（执行 db:migrate 完成回填）`
+        : `[migrate] 已应用 ${done.size} / 共 ${files.length}，待执行 ${pendingAll.length}`,
+    );
+    for (const f of pendingAll) console.log(`  pending: ${f}`);
+    // 预检同样做 checksum/缺失比对：运维看"待执行 0"时也要能看到已上线文件被手改
+    for (const [f, ck] of done) {
+      if (!files.includes(f)) {
+        console.error(`[migrate] ⚠ 记录表存在但迁移文件缺失：${f}（切分支/误删？终态与记录不一致）`);
+      } else if (ck) {
+        const now = sha256(readSql(join(MIGRATIONS_DIR, f)));
+        if (now !== ck) console.error(`[migrate] ⚠ 迁移文件已变更但曾应用：${f}`);
+      }
+    }
+    return;
+  }
+
+  if (done.size === 0 && files.length > 0 && freshApply) {
+    const baseSql = readSql(join(here, "schema.sql"));
+    try {
+      await client.query("begin");
+      await client.query(baseSql);
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      console.error(`[migrate] ✗ schema.sql（基线 DDL）失败：${String(e).slice(0, 300)}`);
+      process.exit(1);
+    }
+    console.log("[migrate] ✓ schema.sql（基线 DDL）");
+    for (const f of files) {
+      const sql = readSql(join(MIGRATIONS_DIR, f));
+      // legacy 迁移（003）自带 begin/commit：仅 fresh 全量执行时剥离、由 runner 事务托管
+      //（文件内容不动，checksum 不受影响）；新迁移走 pending 路径的硬校验。
+      // 剥离正则与 assertNoInlineTx 同口径（含 commit work;/rollback work;/begin transaction; 变体），剥离面只增不减。
+      // 003 之外的文件同样过 assertNoInlineTx：否则 --fresh 测试库静默剥离全绿、
+      // 上线 pending 路径直接 process.exit(1) 部署卡死——预检发现不了（十一轮补齐）
+      if (!f.startsWith("003")) assertNoInlineTx(sql, f);
+      const execSql = sql.replace(/^\s*(begin|start\s+transaction|commit|rollback)(\s+(work|transaction))?\s*;.*$/gim, "");
+      const t0 = Date.now();
+      try {
+        await client.query("begin");
+        await client.query(execSql);
+        await client.query(`insert into schema_migrations (filename, checksum) values ($1,$2)`, [
+          f,
+          sha256(sql),
+        ]);
+        await client.query("commit");
+        console.log(`[migrate] ✓ ${f}（${Date.now() - t0}ms）`);
+      } catch (e) {
+        await client.query("rollback").catch(() => {});
+        console.error(`[migrate] ✗ ${f} 失败：${String(e).slice(0, 300)}`);
+        process.exit(1);
+      }
+    }
+    console.log(`[migrate] fresh 完成：全量执行 ${files.length} 个`);
+    return;
+  }
+
+  // 首跑自举：记录表为空但目录里有历史迁移 → 全部回填（不执行——库已含其效果）
+  if (done.size === 0 && files.length > 0) {
+    // 单向门守卫：连 profiles 都没有 = 真空库（测试/新环境忘加 --fresh）。静默回填会让零业务表的库
+    // 假装"迁移已应用"，且 --fresh（要求记录表为空）从此永久跳过——必须显式 --fresh 全量执行。
+    const probe = await client.query(`select to_regclass('public.profiles') as t`);
+    if (!probe.rows[0]?.t) {
+      console.error("[migrate] 检测到空库（无 public.profiles 业务表）：测试/新库请使用 --fresh 全量执行：npm run db:migrate -- --fresh");
+      process.exit(1);
+    }
+    for (const f of files) {
+      const checksum = sha256(readSql(join(MIGRATIONS_DIR, f)));
+      await client.query(
+        `insert into schema_migrations (filename, checksum, applied_by) values ($1,$2,'backfill')
+         on conflict (filename) do nothing`,
+        [f, checksum],
+      );
+    }
+    console.log(`[migrate] 自举回填 ${files.length} 个既有迁移（未重复执行）`);
+    return;
+  }
+
+  const pending = files.filter((f) => !done.has(f));
+
+  // checksum 防篡改：已应用文件内容变化即报错；记录表孤儿（文件缺失）先告警
+  for (const [f, ck] of done) {
+    if (!files.includes(f)) {
+      console.error(`[migrate] ⚠ 记录表存在但迁移文件缺失：${f}（切分支/误删？终态与记录不一致）`);
+    } else if (ck) {
+      const now = sha256(readSql(join(MIGRATIONS_DIR, f)));
+      if (now !== ck) {
+        console.error(`[migrate] 迁移文件已变更但曾应用：${f} —— 禁止手改已上线迁移，请以新编号新增`);
+        process.exit(1);
+      }
+    }
+  }
+
+  if (pending.length === 0) {
+    console.log(`[migrate] 已是最新（${done.size} 个迁移）`);
+    return;
+  }
+
+  // 序号单调校验：pending 序号必须大于已应用最大序号——事后补一个小编号会在 064 之后执行、
+  // 序号语义名存实亡（"迁移只增不改"纪律的机器侧守卫）
+  const maxApplied = Math.max(0, ...[...done.keys()].map((f) => parseInt(f, 10) || 0));
+  for (const f of pending) {
+    if ((parseInt(f, 10) || 0) <= maxApplied) {
+      console.error(`[migrate] pending 序号 ${f} 不大于已应用最大序号 ${maxApplied}——新迁移必须递增编号`);
+      process.exit(1);
+    }
+  }
+
+  for (const f of pending) {
+    const sql = readSql(join(MIGRATIONS_DIR, f));
+    const checksum = sha256(sql);
+    assertNoInlineTx(sql, f);
+    const t0 = Date.now();
+    try {
+      await client.query("begin");
+      await client.query(sql);
+      await client.query(
+        `insert into schema_migrations (filename, checksum) values ($1,$2)`,
+        [f, checksum],
+      );
+      await client.query("commit");
+      console.log(`[migrate] ✓ ${f}（${Date.now() - t0}ms）`);
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      console.error(`[migrate] ✗ ${f} 失败：${String(e).slice(0, 300)}`);
+      process.exit(1);
+    }
+  }
+  console.log(`[migrate] 完成：本次执行 ${pending.length} 个`);
+}
+
+main()
+  .catch((e) => {
+    console.error(`[migrate] 连接/初始化失败：${String(e).slice(0, 200)}`);
+    process.exit(1);
+  })
+  .finally(() => client.end());

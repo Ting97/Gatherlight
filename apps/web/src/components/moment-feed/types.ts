@@ -1,0 +1,41 @@
+import type { ReactNode } from "react";
+import type { Activity, FeedMoment } from "@/lib/types";
+
+/**
+ * moment-feed 拆分模块的共享类型。
+ * 入口 props 结构与拆分前完全一致（page.tsx 引用入口的默认导出）。
+ */
+
+/** MomentFeed 入口 props（原 moment-feed.tsx 的 Props） */
+export interface MomentFeedProps {
+  moments: FeedMoment[];
+  activities: Activity[];
+  onRefresh: () => Promise<void>;
+  /** 还有多少条未展示（>0 显示「加载更多」按钮） */
+  moreCount?: number;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+  /** 首载未就绪：空列表时渲染骨架而非空态文案（避免加载期闪现「还没有动态」误导） */
+  loading?: boolean;
+  /** 搜索模式：空态文案与常规不同 */
+  searching?: boolean;
+  searchKeyword?: string;
+}
+
+/** 卡内操作统一执行器：执行 fn → 成功/失败消息经全局 toast 提示 → 刷新 */
+export type RunFn = (fn: () => Promise<string>) => Promise<boolean>; // 返回是否受理（重入锁被占=false，确认框据此不静默关闭）
+
+/** 两步删除：首点 del(key) 进入待确认态（按钮变「确认删除？」，3 秒超时自动复位），
+ *  待确认态下再点同一 key 才真正执行（替代原生 window.confirm——阻塞式弹窗与全站两步确认不一致） */
+export type DelFn = (key: string, fn: () => Promise<unknown>) => void;
+
+/** 卡片头部意图标签（todo/日程/心情/动态） */
+export interface IntentTag {
+  /** 图标：lucide 线性图标（线性图标体系） */
+  icon: ReactNode;
+  label: string;
+  tone: "sky" | "violet" | "slate";
+}
+
+/** 浮层锚定坐标（portal 菜单的 fixed 定位；null=移动端交由菜单自行定位） */
+export type MenuPos = { top: number; left: number } | null;

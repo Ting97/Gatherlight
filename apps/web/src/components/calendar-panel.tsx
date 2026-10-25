@@ -1,0 +1,320 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DayTimeline from "@/components/day-timeline";
+import DayDonut from "@/components/day-donut";
+import WeekView from "@/components/week-view";
+import MonthView from "@/components/month-view";
+import YearView from "@/components/year-view";
+import BlockEditor, { type BlockDraft } from "@/components/block-editor";
+import DayReviewCard from "@/app/calendar/day-review-card";
+import WeekReviewCard from "@/app/calendar/week-review-card";
+import MonthReviewCard from "@/app/calendar/month-review-card";
+import YearReviewCard from "@/app/calendar/year-review-card";
+import {
+  addDays, bjToday, startOfMonth, startOfWeek, startOfYear,
+  weekName, ymd, zhDate, zhDuration,
+} from "@/lib/date";
+import type { Activity, Block, DayStat } from "@/lib/types";
+import { api, ApiClientError } from "@/shared/api";
+import { toast } from "@/shared/ui/toast";
+import { useSession } from "@/shared/session";
+import { bjDateKey, combineHM, combineHmEndCrossDay, zhTime } from "@/lib/bj-time";
+
+/** 日程页 · 日历子页：原 /calendar 页的四视图（日/周/月/年）+ AI 复盘，逻辑不变整体平移 */
+export default function CalendarPanel({ initialAnchor }: { initialAnchor?: string }) {
+  // AI 复盘卡联动（REQ-028）：insight 关闭时不渲染四档小结卡（API 已 403，不出注定失败的生成按钮）
+  const { user } = useSession();
+  const insightOn = !user || user.modules.includes("insight");
+  const [view, setView] = useState<"day" | "week" | "month" | "year">("week"); // 默认周视图（2026-10-04 用户偏好）：一周安排一屏可见
+  const [anchor, setAnchor] = useState<string>(bjToday()); // 当前锚定日期（北京口径，海外设备的本地日会错 8 小时）
+  // SSG 防 hydration mismatch：服务端/客户端首帧都渲染同一骨架，mount 后再渲染带日期的真内容
+  // （theme-toggle 同款防法；不做此门，bjToday() 初值让标题/高亮每日构建日≠访问日必现 mismatch）
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // ?date= 直达锚定：参数在父层 useEffect 里才解析出来（晚于本组件首帧），定义后一次性采纳
+  const anchoredRef = useRef(false);
+  useEffect(() => {
+    if (initialAnchor && !anchoredRef.current) {
+      anchoredRef.current = true;
+      setAnchor(initialAnchor);
+    }
+  }, [initialAnchor]);
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [blocks, setBlocks] = useState<Block[]>([]); // 日/周视图原始块
+  const [stats, setStats] = useState<Map<string, DayStat>>(new Map()); // 月/年聚合
+  // 时间块之外还有动态/流水/完成 todo（复盘卡「有记录」口径的一部分，见 hasReviewablesInRange）
+  const [hasExtras, setHasExtras] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [editing, setEditing] = useState<BlockDraft | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  // 编辑面板保存/删除进行中锁，防连点重复提交（透传给 BlockEditor 禁用按钮）
+  const [editSaving, setEditSaving] = useState(false);
+  const [editDeleting, setEditDeleting] = useState(false);
+
+  const loadActivities = useCallback(async () => {
+    // 裸 rejection 会命中 ChunkErrorReloader 的宽匹配 → 整页强刷循环（use-todo-data 同款注释）
+    try {
+      const j = await api<any>("/api/activities");
+      setActivities(j.activities ?? []);
+    } catch {
+      setActivities([]); // 失败按无自定义分类降级：预设分类仍可用，不阻断日程页
+    }
+  }, []);
+  useEffect(() => {
+    loadActivities();
+  }, [loadActivities]);
+
+  // 区间计算
+  const range = useMemo(() => {
+    if (view === "day") return { from: anchor, to: anchor };
+    if (view === "week") {
+      const from = startOfWeek(anchor);
+      return { from, to: addDays(from, 6) };
+    }
+    if (view === "month") {
+      const from = startOfMonth(anchor);
+      const [y, m] = from.split("-").map(Number);
+      return { from, to: ymd(new Date(y, m, 0)) };
+    }
+    const from = startOfYear(anchor);
+    return { from, to: `${from.slice(0, 4)}-12-31` };
+  }, [view, anchor]);
+
+  // 加载数据（日/周用原始块，月/年用聚合）；seq 守卫：锚定快速切换时只让最新请求落地
+  const loadSeq = useRef(0);
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    setLoading(true);
+    setErr(null);
+    try {
+      const qs = `from=${range.from}&to=${range.to}`;
+      if (view === "day" || view === "week") {
+        const j = await api<any>(`/api/blocks/range?${qs}`);
+        if (seq !== loadSeq.current) return; // 锚定快速切换时旧响应可能后到，丢弃过期数据
+        setBlocks(j.blocks ?? []);
+        setHasExtras(j.hasExtras === true);
+      } else {
+        const j = await api<any>(`/api/stats/range?${qs}`);
+        if (seq !== loadSeq.current) return;
+        setStats(new Map((j.days ?? []).map((d: DayStat) => [d.date, d])));
+        setHasExtras(j.hasExtras === true);
+      }
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
+    }
+  }, [view, range.from, range.to]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // 切换日期/视图时关闭残留的块编辑面板（二十轮）：editing 不随 range 清空时，
+  // saveEdit 在新区间找不到块会静默 return——「点了保存没反应」且改动悄悄丢失
+  useEffect(() => {
+    setEditing(null);
+  }, [range.from, range.to]);
+
+  // ----- 日期导航 -----
+  function shift(dir: 1 | -1) {
+    if (view === "day") setAnchor(addDays(anchor, dir));
+    else if (view === "week") setAnchor(addDays(anchor, dir * 7));
+    else if (view === "month") {
+      // UTC 算术翻月（对齐 finance/kit.shiftMonth 口径）：本地 Date 游走在 DST 时区宿主会差一天
+      const [y, m] = anchor.split("-").map(Number);
+      const d = new Date(Date.UTC(y, m - 1 + dir, 1));
+      setAnchor(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`);
+    } else setAnchor(`${Number(anchor.slice(0, 4)) + dir}-06-15`);
+  }
+
+  // ----- 日视图编辑/补录 -----
+  function startEdit(b: Block) {
+    setEditing({ id: b.id, title: b.title, start: zhTime(b.start_at), end: zhTime(b.end_at), activityId: b.activity_id });
+  }
+  async function saveEdit() {
+    if (!editing || editSaving) return; // 保存进行中忽略再次提交，防双击重复保存
+    const b = blocks.find((x) => x.id === editing.id);
+    if (!b) {
+      // 块不在当前区间（切换后残留等）：提示并关面板而非静默 return（二十轮，与「菜单删除静默失败」同族收口）
+      toast("该日程不在当前视图内，请返回原日期再编辑");
+      setEditing(null);
+      return;
+    }
+    // 跨天块（23:00→次日 07:00 的睡眠）end 钟点 ≤ start 是合法次日语义，不走同日校验；
+    // 结束写回用「开始日 + end 钟点，≤ 开始自动 +1 天」的跨日组合——旧逻辑对跨天块恒报
+    // 「结束必须晚于开始时间」（无法编辑），绕过校验又会把结束钉在原次日日期、块膨胀约 24 小时。
+    // 十七轮：同日块编辑出 end ≤ start 同样按次日语义放行（23:00→01:00 一改即成，与动态流
+    // 行内编辑同口径）——旧逻辑手动路径完全无法创建/改成跨天块，toast 说明跨天防误触误解
+    const storedCrossDay = bjDateKey(b.start_at) !== bjDateKey(b.end_at);
+    const crossDay = storedCrossDay || editing.end <= editing.start;
+    setEditSaving(true);
+    try {
+      const startAt = combineHM(b.start_at, editing.start);
+      await api<any>(`/api/blocks/${editing.id}`, "PATCH", {
+        title: editing.title.trim() || b.title,
+        // 存储口径与首页统一（北京时间 combineHM）：本地 setHours 在海外设备会存出错 8 小时的时刻
+        startAt,
+        endAt: crossDay ? combineHmEndCrossDay(startAt, editing.end, b.end_at) : combineHM(b.end_at, editing.end),
+        activityId: editing.activityId,
+      });
+      if (!storedCrossDay && crossDay) toast(`已按跨天块保存：${editing.start} → 次日 ${editing.end}`);
+    } catch (e) {
+      if (e instanceof ApiClientError) { setErr(e.message === "操作失败" ? "保存失败" : e.message); return; }
+      setErr(e instanceof Error ? e.message : String(e)); // 非接口错误也就地提示，不外抛（外抛会触发整页自愈刷新）
+      return;
+    } finally {
+      setEditSaving(false);
+    }
+    setEditing(null);
+    await load();
+  }
+  async function removeEdit() {
+    if (!editing || editDeleting) return; // 删除进行中忽略再次提交，防重复删除
+    // 确认交互在 BlockEditor 的两步删除按钮内完成（3 秒内二次点按才会走到这里）
+    setEditDeleting(true);
+    try {
+      await api<any>(`/api/blocks/${editing.id}`, "DELETE");
+    } catch (e) {
+      // 原 fetch 版不解析响应体，任何失败统一「删除失败」
+      if (e instanceof ApiClientError) { setErr("删除失败"); return; }
+      setErr(e instanceof Error ? e.message : String(e)); // 同上：不外抛
+      return;
+    } finally {
+      setEditDeleting(false);
+    }
+    setEditing(null);
+    await load();
+  }
+  async function createBlock(payload: { title: string; startAt: string; endAt: string; activityId: string }) {
+    try {
+      await api<any>("/api/blocks", "POST", payload);
+    } catch (e) {
+      // 与 saveEdit 同口径：非接口错误（断网等）也就地提示，不外抛（外抛会经 unhandledrejection 触发整页自愈刷新，丢表单输入）
+      if (e instanceof ApiClientError) { setErr(e.message === "操作失败" ? "补录失败" : e.message); return false; }
+      setErr("网络异常，请稍后重试");
+      return false;
+    }
+    await load();
+    return true;
+  }
+
+  // ----- 标题与统计 -----
+  // 本地日期过滤（ISO 字符串 UTC 切片会把凌晨块筛掉）
+  // range API 已按「区间与当天有交集」返回：跨天块（如昨晚→今早的睡眠）也要显示/统计，
+  // 不能再按 start_at 的日期过滤（会把凌晨占用段筛没，导致"看得见的冲突缺口"）
+  const dayBlocks = blocks;
+  // 统计口径与月/年视图统一（stats/range 的交集钳制）：跨天块只计落在当天的部分
+  // 基点北京零点（+08:00）：本地零点在海外设备会把当天块算偏 8 小时
+  const dayStartMs = new Date(`${anchor}T00:00:00+08:00`).getTime();
+  const dayEndMs = dayStartMs + 86_400_000;
+  const dayClampedMin = (b: { start_at: string; end_at: string }) => {
+    const s = new Date(b.start_at).getTime();
+    const e = new Date(b.end_at).getTime();
+    return Math.max(0, Math.round((Math.min(e, dayEndMs) - Math.max(s, dayStartMs)) / 60_000));
+  };
+  const dayStat: Record<string, number> = {};
+  for (const b of dayBlocks) dayStat[b.activity_id] = (dayStat[b.activity_id] ?? 0) + dayClampedMin(b);
+  const weekDays = useMemo(() => {
+    const from = startOfWeek(anchor);
+    return Array.from({ length: 7 }, (_, i) => addDays(from, i));
+  }, [anchor]);
+
+  const title =
+    view === "day" ? `${anchor.slice(0, 4)}年${zhDate(anchor)} ${weekName(anchor)}` :
+    view === "week" ? `${range.from.slice(0, 4)}年${zhDate(range.from)} – ${zhDate(range.to)}` :
+    view === "month" ? `${anchor.slice(0, 4)}年${Number(anchor.slice(5, 7))}月` :
+    `${anchor.slice(0, 4)}年`;
+
+  if (!mounted) {
+    return (
+      <div className="animate-pulse" aria-hidden>
+        <div className="glass mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+          <div className="h-8 w-44 rounded-lg bg-elevated" />
+          <div className="h-8 w-56 rounded-full bg-elevated" />
+        </div>
+        <div className="glass h-64 rounded-2xl" />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="glass mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl px-4 py-3">
+        <div className="flex items-center gap-2">
+          <button onClick={() => shift(-1)} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-sm transition hover:border-sky-500/50 hover:bg-elevated/80">‹</button>
+          <h2 className="text-gradient min-w-44 text-center text-lg font-semibold">{title}</h2>
+          <button onClick={() => shift(1)} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-sm transition hover:border-sky-500/50 hover:bg-elevated/80">›</button>
+          <button onClick={() => setAnchor(bjToday())} className="ml-1 whitespace-nowrap rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs text-ink-soft transition hover:border-sky-500/50 hover:bg-elevated/80">今天</button>
+        </div>
+        <div className="flex rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs">
+          {([["day", "日"], ["week", "周"], ["month", "月"], ["year", "年"]] as [typeof view, string][]).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`whitespace-nowrap rounded-full px-3.5 py-1.5 transition-all duration-200 sm:px-3.5 sm:py-1 ${
+                view === v
+                  ? "bg-gradient-to-r from-sky-500 to-indigo-500 font-medium text-white shadow-md shadow-sky-500/25"
+                  : "text-ink-mute hover:bg-wash hover:text-ink"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {err && (
+        <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-danger">{err}</div>
+      )}
+      {loading && <p className="py-8 text-center text-xs text-ink-dim">加载中…</p>}
+
+      {!loading && view === "day" && (
+        <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
+          {/* 移动端把当日结构与 AI 小结排在时间轴前（order-first），不再被 480px 时间轴压在下面 */}
+          <aside className="glass order-first mb-0 rounded-2xl p-4 lg:order-none lg:mb-0">
+            <h3 className="mb-3 text-sm font-semibold text-ink-soft">当日结构</h3>
+            <DayDonut byActivity={dayStat} activities={activities} size={100} thickness={12} />
+            <div className="mt-4 border-t border-line-soft pt-3 text-xs text-ink-dim">
+              共 {dayBlocks.length} 段 · {zhDuration(dayBlocks.reduce((s, b) => s + dayClampedMin(b), 0))}
+            </div>
+            {insightOn && <DayReviewCard key={`day-${anchor}`} date={anchor} hasRecords={dayBlocks.length > 0 || hasExtras} notify={setErr} />}
+          </aside>
+          <div className="order-last lg:order-none">
+            {editing && (
+              <div className="mb-3">
+                <BlockEditor draft={editing} activities={activities} onChange={setEditing} onSave={saveEdit} onCancel={() => setEditing(null)} onDelete={removeEdit} saving={editSaving} deleting={editDeleting} />
+              </div>
+            )}
+            <DayTimeline date={anchor} blocks={dayBlocks} activities={activities} onCreate={createBlock} onEditBlock={startEdit} />
+          </div>
+        </div>
+      )}
+      {!loading && view === "week" && (
+        <>
+          <WeekView days={weekDays} blocks={blocks} activities={activities} onPickDay={(d) => { setAnchor(d); setView("day"); }} />
+          {insightOn && <WeekReviewCard
+            key={`week-${weekDays[0]}`}
+            weekStart={weekDays[0]}
+            weekEnd={weekDays[6]}
+            hasRecords={blocks.length > 0 || hasExtras}
+            notify={setErr}
+          />}
+        </>
+      )}
+      {!loading && view === "month" && (
+        <>
+        <MonthView month={startOfMonth(anchor)} stats={stats} activities={activities} onPickDay={(d) => { setAnchor(d); setView("day"); }} />
+        {insightOn && <MonthReviewCard key={`month-${anchor.slice(0, 7)}`} month={anchor.slice(0, 7)} hasRecords={[...stats.values()].length > 0 || hasExtras} notify={setErr} />}
+        </>
+      )}
+      {!loading && view === "year" && (
+        <>
+        <YearView year={anchor.slice(0, 4)} stats={stats} activities={activities} onPickDay={(d) => { setAnchor(d); setView("day"); }} />
+        {insightOn && <YearReviewCard key={`year-${anchor.slice(0, 4)}`} year={anchor.slice(0, 4)} hasRecords={[...stats.values()].length > 0 || hasExtras} notify={setErr} />}
+        </>
+      )}
+    </>
+  );
+}

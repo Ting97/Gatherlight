@@ -1,0 +1,85 @@
+import { Pool } from "pg";
+import { log } from "./http/logger";
+
+/** 开发期单用户（Phase 1 接入 Supabase Auth 后由会话取代） */
+export const DEV_USER_ID = "00000000-0000-0000-0000-000000000000";
+
+// 缺 DATABASE_URL 必须显式报错（与 config.ts 同口径）：静默落弱默认串会绕过弱口令拦截、带错库启动。
+// 校验放在首次 query/connect 时而非模块加载期——next build 收集页面数据会 import 本模块，
+// 构建环境没有 .env，模块级 fail-fast 会直接打断构建（2026-10-08 实测踩坑）
+function assertDatabaseConfigured() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("缺少 DATABASE_URL（PostgreSQL 连接串）——请配置 .env 后启动");
+  }
+}
+
+/** Pool 代理：构建期可安全 import，运行期首次使用即校验配置（红线 1 的豁免入口，见 eslint 白名单） */
+export const pool = new Proxy(
+  new Pool({
+    connectionString: process.env.DATABASE_URL || undefined,
+  // 9-F：max 5→10（请求 + 后台识别事务共用池，5 连接多用户排队）；
+    // statement_timeout 兜底防止失控查询长期占住连接（业务大查询均有索引支撑，15s 远超所需）
+    max: 10,
+    statement_timeout: 15_000,
+  }),
+  {
+    get(target, prop, receiver) {
+      if (prop === "query" || prop === "connect") assertDatabaseConfigured();
+      return Reflect.get(target, prop, receiver);
+    },
+  },
+);
+
+// 空闲连接出错（DB 重启/网络闪断）会以 EventEmitter error 事件冒泡：无监听即未捕获异常打崩整个进程
+pool.on("error", (e) => log.error({ err: String(e) }, "pg-idle-client-error"));
+
+/** 时间轴约束：一个时刻只能做一件事。返回与 [startAt, endAt) 重叠的已有时间块（无则 null） */
+export async function findOverlap(
+  userId: string,
+  startAt: string,
+  endAt: string,
+  excludeId?: string,
+  excludeEntryId?: string,
+  /** 传入事务 client 时在同一事务/锁视野内判定（配合 pg_advisory_xact_lock 消除 check-then-insert 竞态） */
+  exec: Pick<typeof pool, "query"> = pool,
+): Promise<{ id: string; title: string; start_at: string; end_at: string } | null> {
+  const { rows } = await exec.query(
+    `select id, title, start_at, end_at
+     from time_blocks
+     where user_id = $1
+       and ($4::uuid is null or id <> $4::uuid)
+       and ($5::uuid is null or entry_id is distinct from $5::uuid)
+       and tstzrange(start_at, end_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+     order by start_at
+     limit 1`,
+    [userId, startAt, endAt, excludeId ?? null, excludeEntryId ?? null],
+  );
+  return rows[0] ?? null;
+}
+
+/** 冲突的中文提示；proposed（识别出的拟登记时段）给定时同时展示双方起止 */
+export function overlapError(
+  c: { title: string; start_at: string; end_at: string },
+  proposed?: { title?: string; start: string; end: string },
+): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  // PG 容器为 UTC：+8h 后用 getUTC* 取北京时间展示（getHours 等本地 getter 在 UTC 宿主会差 8 小时——历史 bug，禁用）
+  const cst = (d: Date) => new Date(d.getTime() + 8 * 3600_000);
+  const zh = (d: Date) => `${cst(d).getUTCMonth() + 1}月${cst(d).getUTCDate()}日`;
+  const hm = (d: Date) => `${p(cst(d).getUTCHours())}:${p(cst(d).getUTCMinutes())}`;
+  const range = (startAt: string | Date, endAt: string | Date) => {
+    const s = new Date(startAt);
+    const e = new Date(endAt);
+    // 跨天/不同日的冲突必须带日期，否则「23:00–07:00」看不出占用的是哪天
+    const sameDay =
+      cst(s).getUTCFullYear() === cst(e).getUTCFullYear() &&
+      cst(s).getUTCMonth() === cst(e).getUTCMonth() &&
+      cst(s).getUTCDate() === cst(e).getUTCDate();
+    return sameDay ? `${hm(s)}–${hm(e)}` : `${zh(s)} ${hm(s)} – ${zh(e)} ${hm(e)}`;
+  };
+  if (proposed) {
+    const pt = proposed.title?.trim() || "新日程";
+    return `识别到日程「${pt}」（${range(proposed.start, proposed.end)}），与已有日程「${c.title}」（${range(c.start_at, c.end_at)}）时间冲突，一个时刻只能做一件事，请调整时间或先处理原日程`;
+  }
+  return `这段时间已有日程「${c.title}」（${range(c.start_at, c.end_at)}），一个时刻只能做一件事，请调整时间或先处理原日程`;
+}

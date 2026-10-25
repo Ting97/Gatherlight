@@ -1,0 +1,82 @@
+import { NextResponse } from "next/server";
+import { pool } from "@/server/platform/db";
+import { withAuth, withAdmin, readJsonCapped } from "@/server/platform/http/route";
+import { ApiError } from "@/server/platform/http/errors";
+import { isUuid } from "@/server/platform/http/validate";
+import { getQuota, writeAuditRecord } from "@/server/ai";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /api/billing/plan —— 当前用户套餐与 AI 用量（30 天窗口）+ 自己的按模型 token 明细 */
+export const GET = withAuth(async (_req, { user }) => {
+  const quota = await getQuota(user.id);
+  const { rows } = await pool.query(
+    `select model,
+            count(*)::int as calls,
+            coalesce(sum(prompt_tokens), 0)::bigint as prompt,
+            coalesce(sum(completion_tokens), 0)::bigint as completion,
+            count(*) filter (where created_at > now() - interval '30 days')::int as calls_30d,
+            coalesce(sum(prompt_tokens) filter (where created_at > now() - interval '30 days'), 0)::bigint as prompt_30d,
+            coalesce(sum(completion_tokens) filter (where created_at > now() - interval '30 days'), 0)::bigint as completion_30d
+     from audit_logs where user_id = $1 and coalesce(model, '') not like 'jev%'
+     group by model
+     order by sum(prompt_tokens) + sum(completion_tokens) desc`,
+    [user.id],
+  );
+  const byModel = rows.map((r) => ({
+    model: r.model,
+    all: { calls: Number(r.calls), promptTokens: Number(r.prompt), completionTokens: Number(r.completion) },
+    d30: { calls: Number(r.calls_30d), promptTokens: Number(r.prompt_30d), completionTokens: Number(r.completion_30d) },
+  }));
+  return NextResponse.json({
+    isAdmin: user.role === "admin",
+    ...quota,
+    byModel,
+  });
+});
+
+/**
+ * POST /api/billing/plan —— 管理员改用户套餐（内测期发放）
+ * { userId?, plan: 'free'|'pro', months? }  userId 缺省=自己；pro 时 months（缺省 12）设置到期
+ * 支付通道（微信/支付宝商户号、RevenueCat）接入后由支付回调调用同一逻辑
+ */
+export const POST = withAdmin(async (req, { user }) => {
+  const { userId, plan, months } = (await readJsonCapped(req) as any) as {
+    userId?: string; plan?: string; months?: number;
+  };
+  if (plan !== "free" && plan !== "pro") {
+    throw ApiError.badRequest("plan 需为 free/pro");
+  }
+  if (months !== undefined && (!Number.isInteger(months) || months < 1 || months > 24)) {
+    throw ApiError.badRequest("months 需为 1~24 的整数");
+  }
+  // 非法 uuid 落 update where id = $3 会 22P02 → 500，先拦成 400（缺省/空串回退自己，不拦）
+  if (userId && !isUuid(userId)) throw ApiError.badRequest("userId 参数不合法");
+  const target = userId || user.id;
+  // Pro 再发放按「续期」语义：现到期日仍在未来时从 max(now, 现到期日) 起算——
+  // 直覆盖会把剩余有效期缩短（重复发放/支付回调重放会越续越少）
+  let expires: Date | null = null;
+  if (plan === "pro") {
+    const cur = await pool.query(`select plan_expires_at from profiles where id = $1`, [target]);
+    const curExp = cur.rows[0]?.plan_expires_at ? new Date(cur.rows[0].plan_expires_at).getTime() : 0;
+    const base = Number.isFinite(curExp) && curExp > Date.now() ? curExp : Date.now();
+    expires = new Date(base + (months ?? 12) * 30 * 86_400_000);
+  }
+  const { rows } = await pool.query(
+    `update profiles set plan = $1, plan_expires_at = $2 where id = $3
+     returning id, plan, plan_expires_at`,
+    [plan, expires, target],
+  );
+  if (!rows[0]) throw ApiError.notFound("用户不存在");
+  // 套餐变更属商业敏感操作，补审计（与 admin/modules 的 module_admin 同口径）；
+  // 免费清配额上限、Pro 放开 30 次窗口——审计是唯一事后追溯口径
+  void writeAuditRecord({
+    userId: user.id,
+    stage: "module_admin",
+    model: null,
+    ok: true,
+    error: `billing_plan target=${target} plan=${plan} months=${months ?? null}`,
+  });
+  return NextResponse.json({ ok: true, profile: rows[0] });
+});

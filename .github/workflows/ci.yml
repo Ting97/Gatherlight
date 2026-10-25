@@ -1,0 +1,65 @@
+name: CI
+
+# lint → typecheck → test（含测试库集成）→ build；红不过合
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:13
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      SHIGUANGRI_TEST_DB: postgresql://postgres:postgres@localhost:5432/shiguangri_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Design tokens drift check (REQ-009 9-A)
+        run: npm run tokens:verify
+
+      - name: Lint
+        run: npx eslint . --quiet   # 0 error（领域依赖规则已升 error）
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # runner（--fresh）需要已存在的库：service 容器只有默认 postgres 库（此前 112 连败的第二根因）
+      - name: Create test database
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname='shiguangri_test'" | grep -q 1 \
+            || psql -h localhost -U postgres -d postgres -c "CREATE DATABASE shiguangri_test"
+
+      # runner 连接串回退读 SHIGUANGRI_TEST_DB（与 run-coverage/run-routes-smoke 同口径）
+      - name: Prepare test database
+        run: npx tsx packages/db/runner.ts --fresh
+
+      - name: Test (all workspaces: api/web/ai/shared)
+        run: npm test --workspaces --if-present
+
+      - name: Build
+        run: npm run build

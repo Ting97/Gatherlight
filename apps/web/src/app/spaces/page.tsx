@@ -1,0 +1,539 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useArmConfirm } from "@/lib/use-arm-confirm";
+import { useImeSubmit } from "@/lib/use-ime-submit";
+import { createPortal } from "react-dom";
+import { Archive, Ellipsis, Flag, Hourglass, Pencil, Target, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Dismissable } from "@/components/dismissable";
+import { Modal } from "@/components/ui/modal";
+import InlineRename from "@/components/inline-rename";
+import AssistantDock from "@/components/assistant-dock";
+import { TagChip } from "@/components/tag-chip";
+import type { Space } from "@/lib/types";
+import { bjToday } from "@/lib/date"; // 北京口径今天：本地 getter 在海外设备会差一天
+import { api, ApiClientError } from "@/shared/api";
+import { useSession } from "@/shared/session";
+import ModuleLocked from "@/components/module-locked";
+import { toast } from "@/shared/ui/toast";
+import Skeleton from "@/components/skeleton";
+
+/**
+ * 目标空间列表（REQ-001 R3）：宏大目标（≥1 年）容器。
+ * active 空间卡片（icon 圆底/进度条/持续天数）+ 新建/编辑弹层 + 底部折叠归档区。
+ */
+
+const ICONS = ["🎯", "📚", "💪", "💰", "🚀", "🧘", "🎓", "🏃", "✍️", "🎸", "🏠", "❤️"];
+const COLORS = ["#38bdf8", "#10b981", "#f59e0b", "#f43f5e", "#8b5cf6", "#64748b"];
+
+interface Draft {
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  startedAt: string;
+  targetDate: string;
+}
+
+const EMPTY: Draft = { name: "", description: "", icon: "🎯", color: "#38bdf8", startedAt: "", targetDate: "" };
+
+export default function SpacesPage() {
+  const [spaces, setSpaces] = useState<Space[] | null>(null);
+  const [editing, setEditing] = useState<Draft | null>(null); // null=关闭；"new" 用 EMPTY
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false); // 新建/编辑保存中：防慢网络双击重复创建
+  // 删除空间两步确认（全站规范，替代原生 confirm）
+  const armDelete = useArmConfirm();
+  // 表单隐式提交 IME 守卫（Safari/iOS 组词确认 Enter 会隐式提交 <form>）：唯一漏网的第五个表单
+  const imeSave = useImeSubmit(() => save());
+  const [showArchived, setShowArchived] = useState(false);
+  // 加载失败态：给出重试入口，避免网络异常时永远停在"加载中"
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  // 卡片 ⋯ 菜单（编辑/归档/删除收纳；桌面锚定浮层 / 移动端底部弹层）
+  const [cardMenu, setCardMenu] = useState<Space | null>(null);
+  const [cardMenuPos, setCardMenuPos] = useState<{ top: number; left: number } | null>(null);
+  // 「⋯」再点关闭仲裁（同 todo-board menuClosedRef）：菜单开着再点同卡「⋯」，pointerdown 先被
+  // Dismissable 关闭，随后的 click 会重新打开——菜单永远关不上（十一轮补齐三处同型入口）
+  const cardMenuClosedRef = useRef<{ at: number; spaceId: string } | null>(null);
+
+  // 取数竞态守卫（全站 loadSeq 范式）：保存/归档/删除连发时两个在途 GET 可能乱序落地，
+  // 旧包覆盖新状态（刚归档的空间闪回）；页面层最后一处裸 load
+  const loadSeqRef = useRef(0);
+
+  const load = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    setLoadErr(null);
+    try {
+      // 原 401 分支（location.href = "/login"）已由 shared/api 统一处理；
+      // 404/400 等业务性失败才置空列表；5xx/网关错误必须走加载失败态——
+      // 旧版把一切非 2xx 当"空列表"，渲染成「还没有目标空间」引导用户重复建档
+      const j = await api<any>("/api/spaces", "GET");
+      if (seq !== loadSeqRef.current) return; // 已有更新的取数：丢弃本包
+      setSpaces((j.spaces as Space[]) ?? []);
+    } catch (e) {
+      if (seq !== loadSeqRef.current) return;
+      if (e instanceof ApiClientError && e.status >= 400 && e.status < 500) {
+        setSpaces([]);
+      } else {
+        setLoadErr(e instanceof Error ? e.message : String(e));
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  function openNew() {
+    // 默认开始日期取北京口径的今天（bjToday）：本地时区在海外设备会差一天，toISOString() 又会取 UTC 日期（北京 0-8 点落昨天）
+    setEditing({ ...EMPTY, startedAt: bjToday() });
+    setEditingId(null);
+  }
+  function openEdit(s: Space) {
+    // 日期必须转 YYYY-MM-DD 再进 <input type="date">：API 返回 pg date 列的 JSON 形态
+    // （"…T16:00:00.000Z"）会被日期输入净化成空串——旧版两个日期框恒空，保存时把原始串
+    // 原样 PATCH 回去被服务端 400（有日期的空间改任何字段都保存失败）
+    const bjDay = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(0, 10) : "");
+    setEditing({
+      name: s.name,
+      description: s.description ?? "",
+      icon: s.icon,
+      color: s.color,
+      startedAt: bjDay(s.started_at),
+      targetDate: bjDay(s.target_date),
+    });
+    setEditingId(s.id);
+  }
+
+  async function save() {
+    if (!editing || saving) return;
+    // 内置运动空间不可改名：PATCH 不携带 name（携带会被服务端守卫 400），其余字段照常
+    const sportEditing = spaces?.find((s) => s.id === editingId)?.kind === "sport";
+    // 目标日期早于开始日期拦截（二十轮 P3）：无校验时会存出「目标在开始前」的时间倒挂
+    if (editing.startedAt && editing.targetDate && editing.targetDate < editing.startedAt) {
+      toast("目标日期不能早于开始日期", "err");
+      return;
+    }
+    const body = {
+      ...(sportEditing ? {} : { name: editing.name }),
+      description: editing.description || null,
+      icon: editing.icon,
+      color: editing.color,
+      startedAt: editing.startedAt || null,
+      targetDate: editing.targetDate || null,
+    };
+    setSaving(true);
+    try {
+      await api<any>(editingId ? `/api/spaces/${editingId}` : "/api/spaces", editingId ? "PATCH" : "POST", body);
+    } catch (e) {
+      if (e instanceof ApiClientError) {
+        toast(e.message === "操作失败" ? "保存失败" : e.message, "err");
+        return;
+      }
+      // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+      toast("网络异常，请稍后重试", "err");
+      return;
+    } finally {
+      setSaving(false);
+    }
+    setEditing(null);
+    toast(editingId ? "空间已更新" : `空间「${editing.name}」已创建 🎯`);
+    load();
+  }
+
+  async function setStatus(s: Space, status: "active" | "archived") {
+    try {
+      await api<any>(`/api/spaces/${s.id}`, "PATCH", { status });
+    } catch (e) {
+      // 失败报错并中止，不提示成功（历史 bug：吞掉 ApiClientError 后无条件弹「已归档/已恢复」）
+      toast(e instanceof Error ? e.message : String(e), "err");
+      return;
+    }
+    toast(status === "archived" ? `「${s.name}」已归档` : `「${s.name}」已恢复`);
+    load();
+  }
+
+  // 「确认后执行」单独成函数：菜单入口与归档区入口各自 arm 一次后都走这里，
+  // 不能在 remove 里再 arm（上一次 arm 命中已清空 ref，再 arm 会重新武装返回 false → 永远删不掉）
+  async function doRemove(s: Space) {
+    try {
+      await api<any>(`/api/spaces/${s.id}`, "DELETE");
+    } catch (e) {
+      // 失败报错并中止，不提示成功（历史 bug：吞掉 ApiClientError 后无条件弹「已删除」）
+      toast(e instanceof Error ? e.message : String(e), "err");
+      return;
+    }
+    toast(`「${s.name}」已删除`);
+    load();
+  }
+
+  async function remove(s: Space) {
+    if (!armDelete.arm(s.id)) return;
+    await doRemove(s);
+  }
+
+  const active = (spaces ?? []).filter((s) => s.status === "active");
+  const archived = (spaces ?? []).filter((s) => s.status === "archived");
+
+  // 模块关闭兜底（REQ-028）：API 层已 403，直连 /spaces 出未开通页
+  const { user } = useSession();
+  if (user && !user.modules.includes("goal")) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <ModuleLocked
+            title="目标"
+            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            backHref="/"
+            backLabel="返回首页"
+          />
+        </div>
+      </main>
+    );
+  }
+
+  /** pg date 字段按北京日期还原（node-pg 序列化为 UTC ISO，直接 slice 会差一天） */
+  const bjDay = (iso: string) => new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+  /** 持续天数：起点钉在北京零点（+08:00 钉法，对齐详情页 header-card），保证两处「第 N 天」一致 */
+  const daysOf = (s: Space) => (s.started_at ? Math.max(1, Math.ceil((Date.now() - new Date(`${bjDay(s.started_at)}T00:00:00+08:00`).getTime()) / 86_400_000)) : null);
+  const progressOf = (s: Space) => (s.todo_total ? Math.round((s.todo_done ?? 0) / s.todo_total * 100) : null);
+
+  return (
+    <main className="min-h-screen text-ink">
+      <div className="mx-auto max-w-6xl px-5 pb-16 pt-8">
+        {/* 模块抬头：与动态/财务统一的居中 hero 样式 */}
+        <header className="mb-5 text-center">
+          <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
+            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">目标</span>
+          </h1>
+          <p className="mt-2 text-xs text-ink-dim">
+            创建一个空间，专属于这个目标的 TODO·行动与感悟 —— 相关动态自动归属，见证每天的靠近
+          </p>
+          <button onClick={openNew} className="btn-primary mt-3 rounded-xl px-4 py-2 text-sm font-medium">
+            ＋ 新建空间
+          </button>
+        </header>
+
+        {spaces === null ? (
+          loadErr ? (
+            <div className="py-10 text-center">
+              <p className="text-sm text-danger">加载失败：{loadErr}</p>
+              <button onClick={() => void load()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
+                重试
+              </button>
+            </div>
+          ) : (
+            <Skeleton rows={4} className="py-2" />
+          )
+        ) : active.length === 0 ? (
+          <div className="glass rounded-2xl p-10 text-center empty-state">
+            <p className="text-4xl">🎯</p>
+            <p className="mt-3 text-sm font-medium">还没有目标空间</p>
+            <p className="mt-1 text-xs text-ink-dim">为一个大目标（考研上岸 / 副业过万 / 完成全马…）建一个空间，把它的 TODO·行动、感悟和动态都聚在专属容器里</p>
+            <button onClick={openNew} className="btn-primary mt-4 rounded-xl px-5 py-2 text-sm font-medium">
+              创建第一个空间
+            </button>
+          </div>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {active.map((s) => {
+              const days = daysOf(s);
+              const progress = progressOf(s);
+              return (
+                <Link
+                  key={s.id}
+                  href={`/spaces/${s.id}`}
+                  className="glass glass-hover group block rounded-2xl p-4 transition-transform duration-200 hover:-translate-y-0.5"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl"
+                      style={{ backgroundColor: `${s.color}26` }}
+                    >
+                      {s.icon}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} className="block min-w-0 flex-1">
+              <InlineRename
+                value={s.name}
+                disabled={s.kind === "sport"}
+                onSave={async (name) => {
+                  try {
+                    await api<any>(`/api/spaces/${s.id}`, "PATCH", { name });
+                  } catch (e) {
+                    if (e instanceof ApiClientError) {
+                      toast(e.message === "操作失败" ? "重命名失败" : e.message, "err");
+                      return false;
+                    }
+                    // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+                    toast("网络异常，请稍后重试", "err");
+                    return false;
+                  }
+                  toast("已重命名");
+                  await load();
+                  return true;
+                }}
+                className="w-full text-sm font-semibold text-ink"
+              />
+            </span>
+            {s.kind === "sport" ? (
+              <span className="ml-1.5 shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400">内置</span>
+            ) : null}
+                      <p className="mt-0.5 text-micro text-ink-dim">
+                        {s.todo_total ?? 0} todo · {s.entry_count ?? 0} 动态 · 感悟 {s.reflection_count ?? 0}
+                        {days ? ` · 第 ${days} 天` : ""}
+                        {s.target_date && (
+                          <span className="whitespace-nowrap">
+                            {" · "}
+                            <Hourglass size={10} className="inline align-[-1px]" aria-hidden /> {bjDay(s.target_date).slice(5)}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const closed = cardMenuClosedRef.current;
+                        if (closed && closed.spaceId === s.id && Date.now() - closed.at < 300) return; // 刚被本次点击的 pointerdown 关闭：视为关闭操作
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        // 移动端不传锚点（pos=null）：菜单走全宽底部弹层形态，内联 top/left 与 sm: 弹层类四向约束冲突会错位（todo-board 同口径）
+                        setCardMenuPos(
+                          window.innerWidth >= 640
+                            ? { top: Math.min(r.bottom + 6, window.innerHeight - 240), left: Math.max(8, r.right - 224) }
+                            : null,
+                        );
+                        setCardMenu(s);
+                      }}
+                      title="更多操作"
+                      className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 leading-none text-ink-dim transition hover:text-ink group-hover:block"
+                    >
+                      <Ellipsis size={14} />
+                    </button>
+                  </div>
+                  {s.description && <p className="mt-2 line-clamp-2 text-xs text-ink-mute">{s.description}</p>}
+                  {/* 阶段摘要（REQ-019 FR-B1）：有阶段用阶段口径；无阶段回退 todo 进度避免空卡片 */}
+                  {(s.active_milestones ?? 0) + (s.done_milestones ?? 0) > 0 ? (
+                    <div className="mt-3 flex items-center gap-1.5 text-xs text-ink-mute">
+                      <Flag size={12} style={{ color: s.color }} aria-hidden />
+                      <span className="tabular-nums">
+                        进行中 {s.active_milestones ?? 0}
+                        {(s.done_milestones ?? 0) > 0 ? ` · 已达成 ${s.done_milestones}` : ""}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="mt-3">
+                      <div className="mb-1 flex justify-between text-badge tabular-nums text-ink-faint">
+                        <span>todo 进度</span>
+                        <span>{progress == null ? "暂无 todo" : `${progress}%`}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-elevated">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${progress ?? 0}%`, backgroundColor: s.color }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 归档区 */}
+        {archived.length > 0 && (
+          <details className="mt-6" open={showArchived}>
+            <summary className="cursor-pointer text-xs text-ink-dim" onClick={(e) => { e.preventDefault(); setShowArchived((v) => !v); }}>
+              归档空间（{archived.length}）
+            </summary>
+            <ul className="mt-2 space-y-1.5">
+              {archived.map((s) => (
+                <li key={s.id} className="flex items-center gap-2 rounded-xl border border-line-soft bg-bg/40 px-3 py-2 text-xs">
+                  <span>{s.icon}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-mute">{s.name}</span>
+                  <button onClick={() => setStatus(s, "active")} className="rounded-lg px-2 py-1 text-ink-soft hover:bg-soft hover:text-accent">
+                    恢复
+                  </button>
+                  <button
+                    onClick={() => remove(s)}
+                    className={`rounded-lg px-2 py-1 ${armDelete.armedId === s.id ? "bg-rose-500/15 font-medium text-danger" : "text-ink-mute hover:bg-soft hover:text-danger"}`}
+                  >
+                    {armDelete.armedId === s.id ? "确认删除?" : "删除"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+
+        {/* 新建/编辑弹层（N3：点空白/Esc 取消，有改动轻提示） */}
+        {editing && (
+          <Modal
+            title={editingId ? "编辑空间" : "新建目标空间"}
+            onClose={() => {
+              // dirty 判定覆盖全部草稿字段（旧版只比 name，改图标/颜色/日期/描述被静默丢弃）。
+              // 新建以「EMPTY + 默认开始日（北京今天）」为基线：一打开就关闭不再误报「已取消，未保存」
+              const base = spaces?.find((s) => s.id === editingId);
+              const bjDayOf = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + 8 * 3600_000).toISOString().slice(0, 10) : "");
+              const dirty = editingId
+                ? editing.name.trim() !== (base?.name ?? "") ||
+                  editing.description !== (base?.description ?? "") ||
+                  editing.icon !== (base?.icon ?? "") ||
+                  editing.color !== (base?.color ?? "") ||
+                  editing.startedAt !== bjDayOf(base?.started_at ?? null) ||
+                  editing.targetDate !== bjDayOf(base?.target_date ?? null)
+                : !!editing.name.trim() ||
+                  editing.description !== EMPTY.description ||
+                  editing.icon !== EMPTY.icon ||
+                  editing.color !== EMPTY.color ||
+                  editing.startedAt !== bjToday() ||
+                  editing.targetDate !== EMPTY.targetDate;
+              if (dirty) toast("已取消，未保存", "info");
+              setEditing(null);
+            }}
+          >
+              {/* Enter 提交：表单统一走 save（按钮 submit 与键盘回车共用路径）；IME 守卫见 useImeSubmit */}
+              <form
+                onSubmit={imeSave.onSubmit}
+                onCompositionStart={imeSave.onCompositionStart}
+                onCompositionEnd={imeSave.onCompositionEnd}
+              >
+              <input
+                autoFocus
+                value={editing.name}
+                disabled={spaces?.find((s) => s.id === editingId)?.kind === "sport"}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value.slice(0, 40) })}
+                placeholder="目标名称（如：考研上岸）"
+                className="input-glow w-full rounded-xl border border-line-soft bg-surface/60 px-3 py-2 text-sm outline-none placeholder:text-ink-faint disabled:opacity-60"
+              />
+              <textarea
+                value={editing.description}
+                onChange={(e) => setEditing({ ...editing, description: e.target.value.slice(0, 300) })}
+                rows={2}
+                placeholder="描述（可空：为什么重要、衡量标准…）"
+                className="input-glow mt-2 w-full resize-none rounded-xl border border-line-soft bg-surface/60 px-3 py-2 text-xs outline-none placeholder:text-ink-faint"
+              />
+              <p className="mt-2.5 mb-1 text-micro text-ink-faint">图标</p>
+              <div className="flex flex-wrap gap-1.5">
+                {ICONS.map((ic) => (
+                  <button
+                    key={ic}
+                    type="button"
+                    onClick={() => setEditing({ ...editing, icon: ic })}
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl text-lg transition ${
+                      editing.icon === ic ? "bg-sky-500/20 ring-2 ring-sky-500" : "bg-bg/40 hover:bg-elevated"
+                    }`}
+                  >
+                    {ic}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2.5 mb-1 text-micro text-ink-faint">颜色</p>
+              <div className="flex gap-2">
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setEditing({ ...editing, color: c })}
+                    className={`tap-lg h-7 w-7 rounded-full transition ${editing.color === c ? "ring-2 ring-offset-2 ring-offset-surface" : ""}`}
+                    style={{ backgroundColor: c, boxShadow: editing.color === c ? `0 0 0 2px ${c}` : undefined }}
+                    aria-label={c}
+                  />
+                ))}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <label className="flex flex-1 flex-col text-micro text-ink-faint">
+                  开始日期
+                  <input
+                    type="date"
+                    value={editing.startedAt}
+                    onChange={(e) => setEditing({ ...editing, startedAt: e.target.value })}
+                    className="mt-1 rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
+                  />
+                </label>
+                <label className="flex flex-1 flex-col text-micro text-ink-faint">
+                  目标日期
+                  <input
+                    type="date"
+                    value={editing.targetDate}
+                    onChange={(e) => setEditing({ ...editing, targetDate: e.target.value })}
+                    className="mt-1 rounded-lg border border-line-soft bg-surface/60 px-2 py-1.5 text-xs text-ink outline-none"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setEditing(null)} className="rounded-xl px-4 py-2 text-xs text-ink-mute hover:bg-soft">
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={!editing.name.trim() || saving}
+                  className="btn-primary rounded-xl px-5 py-2 text-xs font-medium disabled:opacity-50"
+                >
+                  {saving ? "保存中…" : editingId ? "保存" : "创建"}
+                </button>
+              </div>
+              </form>
+          </Modal>
+        )}
+
+        {/* 卡片 ⋯ 菜单：编辑/归档/删除收纳（桌面锚定浮层 / 移动端底部弹层） */}
+        {cardMenu &&
+          createPortal(
+            <Dismissable
+              onClose={() => {
+                cardMenuClosedRef.current = { at: Date.now(), spaceId: cardMenu.id };
+                setCardMenu(null);
+              }}
+              className="fixed inset-x-0 bottom-0 z-[var(--z-max)] max-h-[70dvh] overflow-y-auto rounded-t-2xl border border-line-soft bg-elevated p-3 safe-bottom shadow-2xl shadow-scrim/70 sm:inset-x-auto sm:bottom-auto sm:w-56 sm:rounded-xl sm:p-2"
+              style={cardMenuPos ? { top: cardMenuPos.top, left: cardMenuPos.left } : undefined}
+            >
+              <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-soft sm:hidden" />
+              <p className="mb-1.5 truncate px-1.5 text-micro font-medium text-ink-dim">{cardMenu.name}</p>
+              <div className="space-y-0.5">
+                <button
+                  onClick={() => { const s = cardMenu; setCardMenu(null); openEdit(s); }}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-ink transition hover:bg-wash"
+                >
+                  <span className="flex w-5 shrink-0 justify-center"><Pencil size={14} /></span>
+                  <span className="min-w-0 flex-1">编辑空间</span>
+                </button>
+                {cardMenu.kind === "sport" ? null : (
+                  <button
+                    onClick={() => { const s = cardMenu; setCardMenu(null); void setStatus(s, "archived"); }}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-warn transition hover:bg-wash"
+                  >
+                    <span className="flex w-5 shrink-0 justify-center"><Archive size={14} /></span>
+                    <span className="min-w-0 flex-1">归档空间</span>
+                  </button>
+                )}
+                {cardMenu.kind === "sport" ? null : (
+                  <button
+                    onClick={() => {
+                      const s = cardMenu;
+                      if (!armDelete.arm(s.id)) return;
+                      setCardMenu(null);
+                      void doRemove(s);
+                    }}
+                    className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-danger transition hover:bg-rose-500/10 ${armDelete.armedId === cardMenu.id ? "bg-rose-500/10 font-medium" : ""}`}
+                  >
+                    <span className="flex w-5 shrink-0 justify-center"><Trash2 size={14} /></span>
+                    <span className="min-w-0 flex-1">{armDelete.armedId === cardMenu.id ? "确认删除？（3 秒内再点）" : "删除空间"}</span>
+                  </button>
+                )}
+              </div>
+            </Dismissable>,
+            document.body,
+          )}
+
+        <footer className="mt-10 text-center">
+          <TagChip icon={<Target size={12} />} label="拾光 · 目标空间" tone="violet" size="sm" />
+        </footer>
+      </div>
+      {/* 目标管家（REQ-019 FR-C4）：本域助手，只见目标域会话与工具 */}
+      <AssistantDock scope="goal" />
+    </main>
+  );
+}

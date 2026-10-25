@@ -1,0 +1,606 @@
+/**
+ * 复盘输入装配（REQ-003 3-A）：review 四档（day/week/month/year）的共享构建路径。
+ * 路由与 /admin 装配预览都走 buildReviewCtx——保证「预览即所见即所得」。
+ * - 注入开关（bundle.config.inject）关闭的块不取数、不进 ctx
+ * - 明细行上限（bundle.config.caps）下沉 SQL LIMIT（cap=0 不设限），并配 count(*) 保留
+ *   「（另有 N 条…未展示）」截断注记的真实条数语义
+ * - year 动态明细维持心情强度优先抽样（entryCap = 抽样条数，0 = 全量不抽样）
+ */
+import { pool } from "@/server/platform/db";
+import {
+  blockLines, entryLines, fetchChainSummaries, loadProfileBlock, sampleEntryRows, todoDoneLines,
+} from "./review-input";
+import { assembleUserPrompt, type PromptBundle, type PromptKey } from "@/server/ai/prompts";
+
+const TZ = "Asia/Shanghai";
+
+export type ReviewContentKind = "day" | "week" | "month" | "year";
+export interface ReviewPeriod { date?: string; month?: string; year?: string }
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+/** 北京日历日 YYYY-MM-DD（+8h 后读 UTC getter；getFullYear 等本地 getter 随宿主时区漂移） */
+const localYmd = (x: Date) =>
+  new Date(x.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+/** 北京「今天」YYYY-MM-DD（+8h 后读 UTC getter；宿主时区无关） */
+const bjNowYmd = () => new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+/** 无时区的日期串按北京零点解析（裸 new Date(s) 按宿主时区，含 DST 的宿主跨 DST 周界会漂移一天） */
+const bjDateOf = (s: string) => new Date(`${s}T00:00:00+08:00`);
+/** 北京日历日的星期（0=周日）：按日期串取 UTC 星期——getDay/getUTCDay 对 "+08:00 零点"（=前一日 16:00Z）都会返回相邻日 */
+const bjDow = (s: string) => new Date(`${s}T00:00:00Z`).getUTCDay();
+const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)}小时${m % 60 ? `${m % 60}分` : ""}` : `${m}分`);
+
+/** year 原始明细硬上限：全量抽样虽需要取回明细全集，仍要给极端账号兜底（几十万条会拖垮装配内存与 prompt 体量）；
+ *  远大于常规 entryCap，截断在明细块注记（真实总数取聚合口径） */
+const YEAR_ENTRY_HARD_CAP = 5000;
+
+/** 行上限截断（含真实总数的截断注记；cap=0 全量保留。修正原 withCap 的「条条/条个」叠字） */
+function capLines(lines: string[], cap: number, label: string, total: number): string[] {
+  const effective = cap > 0 ? Math.min(cap, lines.length) : lines.length;
+  const out = lines.slice(0, effective);
+  if (total > effective) out.push(`（另有 ${total - effective} ${label}未展示）`);
+  return out;
+}
+
+export interface ReviewBuild {
+  from: string;
+  to: string;
+  /** 装配 ctx（已按开关/上限裁剪） */
+  ctx: Record<string, string>;
+  /** 装配好的最终 user prompt（与线上一致） */
+  userPrompt: string;
+  /** 数据最近变动时刻（缓存失效门禁用） */
+  latest: Date | null;
+  /** 路由响应附带的聚合摘要 */
+  summary: { timeParts: string[]; todoDone: number };
+}
+
+/** 四档复盘共享构建：聚合事实 + 注入/上限裁剪后的明细块 + 小结链 + 画像 → 最终 user prompt */
+export async function buildReviewCtx(
+  userId: string,
+  kind: ReviewContentKind,
+  period: ReviewPeriod,
+  bundle: PromptBundle,
+): Promise<ReviewBuild> {
+  const cfg = bundle.config;
+  const key = `review_${kind}` as PromptKey;
+
+  // ---- 期间换算（周一为一周开始；月为自然月；年为自然年）----
+  let from: string;
+  let to: string;
+  let periodLabel: string;
+  if (kind === "day") {
+    const date = period.date ?? bjNowYmd();
+    from = to = date;
+    periodLabel = `日期：${date}`;
+  } else if (kind === "week") {
+    const dateStr = period.date ?? bjNowYmd();
+    const d = bjDateOf(dateStr);
+    const monday = new Date(d.getTime() - ((bjDow(dateStr) + 6) % 7) * 86_400_000);
+    from = localYmd(monday);
+    to = localYmd(new Date(monday.getTime() + 6 * 86_400_000));
+    periodLabel = `周期：${from} 至 ${to}`;
+  } else if (kind === "month") {
+    const month = period.month ?? bjNowYmd().slice(0, 7);
+    const [y, m] = month.split("-").map(Number);
+    from = `${month}-01`;
+    to = localYmd(new Date(Date.UTC(y, m, 0)));
+    periodLabel = `周期：${month}月（${from} 至 ${to}）`;
+  } else {
+    // 年报默认年份取北京自然年：+8h 后读 UTC 年（本地 getter 在跨年瞬间/非 CST 宿主会切错年份，同 buildLatest 口径）
+    const year = period.year ?? String(new Date(Date.now() + 8 * 3600_000).getUTCFullYear());
+    from = `${year}-01-01`;
+    to = `${year}-12-31`;
+    periodLabel = `周期：${year} 年（${from} 至 ${to}）`;
+  }
+
+  const baseParams = [userId, TZ, from, to];
+  const entryCap = cfg.caps.entryCap ?? 0;
+  const blockCap = cfg.caps.blockCap ?? 0;
+  const todoCap = cfg.caps.todoCap ?? 0;
+  const entryLimitInSql = kind !== "year" && entryCap > 0;
+  // 明细 SQL LIMIT：其余档按 entryCap；year 用硬上限（0 = 不设限，仅 day-周-月的 cap=0 语义）
+  const rawEntryLimit = entryLimitInSql ? entryCap : kind === "year" ? YEAR_ENTRY_HARD_CAP : 0;
+
+  // ---- 聚合 + 明细并行取数（注入关闭的明细不取数；cap>0 下沉 SQL LIMIT）----
+  const [timeRows, todoRows, txRows, interactRows, kcalRows, entryRows, subRows, rawEntryRows, blockRows, todoListRows, entryCountRows, blockCountRows, todoCountRows] =
+    await Promise.all([
+      pool.query(
+        `select a.name, a.icon,
+                sum(floor(extract(epoch from least((b.end_at at time zone $2), ($4::date + 1))
+                         - greatest((b.start_at at time zone $2), $3::date)) / 60))::int as mins
+         from time_blocks b join activities a on a.id = b.activity_id and a.user_id = b.user_id
+         where b.user_id = $1
+           and (b.end_at at time zone $2) > $3::date and (b.start_at at time zone $2) < ($4::date + 1)
+         group by 1, 2 order by mins desc limit 5`,
+        baseParams,
+      ),
+      pool.query(
+        `select count(*)::int as n from todos
+         where user_id = $1 and status = 'done'
+           and (done_at at time zone $2)::date between $3::date and $4::date`,
+        baseParams,
+      ),
+      pool.query(
+        `select coalesce(sum(case when direction='out' then amount_cents else 0 end),0)::bigint as out_cents,
+                coalesce(sum(case when direction='in' then amount_cents else 0 end),0)::bigint as in_cents
+         from transactions
+         where user_id = $1 and is_draft = false
+           and (occurred_at at time zone $2)::date between $3::date and $4::date`,
+        baseParams,
+      ),
+      pool.query(
+        `select c.name, count(*)::int as n from interactions i join contacts c on c.id = i.contact_id
+         where i.user_id = $1 and (i.occurred_at at time zone $2)::date between $3::date and $4::date
+         group by 1 order by n desc limit $5::int`,
+        [...baseParams, kind === "day" ? 5 : 3],
+      ),
+      // day 独有：饮食总热量事实行
+      kind === "day"
+        ? pool.query(
+            `select coalesce(sum(d.total_kcal), 0)::int as kcal
+             from diet_records d join entries e on e.id = d.entry_id
+             where d.user_id = $1 and (e.created_at at time zone $2)::date between $3::date and $4::date`,
+            baseParams,
+          )
+        : Promise.resolve({ rows: [{ kcal: 0 }] }),
+      pool.query(
+        `select count(*)::int as n,
+                count(distinct (created_at at time zone $2)::date)::int as days,
+                coalesce(array_agg(distinct mood) filter (where mood is not null), '{}') as moods
+         from entries
+         where user_id = $1 and (created_at at time zone $2)::date between $3::date and $4::date`,
+        baseParams,
+      ),
+      buildSubRows(userId, kind, from, to),
+      // 原始明细：year 全量取回（抽样与总数需要，硬上限兜底极端账号）；其余按 cap LIMIT；注入关闭则不查
+      //   占位符与参数必须同条件收放：不带 limit $5 时参数也须停在 4 个（否则 bind 数失配 500）
+      cfg.inject.entryDetail
+        ? pool.query(
+            `select id, raw_text, mood, mood_score, created_at from entries
+             where user_id = $1 and (created_at at time zone $2)::date between $3::date and $4::date
+             order by created_at, id${rawEntryLimit > 0 ? ` limit $5::int` : ""}`,
+            rawEntryLimit > 0 ? [...baseParams, rawEntryLimit] : baseParams,
+          )
+        : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+      cfg.inject.blockDetail
+        ? pool.query(
+            `select b.id, b.title, b.start_at, b.end_at, a.icon, a.name
+             from time_blocks b join activities a on a.id = b.activity_id and a.user_id = b.user_id
+             where b.user_id = $1
+               and (b.end_at at time zone $2) > $3::date and (b.start_at at time zone $2) < ($4::date + 1)
+             order by b.start_at, b.id${blockCap > 0 ? ` limit $5::int` : ""}`,
+            blockCap > 0 ? [...baseParams, blockCap] : baseParams,
+          )
+        : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+      cfg.inject.todoDetail
+        ? pool.query(
+            `select id, title, done_at from todos
+             where user_id = $1 and status = 'done' and (done_at at time zone $2)::date between $3::date and $4::date
+             order by done_at, id${todoCap > 0 ? ` limit $5::int` : ""}`,
+            todoCap > 0 ? [...baseParams, todoCap] : baseParams,
+          )
+        : Promise.resolve({ rows: [] as Record<string, unknown>[] }),
+      // 截断注记所需真实总数（仅 cap>0 且注入开启才查；year 由明细行数直接得）
+      cfg.inject.entryDetail && kind !== "year" && entryCap > 0
+        ? pool.query(
+            `select count(*)::int as n from entries where user_id = $1 and (created_at at time zone $2)::date between $3::date and $4::date`,
+            baseParams,
+          )
+        : Promise.resolve({ rows: [{ n: 0 }] }),
+      cfg.inject.blockDetail && blockCap > 0
+        ? pool.query(
+            `select count(*)::int as n from time_blocks b
+             where b.user_id = $1
+               and (b.end_at at time zone $2) > $3::date and (b.start_at at time zone $2) < ($4::date + 1)`,
+            baseParams,
+          )
+        : Promise.resolve({ rows: [{ n: 0 }] }),
+      cfg.inject.todoDetail && todoCap > 0
+        ? pool.query(
+            `select count(*)::int as n from todos
+             where user_id = $1 and status = 'done' and (done_at at time zone $2)::date between $3::date and $4::date`,
+            baseParams,
+          )
+        : Promise.resolve({ rows: [{ n: 0 }] }),
+    ]);
+
+  const timeParts = (timeRows.rows as { icon: string; name: string; mins: number }[]).map(
+    (r) => `${r.icon}${r.name} ${fmtMin(r.mins)}`,
+  );
+  const todoDone = (todoRows.rows[0] as { n: number }).n;
+
+  // ---- facts（聚合 + 子周期对比行）----
+  const facts = [
+    periodLabel,
+    `时间投入：${timeParts.length ? timeParts.join("、") : "无"}`,
+    `完成 todo：${todoDone} 件`,
+    `支出 ¥${(Number((txRows.rows[0] as { out_cents: number | string }).out_cents) / 100).toFixed(0)} · 收入 ¥${(Number((txRows.rows[0] as { in_cents: number | string }).in_cents) / 100).toFixed(0)}`,
+    interactRows.rows.length
+      ? `人际互动：${(interactRows.rows as { name: string; n: number }[]).map((r) => `${r.name}${r.n}次`).join("、")}`
+      : "人际互动：无",
+    `动态 ${(entryRows.rows[0] as { n: number }).n} 条（覆盖 ${(entryRows.rows[0] as { days: number }).days} 天）${(entryRows.rows[0] as { moods: string[] }).moods.length ? `（心情：${(entryRows.rows[0] as { moods: string[] }).moods.join("、")}）` : ""}`,
+    ...(kind === "day" && (kcalRows.rows[0] as { kcal: number }).kcal > 0 ? [`饮食约 ${(kcalRows.rows[0] as { kcal: number }).kcal} kcal`] : []),
+    ...buildSubLines(kind, period, subRows, from, to),
+  ];
+
+  // ---- 明细块（按注入开关与上限裁剪）----
+  const entryDetail = cfg.inject.entryDetail
+    ? buildEntryBlock(
+        kind,
+        rawEntryRows.rows as EntryRowT[],
+        entryCap,
+        // year 明细受硬上限约束，截断注记所需真实总数取聚合口径（entryCountRows 该档不查，恒为 0）
+        kind === "year"
+          ? (entryRows.rows[0] as { n: number }).n
+          : (entryCountRows.rows[0] as { n: number }).n,
+      )
+    : "";
+  const blockDetail = cfg.inject.blockDetail
+    ? ["日程块：", ...capLines(blockLines(blockRows.rows as BlockRowT[]), blockCap, "个日程", (blockCountRows.rows[0] as { n: number }).n)].join("\n")
+    : "";
+  const todoDetail = cfg.inject.todoDetail
+    ? ["完成 todo：", ...capLines(todoDoneLines(todoListRows.rows as TodoRowT[]), todoCap, "条 todo", (todoCountRows.rows[0] as { n: number }).n)].join("\n")
+    : "";
+
+  // ---- 小结链 + 画像（注入关闭不取数）----
+  const chainBlock = cfg.inject.chainBlock ? await buildChain(userId, kind, period) : "";
+  const profileCtx = cfg.inject.profileBlock ? await buildProfileCtxValue(userId) : "";
+
+  const ctx: Record<string, string> = {
+    facts: facts.join("\n"),
+    chainBlock,
+    entryDetail,
+    blockDetail,
+    todoDetail,
+    profileBlock: profileCtx,
+  };
+  const userPrompt = await assembleUserPrompt(key, bundle, ctx, { userId });
+
+  return {
+    from,
+    to,
+    ctx,
+    userPrompt,
+    latest: await buildLatest(userId, kind, period),
+    summary: { timeParts, todoDone },
+  };
+}
+
+type EntryRowT = { created_at: string | Date; raw_text: string; mood?: string | null; mood_score?: number | null };
+type BlockRowT = { start_at: string | Date; end_at: string | Date; title: string; icon: string; name: string };
+type TodoRowT = { done_at: string | Date | null; title: string };
+
+/** year 动态块：心情强度优先抽样（entryCap=条数，0=全量）；其余档：直接逐条（cap 已在 SQL 层生效，total 为真实总数用于截断注记）。
+ *  year 明细受硬上限截断时 rows 为截后全集，entryTotal（聚合口径真实总数）大于 rows.length 即发生了截断，须注记 */
+function buildEntryBlock(kind: ReviewContentKind, rows: EntryRowT[], entryCap: number, entryTotal = rows.length): string {
+  if (kind === "year") {
+    const sampled = entryCap > 0 ? sampleEntryRows(rows, entryCap) : rows;
+    const total = Math.max(rows.length, entryTotal);
+    const used = sampled.length;
+    const note =
+      entryTotal > rows.length
+        ? `（全年共 ${total} 条动态，超出明细装配上限仅保留最早 ${rows.length} 条，以上为其代表性抽样 ${used} 条）`
+        : total > used
+          ? `（全年共 ${total} 条动态，以上为代表性抽样 ${used} 条）`
+          : null;
+    return [
+      "代表性原始动态（时间 原文 心情）：",
+      [...entryLines(sampled), ...(note ? [note] : [])].join("\n"),
+    ].join("\n");
+  }
+  return ["原始动态（时间 原文 心情）：", ...capLines(entryLines(rows), entryCap, "条动态", Math.max(rows.length, entryTotal))].join("\n");
+}
+
+/** 小结链块：周←7日 / 月←各周 / 年←12月，只取已有缓存（与原 fetchChainSummaries 调用一致） */
+async function buildChain(userId: string, kind: ReviewContentKind, period: ReviewPeriod): Promise<string> {
+  if (kind === "day") return "";
+  if (kind === "week") {
+    const WD = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    const dateStr = period.date ?? bjNowYmd();
+    const d = bjDateOf(dateStr);
+    const monday = new Date(d.getTime() - ((bjDow(dateStr) + 6) % 7) * 86_400_000);
+    const lines = await fetchChainSummaries(
+      userId,
+      "week",
+      Array.from({ length: 7 }, (_, i) => {
+        const day = new Date(monday.getTime() + i * 86_400_000);
+        return { key: localYmd(day), label: `${WD[i]}(${Number(localYmd(day).slice(5, 7))}/${Number(localYmd(day).slice(8, 10))})` };
+      }),
+    );
+    return lines.length ? "本周各日小结：\n" + lines.join("\n") : "";
+  }
+  if (kind === "month") {
+    const month = period.month ?? bjNowYmd().slice(0, 7);
+    const [yy, mm] = month.split("-").map(Number);
+    const firstDow = (bjDow(`${yy}-${pad2(mm)}-01`) + 6) % 7;
+    const weekKeys: string[] = [];
+    for (let t = bjDateOf(`${yy}-${pad2(mm)}-01`).getTime() - firstDow * 86_400_000; t <= new Date(Date.UTC(yy, mm, 0)).getTime(); t += 7 * 86_400_000) {
+      weekKeys.push(localYmd(new Date(t)));
+    }
+    const lines = await fetchChainSummaries(
+      userId,
+      "month",
+      weekKeys.map((k) => ({ key: k, label: `${Number(k.slice(5, 7))}/${Number(k.slice(8, 10))}周` })),
+    );
+    return lines.length ? "本月各周小结：\n" + lines.join("\n") : "";
+  }
+  // 年报小结链默认年份同上：+8h 后读 UTC 年（宿主时区无关）
+  const year = period.year ?? String(new Date(Date.now() + 8 * 3600_000).getUTCFullYear());
+  const lines = await fetchChainSummaries(
+    userId,
+    "year",
+    Array.from({ length: 12 }, (_, i) => ({ key: `${year}-${pad2(i + 1)}`, label: `${i + 1}月` })),
+  );
+  return lines.length ? "全年各月月报小结：\n" + lines.join("\n") : "";
+}
+
+async function buildProfileCtxValue(userId: string): Promise<string> {
+  const profile = await loadProfileBlock(userId);
+  return profile ? `该用户的已知画像（供理解参考，不要复述）：\n${profile}` : "";
+}
+
+/** 数据最近变动时刻（day/week/month 用 from–to 区间；year 按自然年字段匹配，与原实现一致）。
+ *  未来日期的记录（预记的交易/往来、计划块）不算「数据变动」——否则缓存新鲜度恒不过，
+ *  每次查看都重新生成（REQ-034 在 time_blocks 上修过的同类问题，此处对 occurred_at 同口径钳到 now()；
+ *  entries.created_at / todos.done_at 为服务端完成时刻，天然不会落在未来）。 */
+async function buildLatest(userId: string, kind: ReviewContentKind, period: ReviewPeriod): Promise<Date | null> {
+  if (kind !== "day" && kind !== "week" && kind !== "month") {
+    const year = Number(period.year ?? new Date(Date.now() + 8 * 3600_000).getUTCFullYear());
+    // 9-F sargable 化：extract(year from (col at time zone …)) 对列套函数不可走索引，
+    // 北京为固定 UTC+8 → 自然年即半开区间 [1月1日+08, 次年1月1日+08)，改纯范围条件
+    const from = `${year}-01-01T00:00:00+08:00`;
+    const to = `${year + 1}-01-01T00:00:00+08:00`;
+    const { rows } = await pool.query(
+      `select greatest(
+         (select max(created_at) from entries where user_id = $1 and created_at >= $2::timestamptz and created_at < $3::timestamptz),
+         (select max(done_at) from todos where user_id = $1 and status = 'done' and done_at >= $2::timestamptz and done_at < $3::timestamptz),
+         (select max(occurred_at) from transactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz and occurred_at <= now()),
+         (select max(updated_at) from transactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz),
+         (select max(start_at) from time_blocks where user_id = $1 and start_at >= $2::timestamptz and start_at < $3::timestamptz and start_at <= now()),
+         (select max(occurred_at) from interactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz and occurred_at <= now())
+       ) as latest`,
+      [userId, from, to],
+    );
+    return (rows[0]?.latest as Date | null) ?? null;
+  }
+  let from: string;
+  let to: string;
+  if (kind === "day") {
+    from = to = period.date ?? bjNowYmd();
+  } else if (kind === "week") {
+    const dateStr = period.date ?? bjNowYmd();
+    const d = bjDateOf(dateStr);
+    const monday = new Date(d.getTime() - ((bjDow(dateStr) + 6) % 7) * 86_400_000);
+    from = localYmd(monday);
+    to = localYmd(new Date(monday.getTime() + 6 * 86_400_000));
+  } else {
+    const month = period.month ?? bjNowYmd().slice(0, 7);
+    const [y, m] = month.split("-").map(Number);
+    from = `${month}-01`;
+    to = localYmd(new Date(Date.UTC(y, m, 0)));
+  }
+  // 二十轮 sargable 化（对齐 year 分支 9-F）：(col at time zone $2)::date between 对列套函数
+  // 不可走索引——北京固定 UTC+8，日界即半开区间 [from 00:00+08, to+1 00:00+08)，改纯范围条件。
+  // 复盘四路由每次查看（含缓存命中）都先跑 buildLatest，旧式写法每请求全量扫用户四表
+  const fromTs = `${from}T00:00:00+08:00`;
+  const [ty, tm, td] = to.split("-").map(Number);
+  const toTs = `${localYmd(new Date(Date.UTC(ty, tm - 1, td + 1)))}T00:00:00+08:00`;
+  const { rows } = await pool.query(
+    `select greatest(
+       (select max(created_at) from entries where user_id = $1 and created_at >= $2::timestamptz and created_at < $3::timestamptz),
+       (select max(done_at) from todos where user_id = $1 and status = 'done' and done_at >= $2::timestamptz and done_at < $3::timestamptz),
+       (select max(occurred_at) from transactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz and occurred_at <= now()),
+       (select max(updated_at) from transactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz),
+       (select max(start_at) from time_blocks where user_id = $1 and start_at >= $2::timestamptz and start_at < $3::timestamptz and start_at <= now()),
+       (select max(occurred_at) from interactions where user_id = $1 and occurred_at >= $2::timestamptz and occurred_at < $3::timestamptz and occurred_at <= now())
+     ) as latest`,
+    [userId, fromTs, toTs],
+  );
+  return (rows[0]?.latest as Date | null) ?? null;
+}
+
+interface SubAgg { acts: string[]; n: number; out: number }
+
+/** 子周期对比行：day 无；week 每日 top2 / month 每周 top3 / year 每月 top3（口径与各路由原实现一致） */
+function buildSubLines(
+  kind: ReviewContentKind,
+  period: ReviewPeriod,
+  sub: { rows: Record<string, unknown>[] },
+  from: string,
+  _to: string,
+): string[] {
+  if (kind === "day") return [];
+  const timeRows = { rows: sub.rows.filter((r) => "mins" in r) };
+  const entryRows = { rows: sub.rows.filter((r) => "n" in r) };
+  const txRows = { rows: sub.rows.filter((r) => "out_cents" in r) };
+  const bitsOf = (d: SubAgg) => [d.acts.join("、"), d.n ? `动态${d.n}条` : "", d.out ? `支出¥${(d.out / 100).toFixed(0)}` : ""].filter(Boolean);
+  const fmtBits = (label: string, d: SubAgg) => `${label}：${bitsOf(d).length ? bitsOf(d).join(" · ") : "无记录"}`;
+  const acc = () => ({ acts: [] as string[], n: 0, out: 0 });
+
+  if (kind === "week") {
+    const WD = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+    const d0 = bjDateOf(from);
+    const agg = new Map<string, SubAgg>(
+      Array.from({ length: 7 }, (_, i) => [localYmd(new Date(d0.getTime() + i * 86_400_000)), acc()]),
+    );
+    for (const r of timeRows.rows as { day: string; icon: string; name: string; mins: number }[]) {
+      const d = agg.get(r.day);
+      if (d && d.acts.length < 2) d.acts.push(`${r.icon}${r.name} ${fmtMin(r.mins)}`);
+    }
+    for (const r of entryRows.rows as { day: string; n: number }[]) {
+      const d = agg.get(r.day);
+      if (d) d.n = r.n;
+    }
+    for (const r of txRows.rows as { day: string; out_cents: number }[]) {
+      const d = agg.get(r.day);
+      if (d) d.out = Number(r.out_cents);
+    }
+    return [
+      "每日明细：",
+      ...[...agg.entries()].map(([k, d], i) => fmtBits(`${WD[i]}(${k.slice(5)})`, d)),
+    ];
+  }
+
+  if (kind === "month") {
+    const month = period.month ?? from.slice(0, 7);
+    const [yy, mm] = month.split("-").map(Number);
+    const wkKey = (k: unknown) => (typeof k === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k) ? k : null);
+    const agg = new Map<string, SubAgg>();
+    const touch = (k: string) => {
+      const d = agg.get(k) ?? acc();
+      agg.set(k, d);
+      return d;
+    };
+    for (const r of timeRows.rows as { wk: string; icon: string; name: string; mins: number }[]) {
+      const k = wkKey(r.wk);
+      if (!k) continue;
+      const d = touch(k);
+      if (d.acts.length < 3) d.acts.push(`${r.icon}${r.name} ${fmtMin(r.mins)}`);
+    }
+    for (const r of entryRows.rows as { wk: string; n: number }[]) {
+      const k = wkKey(r.wk);
+      if (!k) continue;
+      touch(k).n = r.n;
+    }
+    for (const r of txRows.rows as { wk: string; out_cents: number }[]) {
+      const k = wkKey(r.wk);
+      if (!k) continue;
+      touch(k).out = Number(r.out_cents);
+    }
+    const firstDow = (bjDow(`${yy}-${pad2(mm)}-01`) + 6) % 7;
+    const lines: string[] = ["每周对比："];
+    for (let t = bjDateOf(`${yy}-${pad2(mm)}-01`).getTime() - firstDow * 86_400_000; t <= new Date(Date.UTC(yy, mm, 0)).getTime(); t += 7 * 86_400_000) {
+      const k = localYmd(new Date(t));
+      lines.push(fmtBits(`${Number(k.slice(5, 7))}/${Number(k.slice(8, 10))}周`, agg.get(k) ?? acc()));
+    }
+    return lines;
+  }
+
+  // year：逐月轨迹
+  const agg = new Map<number, SubAgg>(Array.from({ length: 12 }, (_, i) => [i + 1, acc()]));
+  for (const r of timeRows.rows as { mm: number; icon: string; name: string; mins: number }[]) {
+    const d = agg.get(r.mm);
+    if (d && d.acts.length < 3) d.acts.push(`${r.icon}${r.name} ${fmtMin(r.mins)}`);
+  }
+  for (const r of entryRows.rows as { mm: number; n: number }[]) {
+    const d = agg.get(r.mm);
+    if (d) d.n = r.n;
+  }
+  for (const r of txRows.rows as { mm: number; out_cents: number }[]) {
+    const d = agg.get(r.mm);
+    if (d) d.out = Number(r.out_cents);
+  }
+  return [
+    "逐月轨迹：",
+    ...[...agg.entries()].map(([mm, d]) => fmtBits(`${mm}月`, d)),
+  ];
+}
+
+/** 子周期聚合三查询（day 无；week 按日 / month 按自然周 / year 按月；month/year 跨期块按覆盖周期拆分累加） */
+async function buildSubRows(
+  userId: string,
+  kind: ReviewContentKind,
+  from: string,
+  to: string,
+): Promise<{ rows: Record<string, unknown>[] }> {
+  if (kind === "day") return { rows: [] };
+  const base = [userId, TZ, from, to];
+  if (kind === "week") {
+    const [a, b, c] = await Promise.all([
+      pool.query(
+        // 跨天块按天拆行（二十轮，对齐 month/year 分支与 day 档主聚合口径）：旧版把整段
+        // 记入起始日——睡眠 23:00→07:00 的 8h 全记在周一，与同 payload 的日小结、日复盘、
+        // 统计页（statsRepo 按天 generate_series 拆分）互相矛盾，LLM 输入事实失真。
+        // lateral generate_series 按 '1 day' 拆分 + 交集钳制（month/year 同范式）
+        `select d.pstart::date::text as day, a.name, a.icon,
+                sum(floor(extract(epoch from
+                  least(least((b.end_at at time zone $2), ($4::date + 1)::timestamp), d.pstart + interval '1 day')
+                  - greatest(greatest((b.start_at at time zone $2), $3::date::timestamp), d.pstart)
+                ) / 60))::int as mins
+         from time_blocks b
+         join activities a on a.id = b.activity_id and a.user_id = b.user_id
+         join lateral generate_series(
+                date_trunc('day', greatest((b.start_at at time zone $2), $3::date::timestamp)),
+                date_trunc('day', least((b.end_at at time zone $2), ($4::date + 1)::timestamp)),
+                interval '1 day') d(pstart) on true
+         where b.user_id = $1
+           and (b.end_at at time zone $2) > $3::date and (b.start_at at time zone $2) < ($4::date + 1)
+           and least(least((b.end_at at time zone $2), ($4::date + 1)::timestamp), d.pstart + interval '1 day')
+             > greatest(greatest((b.start_at at time zone $2), $3::date::timestamp), d.pstart)
+         group by 1, 2, 3`,
+        base,
+      ),
+      pool.query(
+        `select (created_at at time zone $2)::date::text as day, count(*)::int as n
+         from entries
+         where user_id = $1 and (created_at at time zone $2)::date between $3::date and $4::date
+         group by 1`,
+        base,
+      ),
+      pool.query(
+        `select (occurred_at at time zone $2)::date::text as day,
+                coalesce(sum(case when direction='out' then amount_cents else 0 end),0)::bigint as out_cents
+         from transactions
+         where user_id = $1 and is_draft = false
+           and (occurred_at at time zone $2)::date between $3::date and $4::date
+         group by 1`,
+        base,
+      ),
+    ]);
+    return { rows: [...a.rows, ...b.rows, ...c.rows] };
+  }
+  // month：date_trunc('week')；year：extract(month)。
+  // 跨周期块（如横跨两周/两月的块）旧实现只把整段计入起始所在的首周期，越过周期边界的时长被静默丢弃——
+  // 改用 lateral generate_series 按覆盖的每个周期起点拆行累加（与 statsRepo.dailyMinsByActivity
+  // 的按天拆分同范式）：序列上下界先与 [from, to+1) 求交集再落到周期起点，保证任意合法块非空；
+  // 行键取周期起点（周键=周一 / 月键=月份数），与 buildSubLines 的键位一一对应
+  const unit = kind === "month" ? "week" : "month";
+  const step = kind === "month" ? "7 days" : "1 month";
+  // 行键：时间块行取拆分后的周期起点 d.pstart（entries/tx 是时点数据，仍取自身时间戳的周期键）
+  const splitKeyExpr =
+    kind === "month"
+      ? `to_char(date_trunc('week', d.pstart), 'YYYY-MM-DD') as wk`
+      : `extract(month from d.pstart)::int as mm`;
+  const keyExpr = (col: string) =>
+    kind === "month"
+      ? `to_char(date_trunc('week', (${col} at time zone $2)), 'YYYY-MM-DD') as wk`
+      : `extract(month from (${col} at time zone $2))::int as mm`;
+  const [a, b, c] = await Promise.all([
+    pool.query(
+      `select ${splitKeyExpr}, a.name, a.icon,
+              sum(floor(extract(epoch from
+                least(least((b.end_at at time zone $2), ($4::date + 1)::timestamp), d.pstart + interval '${step}')
+                - greatest(greatest((b.start_at at time zone $2), $3::date::timestamp), d.pstart)
+              ) / 60))::int as mins
+       from time_blocks b
+       join activities a on a.id = b.activity_id and a.user_id = b.user_id
+       join lateral generate_series(
+              date_trunc('${unit}', greatest((b.start_at at time zone $2), $3::date::timestamp)),
+              date_trunc('${unit}', least((b.end_at at time zone $2), ($4::date + 1)::timestamp)),
+              interval '${step}') d(pstart) on true
+       where b.user_id = $1
+         and (b.end_at at time zone $2) > $3::date and (b.start_at at time zone $2) < ($4::date + 1)
+         and least(least((b.end_at at time zone $2), ($4::date + 1)::timestamp), d.pstart + interval '${step}')
+           > greatest(greatest((b.start_at at time zone $2), $3::date::timestamp), d.pstart)
+       group by 1, 2, 3`,
+      base,
+    ),
+    pool.query(
+      `select ${keyExpr("created_at")}, count(*)::int as n
+       from entries
+       where user_id = $1 and (created_at at time zone $2)::date between $3::date and $4::date
+       group by 1`,
+      base,
+    ),
+    pool.query(
+      `select ${keyExpr("occurred_at")},
+              coalesce(sum(case when direction='out' then amount_cents else 0 end),0)::bigint as out_cents
+       from transactions
+       where user_id = $1 and is_draft = false
+         and (occurred_at at time zone $2)::date between $3::date and $4::date
+       group by 1`,
+      base,
+    ),
+  ]);
+  return { rows: [...a.rows, ...b.rows, ...c.rows] };
+}

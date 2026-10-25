@@ -1,0 +1,50 @@
+import { NextResponse } from "next/server";
+import { pool } from "@/server/platform/db";
+import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { ApiError } from "@/server/platform/http/errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /api/budget —— 月度上限配置 */
+export const GET = withModule("finance", async (_req, { user }) => {
+  const { rows } = await pool.query(
+    `select monthly_limit_cents, alert_threshold from budgets where user_id = $1`,
+    [user.id],
+  );
+  // monthly_limit_cents 是 bigint（node-pg 返回 string）：有行时也要 Number()，与 finance/overview 同口径
+  return NextResponse.json({
+    budget: rows[0]
+      ? { monthly_limit_cents: Number(rows[0].monthly_limit_cents), alert_threshold: rows[0].alert_threshold }
+      : { monthly_limit_cents: 0, alert_threshold: 80 },
+  });
+});
+
+/** PUT /api/budget —— 保存月度上限 {monthlyLimitCents, alertThreshold?} */
+export const PUT = withModule("finance", async (req, { user }) => {
+  const body = (await readJsonCapped(req) as any) as {
+    monthlyLimitCents?: number;
+    alertThreshold?: number;
+  };
+  // 上限对齐 transactions（¥100 万）：monthly_limit_cents 是 bigint，1e21 → pg 序列化 "1e+21" → 22P02 → 500
+  if (!Number.isInteger(body.monthlyLimitCents) || (body.monthlyLimitCents ?? 0) < 0 || (body.monthlyLimitCents ?? 0) > 100_000_000) {
+    throw ApiError.badRequest("上限需为非负整数（分，0=不设上限，不超过 ¥100 万）");
+  }
+  // 非数值（如 "高"）先 400：否则 Math.max 产 NaN → int 列 500；数值再 clamp（取整防小数落 int 列）
+  if (body.alertThreshold !== undefined && (typeof body.alertThreshold !== "number" || !Number.isFinite(body.alertThreshold))) {
+    throw ApiError.badRequest("提醒阈值需为数值");
+  }
+  const threshold = Math.round(Math.min(Math.max(body.alertThreshold ?? 80, 1), 100));
+  const { rows } = await pool.query(
+    `insert into budgets (user_id, monthly_limit_cents, alert_threshold)
+     values ($1, $2, $3)
+     on conflict (user_id) do update
+       set monthly_limit_cents = $2, alert_threshold = $3, updated_at = now()
+     returning monthly_limit_cents, alert_threshold`,
+    [user.id, body.monthlyLimitCents, threshold],
+  );
+  // monthly_limit_cents 是 bigint（node-pg 返回 string）：Number() 收口，与 GET/overview 同口径
+  return NextResponse.json({
+    budget: { monthly_limit_cents: Number(rows[0].monthly_limit_cents), alert_threshold: rows[0].alert_threshold },
+  });
+});

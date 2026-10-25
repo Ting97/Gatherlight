@@ -1,0 +1,119 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { AlarmClock, Bell, Cake, Check, ClipboardList, Heart, Sun, X } from "lucide-react";
+import type { ReminderItem } from "@/lib/reminders";
+import { bjToday } from "@shiguangri/shared/date";
+import { TagChip } from "./tag-chip";
+
+/**
+ * 工作台提醒横幅（W12）：生日/纪念日 + 到期待办
+ * - 条目可点：联系人 → TA 档案；待办 → 锚到主页今日 TODO 区
+ * - 待办条目附「☀️今日」快捷按钮：一键加入今日规划（跨零点自动失效的今日标记）
+ * - 「知道了」当天不再展示（localStorage 按日期记录，次日自动回来）
+ */
+export default function Reminders({
+  items,
+  onMarkToday,
+}: {
+  items: ReminderItem[];
+  /** 加入今日：返回 false / 抛错 = 失败（调用方自行提示），条目回滚为可重试 */
+  onMarkToday?: (todoId: string, title: string) => boolean | Promise<boolean> | void;
+}) {
+  const [dismissed, setDismissed] = useState(true); // 默认不展示，读到 localStorage 后纠正，避免闪烁
+  const [marked, setMarked] = useState<Set<string>>(new Set()); // 已标今日的条目（防重复提交 + 即时反馈）
+
+  useEffect(() => {
+    // Safari 锁定模式等场景 localStorage 访问直接 throw：passive effect 内抛出会被根边界捕获整页换错误态，
+    // 读写各包 try/catch（失败按「未关闭」处理，与 actions-today/capture-button 同口径）
+    try {
+      setDismissed(window.localStorage.getItem("shiguang_reminders_dismissed") === bjToday());
+    } catch {}
+  }, []);
+
+  if (items.length === 0 || dismissed) return null;
+
+  async function markToday(it: ReminderItem) {
+    if (!it.todoId || marked.has(it.todoId)) return;
+    const todoId = it.todoId;
+    setMarked((s) => new Set(s).add(todoId));
+    try {
+      const ok = await onMarkToday?.(todoId, it.label);
+      // 失败回滚乐观置位：否则按钮永久呈「已加入」且 disabled，用户失去重试入口
+      if (ok === false) throw new Error("mark failed");
+    } catch {
+      setMarked((s) => {
+        const n = new Set(s);
+        n.delete(todoId);
+        return n;
+      });
+    }
+  }
+
+  return (
+    <section
+      aria-label="提醒"
+      className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-warn"
+    >
+      <div className="flex items-center gap-2">
+        <TagChip icon={<Bell size={12} />} label="提醒" tone="amber" className="shrink-0" />
+        <span className="flex-1" />
+        <button
+          onClick={() => {
+            try {
+              window.localStorage.setItem("shiguang_reminders_dismissed", bjToday());
+            } catch {}
+            setDismissed(true);
+          }}
+          title="今天不再展示"
+          className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-micro text-warn/70 transition hover:bg-amber-500/15 hover:text-warn"
+        >
+          知道了 <X size={11} aria-hidden />
+        </button>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {items.map((it) => (
+          <li key={it.key} className="flex items-start gap-1.5 leading-relaxed">
+            <span className="mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded bg-amber-500/15 leading-none">
+              {it.kind === "birthday" ? <Cake size={12} /> : it.kind === "anniversary" ? <Heart size={12} /> : it.overdue ? <AlarmClock size={12} /> : <ClipboardList size={12} />}
+            </span>
+            {it.contactId ? (
+              <Link
+                href={`/contacts/${it.contactId}`}
+                className={it.overdue ? "text-danger underline-offset-2 hover:underline" : "underline-offset-2 hover:underline"}
+              >
+                {it.label}
+              </Link>
+            ) : (
+              <>
+                {/* 目标区是 actions-today 的 id="actions"（原 #todos 指向不存在的锚点） */}
+                <a href="#actions" className={it.overdue ? "text-danger underline-offset-2 hover:underline" : "underline-offset-2 hover:underline"}>
+                  {it.label}
+                </a>
+                {it.todoId && onMarkToday && (
+                  <button
+                    onClick={() => markToday(it)}
+                    disabled={marked.has(it.todoId!)}
+                    title="加入今日 todo（跨零点自动失效）"
+                    className="mt-px flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/40 px-2.5 py-1 text-micro text-warn transition hover:bg-amber-500/20 disabled:opacity-50"
+                  >
+                    {marked.has(it.todoId!) ? (
+                      <>
+                        已加入 <Check size={11} aria-hidden />
+                      </>
+                    ) : (
+                      <>
+                        <Sun size={11} aria-hidden /> 今日
+                      </>
+                    )}
+                  </button>
+                )}
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

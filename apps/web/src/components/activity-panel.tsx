@@ -1,0 +1,219 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
+import IconPicker from "@/components/icon-picker";
+import type { Activity } from "@/lib/types";
+import { api, ApiClientError } from "@/shared/api";
+import { toast } from "@/shared/ui/toast";
+
+/** 日程页 · 分类子页：活动分类管理（原 /categories 页整体平移，逻辑不变） */
+
+interface Draft {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  defaultMin: number;
+  is_preset?: boolean;
+}
+
+export default function ActivityPanel() {
+  const [list, setList] = useState<Activity[]>([]);
+  const [editing, setEditing] = useState<Draft | null>(null);
+  const [adding, setAdding] = useState({ name: "", icon: "🏷", color: "#eab308", defaultMin: 30 });
+  // 新增/保存进行中锁，防连点重复提交
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const j = await api<any>("/api/activities");
+      setList(j.activities ?? []);
+    } catch (e) {
+      // 失败置空列表 + 提示（裸 rejection 会触发 ChunkErrorReloader 整页刷新循环）
+      setList([]);
+      toast(e instanceof Error ? e.message : "加载失败", "err");
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function add() {
+    if (!adding.name.trim()) { toast("名称必填", "err"); return; }
+    if (busy) return;
+    setBusy(true);
+    try {
+      // 默认时长钳制：清空输入 Number("")===0（或非法输入 NaN）会以 0 提交，回退默认 30 并钳进 5~720（服务端口径，input max 只是软约束）
+      await api<any>("/api/activities", "POST", { ...adding, defaultMin: Math.min(720, Math.max(5, Number(adding.defaultMin) || 30)) });
+    } catch (e) {
+      // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "新增失败" : e.message, "err"); return; }
+      toast("网络异常，请稍后重试", "err");
+      return;
+    } finally {
+      setBusy(false);
+    }
+    toast(`✅ 已新增分类「${adding.name.trim()}」`);
+    setAdding({ name: "", icon: "🏷", color: "#eab308", defaultMin: 30 });
+    await load();
+  }
+
+  async function save() {
+    if (!editing) return;
+    if (busy) return;
+    setBusy(true);
+    try {
+      // 默认时长钳制：清空输入 Number("")===0（或非法输入 NaN）会以 0 提交，回退默认 30 并钳进 5~720（服务端口径，input max 只是软约束）
+      await api<any>(`/api/activities/${editing.id}`, "PATCH", { name: editing.name, icon: editing.icon, color: editing.color, defaultMin: Math.min(720, Math.max(5, Number(editing.defaultMin) || 30)) });
+    } catch (e) {
+      // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "保存失败" : e.message, "err"); return; }
+      toast("网络异常，请稍后重试", "err");
+      return;
+    } finally {
+      setBusy(false);
+    }
+    setEditing(null);
+    toast("💾 已保存");
+    await load();
+  }
+
+  const removingRef = useRef(false);
+  async function remove(a: Activity) {
+    if (removingRef.current) return; // 快速双击「确认删除?」防双发（第二发 404 会再弹错误 toast）
+    removingRef.current = true;
+    try {
+      await api<any>(`/api/activities/${a.id}`, "DELETE");
+    } catch (e) {
+      // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "删除失败" : e.message, "err"); removingRef.current = false; return; }
+      toast("网络异常，请稍后重试", "err");
+      removingRef.current = false;
+      return;
+    }
+    toast(`🗑 已删除「${a.name}」`);
+    setArmDeleteId(null);
+    await load();
+    removingRef.current = false;
+  }
+
+  /** 删除两步确认（与 BlockEditor 同款）：首点进入待确认态，3 秒内再点才真删——
+   *  替换原生 window.confirm（阻塞式弹窗与全站样式化确认不一致，移动 WebView 观感差） */
+  const [armDeleteId, setArmDeleteId] = useState<string | null>(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (armTimer.current) clearTimeout(armTimer.current); }, []);
+  function onDeleteClick(a: Activity) {
+    if (armDeleteId === a.id) {
+      if (armTimer.current) clearTimeout(armTimer.current);
+      void remove(a);
+      return;
+    }
+    setArmDeleteId(a.id);
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => setArmDeleteId(null), 3000);
+  }
+
+  return (
+    <div>
+      <p className="mb-4 text-xs text-ink-dim">
+        预设分类不可删除（可改名称/图标/颜色/默认时长）；自定义分类删除后其记录归入「其他」
+      </p>
+
+      {/* 新增（移动端纵向堆叠、控件全宽，触控目标 ≥40px） */}
+      <div className="glass mb-5 flex flex-wrap items-center gap-2 rounded-2xl p-4">
+        <input
+          value={adding.name}
+          onChange={(e) => setAdding({ ...adding, name: e.target.value })}
+          onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
+          placeholder="新分类名称（如：带娃 / 冥想 / 副业）"
+          maxLength={30}
+          className="min-w-36 flex-1 rounded border border-line-strong bg-surface px-2.5 py-2 text-sm outline-none focus:border-sky-500"
+        />
+        <IconPicker value={adding.icon} onChange={(icon) => setAdding({ ...adding, icon })} />
+        <input
+          type="color"
+          value={adding.color}
+          onChange={(e) => setAdding({ ...adding, color: e.target.value })}
+          title="颜色"
+          className="h-10 w-12 cursor-pointer rounded border border-line-strong bg-surface"
+        />
+        <input
+          type="number"
+          min={5}
+          max={720}
+          value={adding.defaultMin}
+          onChange={(e) => setAdding({ ...adding, defaultMin: Number(e.target.value) })}
+          title="默认时长（分钟）：没说时长时按此记录"
+          className="w-20 rounded border border-line-strong bg-surface px-2 py-2 text-sm tabular-nums outline-none"
+        />
+        <span className="text-badge text-ink-dim">分钟</span>
+        <button onClick={add} className="btn-primary rounded-lg px-5 py-2 text-sm font-medium">
+          新增
+        </button>
+      </div>
+
+      {/* 列表 */}
+      <ul className="space-y-1.5">
+        {list.map((a) =>
+          editing?.id === a.id ? (
+            <li key={a.id} className="flex flex-wrap items-center gap-2 rounded-xl border border-sky-500/40 bg-elevated/60 p-3">
+              <input
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                maxLength={30}
+                className="min-w-24 flex-1 rounded border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none focus:border-sky-500"
+              />
+              <IconPicker value={editing.icon} onChange={(icon) => setEditing({ ...editing, icon })} />
+              <input
+                type="color"
+                value={editing.color}
+                onChange={(e) => setEditing({ ...editing, color: e.target.value })}
+                className="h-9 w-11 cursor-pointer rounded border border-line-strong bg-surface"
+              />
+              <input
+                type="number"
+                min={5}
+                max={720}
+                value={editing.defaultMin}
+                onChange={(e) => setEditing({ ...editing, defaultMin: Number(e.target.value) })}
+                className="w-20 rounded border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none"
+              />
+              <span className="text-badge text-ink-dim">分钟</span>
+              <button onClick={() => setEditing(null)} className="rounded px-3 py-1.5 text-xs text-ink-mute hover:bg-soft">取消</button>
+              <button onClick={save} className="btn-inline-save rounded px-3 py-1.5 text-xs font-medium">保存</button>
+            </li>
+          ) : (
+            <li key={a.id} className="glass glass-hover group flex items-center gap-3 rounded-xl px-3 py-2.5">
+              <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
+              <span className="text-lg">{a.icon}</span>
+              <span className="flex-1 text-sm">
+                {a.name}
+                {a.is_preset && <span className="ml-2 rounded bg-elevated px-1.5 py-0.5 text-micro text-ink-dim">预设</span>}
+              </span>
+              <span className="text-xs tabular-nums text-ink-dim">默认 {a.default_min} 分钟</span>
+              <span className="row-actions hidden gap-1 group-hover:flex">
+                <button
+                  onClick={() => setEditing({ id: a.id, name: a.name, icon: a.icon, color: a.color, defaultMin: a.default_min ?? 30 })}
+                  className="rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-accent"
+                  title="编辑分类"
+                >
+                  <Pencil size={12} />
+                </button>
+                {!a.is_preset && (
+                  <button
+                    onClick={() => onDeleteClick(a)}
+                    className={`flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none hover:bg-soft ${armDeleteId === a.id ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:text-danger"}`}
+                    title="删除分类（3 秒内再点确认）"
+                  >
+                    {armDeleteId === a.id ? "确认删除?" : <Trash2 size={12} />}
+                  </button>
+                )}
+              </span>
+            </li>
+          ),
+        )}
+      </ul>
+    </div>
+  );
+}

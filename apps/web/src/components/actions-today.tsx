@@ -1,0 +1,502 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import TodoLogo from "./todo-logo";
+import { TodoCircle, dueTag, isoToLocalInput, localInputToIso } from "./todo-bits";
+import { Dismissable } from "./dismissable";
+import { TodoRowMenu } from "@/components/todo";
+import { confirmDialog } from "@/shared/ui/confirm";
+import type { TodayAction } from "@/lib/types";
+import SpacePicker from "./space-picker";
+import { api, ApiClientError } from "@/shared/api";
+import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, FileText, Repeat, RotateCcw } from "lucide-react";
+
+/**
+ * 首页「今日行动清单」（REQ-001 R3 + REQ-002 N6）：
+ * - 展示行动级条目：① 🔁 每日重复；② 独立行动标记今日/今日到期；③ 有父行动随父待办今日
+ * - N6：顶部「添加行动」输入行——回车即建独立行动（默认标记今日），做完勾掉
+ * - N3：行内编辑器点空白/Esc 取消（有改动轻提示）
+ * - 数据自取 /api/todos?view=today-actions（06:00 记录日惰性日切在服务端读取时触发）
+ */
+/** 行动行（独立行动无父上下文行）：模块级定义——组件体内定义会在每次渲染重挂载子树 */
+function ActionRow({
+  a,
+  space,
+  onMenu,
+}: {
+  a: TodayAction;
+  space?: { name: string; icon: string; color: string };
+  onMenu: (a: TodayAction, el: HTMLElement) => void;
+}) {
+  const tag = dueTag(a.due_at) ?? dueTag(a.parent_due);
+  return (
+    <div className="min-w-0 flex-1">
+      <p className="flex min-w-0 items-center gap-2">
+        <span className="min-w-0 truncate text-sm text-ink">{a.title}</span>
+        {space && (
+          <span
+            className="flex shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-badge font-medium"
+            style={{ backgroundColor: `${space.color}22`, color: space.color }}
+            title={`已关联空间「${space.name}」`}
+          >
+            {space.icon} {space.name}
+          </span>
+        )}
+        {!a.parent_title && (
+          <span className="shrink-0 rounded-lg bg-slate-500/15 px-1.5 py-0.5 text-badge font-medium text-ink-dim" title="独立行动（不属于任何 todo）">
+            行动
+          </span>
+        )}
+        {a.repeat_daily && (
+          <span className="flex shrink-0 items-center gap-0.5 rounded-lg bg-emerald-500/20 px-1.5 py-0.5 text-badge font-medium text-success" title="每日重复">
+            <Repeat size={11} aria-hidden /> {a.repeat_done_count > 0 ? `×${a.repeat_done_count}` : ""}
+          </span>
+        )}
+        {a.note && (
+          <span className="shrink-0 text-ink-faint" title="有描述">
+            <FileText size={11} aria-hidden />
+          </span>
+        )}
+        <button
+          onClick={(e) => onMenu(a, e.currentTarget)}
+          aria-label="操作菜单"
+          className="tap-lg press ml-auto shrink-0 rounded p-1 text-ink-faint transition hover:bg-wash hover:text-ink"
+        >
+          <Ellipsis size={14} />
+        </button>
+      </p>
+      {(a.parent_title || tag) && (
+        <p className="mt-0.5 flex items-center gap-1.5 text-micro text-ink-faint">
+          {a.parent_title && <span className="min-w-0 truncate">来自「{a.parent_title}」</span>}
+          {tag && <span className={`shrink-0 ${tag.cls}`}>{tag.text}</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; text: string } | null) => void }) {
+  const [actions, setActions] = useState<TodayAction[] | null>(null);
+  // 打卡进行中的行动 id：接到对应行按钮 disabled，防连点重复打卡
+  const [busyId, setBusyId] = useState<string | null>(null);
+  // N6 添加行动
+  const [newTitle, setNewTitle] = useState("");
+  const [adding, setAdding] = useState(false);
+  // N6/N3 行内编辑
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDue, setEditDue] = useState("");
+  // 行内编辑保存进行中：防双击重复保存
+  const [editSaving, setEditSaving] = useState(false);
+  const editInputRef = useRef<HTMLInputElement>(null);
+  // 取数竞态守卫（对齐 use-home-data 的 seqRef 范式）：快速连续触发（如动态识别完成事件与手动刷新
+  // 并发）时只让最新一次 load 的响应落地，旧慢回包不得覆盖新数据
+  const loadSeq = useRef(0);
+  const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
+    try {
+      const j = await api("/api/todos?view=today-actions");
+      if (seq !== loadSeq.current) return; // 过期响应丢弃
+      setActions(j.actions ?? []);
+    } catch (e) {
+      if (seq !== loadSeq.current) return;
+      setActions([]);
+      notify({ ok: false, text: `行动清单加载失败：${e instanceof Error ? e.message : e}` });
+    }
+    // 空间列表（徽标 + 归类选择器）：失败不阻塞行动清单
+    try {
+      const sp = await api<{ spaces?: Array<{ id: string; name: string; icon: string; color: string; status: string }> }>("/api/spaces");
+      if (seq !== loadSeq.current) return;
+      setSpaces((sp.spaces ?? []).filter((x) => x.status === "active"));
+    } catch {
+      /* 空间列表挂了只影响徽标/归类入口 */
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // 发布动态后 AI 识别数秒落库：订阅识别完成事件自动重拉（否则识别出的 todo 要手动刷新页面才出现）
+  useEffect(() => {
+    const onAnalyzed = () => void load();
+    window.addEventListener("shiguang:entry-analyzed", onAnalyzed);
+    return () => window.removeEventListener("shiguang:entry-analyzed", onAnalyzed);
+  }, [load]);
+
+  /** N6：直接添加独立行动（默认标记今日，当日出现在清单） */
+  async function addAction() {
+    const t = newTitle.trim();
+    if (!t || adding) return;
+    setAdding(true);
+    try {
+      await api("/api/todos", "POST", { title: t, kind: "action", today: true });
+      setNewTitle("");
+      notify({ ok: true, text: `⚡ 已添加行动「${t}」` });
+      await load();
+    } catch (e) {
+      notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function toggleDone(a: TodayAction) {
+    if (busyId) return; // 打卡进行中忽略再次点击
+    const done = a.status === "done";
+    setBusyId(a.id);
+    try {
+      await api(`/api/todos/${a.id}`, "PATCH", done ? { undone: true } : { done: true });
+      if (a.repeat_daily && !done) {
+        notify({ ok: true, text: `🎉 完成「${a.title}」，已坚持 ×${a.repeat_done_count + 1}` });
+      }
+      await load();
+    } catch (e) {
+      // 断网等失败不外抛：裸 rejection 会被 ChunkErrorReloader 宽匹配整页刷新
+      notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** N6：删除行动（独立/有父皆可；调用方已过两步确认） */
+  async function removeAction(a: TodayAction) {
+    try {
+      await api(`/api/todos/${a.id}`, "DELETE");
+      notify({ ok: true, text: "🗑 行动已删除" });
+      await load();
+    } catch (e) {
+      notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  /* ---- 行操作菜单（REQ-009 滚动：与 todo-board/空间详情同一菜单） ---- */
+  const [spaces, setSpaces] = useState<Array<{ id: string; name: string; icon: string; color: string; status: string }>>([]);
+  const [pickerRow, setPickerRow] = useState<{ id: string; spaceId: string | null } | null>(null);
+  const [menu, setMenu] = useState<{ info: { todo: TodayAction; isChild: boolean; parentTitle: string | null }; pos: { top: number; left: number } | null } | null>(null);
+  const [decomposingId, setDecomposingId] = useState<string | null>(null);
+  // 「⋯」再点关闭仲裁（同 todo-board menuClosedRef）：菜单开着再点「⋯」，pointerdown 先被
+  // Dismissable 在 document 层关闭，随后的 click 若无仲裁会 setMenu 重新打开——菜单永远关不上
+  const menuClosedRef = useRef<{ at: number; todoId: string } | null>(null);
+
+  function openMenu(a: TodayAction, el: HTMLElement) {
+    const closed = menuClosedRef.current;
+    if (closed && closed.todoId === a.id && Date.now() - closed.at < 300) return; // 刚被本次点击的 pointerdown 关闭：视为关闭操作
+    const rect = el.getBoundingClientRect();
+    // 移动端不传锚点（pos=null）：TodoRowMenu 走底部弹层形态，锚定坐标会被 sm: 样式错位（entry-menu 同口径）
+    setMenu({
+      info: { todo: a, isChild: !!a.parent_todo_id, parentTitle: a.parent_title },
+      pos:
+        window.innerWidth >= 640
+          ? { top: Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 280)), left: Math.max(8, rect.right - 228) }
+          : null,
+    });
+  }
+
+  /** 菜单项 patch（每日重复/重要/今日/恢复） */
+  async function patchTodo(id: string, body: Record<string, unknown>, okText?: string): Promise<boolean> {
+    try {
+      await api(`/api/todos/${id}`, "PATCH", body);
+      if (okText) notify({ ok: true, text: okText });
+      await load();
+      return true;
+    } catch (e) {
+      notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
+      return false;
+    }
+  }
+
+  /** AI 拆解/细化（父在清单内会带出行动；仅行动可见清单变化）。
+   *  mode：todo 已有未完成行动时由菜单二选一传入（replace/append）——缺省无 mode 且服务端判有
+   *  未完成行动会 409 needMode，旧版死路（报「操作失败」且无出路） */
+  async function decompose(a: { id: string; title: string }, _isAction: boolean, mode?: "replace" | "append") {
+    if (decomposingId) return;
+    setDecomposingId(a.id);
+    try {
+      const j = await api<{ actions?: unknown[] }>(`/api/todos/${a.id}/decompose`, "POST", mode ? { mode } : {});
+      notify({ ok: true, text: `✨ AI 拆出 ${j.actions?.length ?? 0} 个行动` });
+      await load();
+    } catch (e) {
+      const status = e instanceof ApiClientError ? e.status : 0;
+      notify({
+        ok: false,
+        text:
+          status === 409
+            ? `「${a.title}」已有未完成的行动，请从菜单选择「重新生成」或「追加」`
+            : e instanceof Error
+              ? e.message
+              : String(e),
+      });
+    } finally {
+      setDecomposingId(null);
+    }
+  }
+
+  /** 菜单删除：确认弹窗 → DELETE（行内两步确认保留） */
+  async function menuRemove(a: { id: string; title: string }, isChild: boolean) {
+    const ok = await confirmDialog({
+      title: isChild ? "删除行动" : "删除 todo",
+      message: isChild ? `「${a.title}」` : `「${a.title}」
+其下行动将一并删除。`,
+      confirmText: "删除",
+    });
+    if (!ok) return;
+    await removeAction(a as TodayAction);
+  }
+
+  /** N6/N3：行内编辑（标题+截止），Enter 保存、点空白/Esc 取消 */
+  function startEdit(a: TodayAction) {
+    setEditingId(a.id);
+    setEditTitle(a.title);
+    // 与 Dismissable onClose 的脏检查同口径（isoToLocalInput），避免跨时区恒判"有改动"
+    setEditDue(isoToLocalInput(a.due_at));
+    setTimeout(() => editInputRef.current?.focus(), 60);
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editTitle.trim() || editSaving) return; // 保存进行中忽略再次提交，防双击重复保存
+    setEditSaving(true);
+    try {
+      await api(`/api/todos/${editingId}`, "PATCH", {
+        title: editTitle.trim(),
+        // editDue 是北京墙上时间串（isoToLocalInput 产），必须按 +08:00 解析——
+        // 裸 new Date() 按宿主时区解释，海外设备会存错 N 小时
+        dueAt: editDue ? localInputToIso(editDue) : null,
+      });
+      setEditingId(null);
+      await load();
+    } catch (e) {
+      notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  // 整卡折叠（REQ-今日行动可收起）：默认展开，记住用户选择。
+  // initializer 固定 false、mount 后读 localStorage 纠正（reminders-banner 同款）：
+  // 旧版 initializer 直读 localStorage——SSR 首帧恒 false 而客户端收起过的用户首帧 true，
+  // hydration mismatch 丢服务端 HTML 整棵重渲（收起用户每次进首页闪烁）
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      setCollapsed(localStorage.getItem("shiguang_actions_collapsed") === "1");
+    } catch {
+      /* 读失败按展开 */
+    }
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((v) => {
+      try {
+        localStorage.setItem("shiguang_actions_collapsed", !v ? "1" : "0");
+      } catch {
+        /* 存储失败只影响记忆 */
+      }
+      return !v;
+    });
+  }
+
+  const pending = (actions ?? []).filter((a) => a.status === "pending");
+  const done = (actions ?? []).filter((a) => a.status === "done");
+
+
+  return (
+    <section className="glass mb-5 rounded-2xl p-5" id="actions">
+      {menu && (
+        <TodoRowMenu
+          info={menu.info}
+          menuPos={menu.pos}
+          onClose={() => {
+            // 记录关闭时刻与行 id：同一行 300ms 内的 click（同一次点击的 pointerdown 已关）不再重开
+            menuClosedRef.current = { at: Date.now(), todoId: menu.info.todo.id };
+            setMenu(null);
+          }}
+          actions={{
+            decomposingId,
+            patch: patchTodo,
+            decompose,
+            remove: menuRemove,
+            // 真实未完成行动数（行动级扁平列表按 parent_todo_id 归数）：旧版硬编码 0，
+            // 有行动的父 todo 永远渲染单项「AI 拆解」→ 服务端 409 needMode 死路
+            pendingCount: (t) => (actions ?? []).filter((x) => x.parent_todo_id === t.id && x.status === "pending").length,
+            startEdit: (t) => startEdit(t as TodayAction),
+            pickSpace: (t) => {
+              setPickerRow({ id: t.id, spaceId: (t as { space_id?: string | null }).space_id ?? null });
+              setMenu(null);
+            },
+          }}
+        />
+      )}
+      {pickerRow &&
+        createPortal(
+          <SpacePicker
+            spaces={spaces}
+            currentId={pickerRow.spaceId}
+            busy={false}
+            onPick={async (sid) => {
+              setPickerRow(null);
+              await patchTodo(pickerRow.id, { spaceId: sid }, "🎯 已关联空间");
+            }}
+            onRemove={async () => {
+              setPickerRow(null);
+              await patchTodo(pickerRow.id, { spaceId: null }, "已移除空间归属");
+            }}
+            onClose={() => setPickerRow(null)}
+          />,
+          document.body,
+        )}
+      {/* 标题行（整行可点折叠/展开；规划链接单独 stopPropagation） */}
+      <button
+        type="button"
+        onClick={toggleCollapsed}
+        className="mb-2 flex w-full items-center justify-between text-left"
+        aria-expanded={!collapsed}
+      >
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-soft">
+          <TodoLogo size={17} />
+          <span>今日行动</span>
+          {(actions?.length ?? 0) > 0 && (
+            <span className="whitespace-nowrap text-xs font-normal text-ink-dim">
+              {done.length}/{actions!.length} 完成
+            </span>
+          )}
+        </h2>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <a
+            href="/schedule?tab=todo"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-0.5 rounded-lg px-2.5 py-1 text-xs font-medium text-accent transition hover:bg-sky-500/10"
+          >
+            规划 <ArrowRight size={12} aria-hidden />
+          </a>
+          {collapsed ? <ChevronDown size={14} className="text-ink-mute" /> : <ChevronUp size={14} className="text-ink-mute" />}
+        </span>
+      </button>
+
+      {!collapsed && (actions === null ? (
+        <p className="py-2 text-xs text-ink-dim">加载中…</p>
+      ) : (
+        <>
+          {/* N6：添加行动行（回车即建，默认标记今日） */}
+          <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-dashed border-line-strong px-2.5 py-2 transition focus-within:border-sky-500/60">
+            <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 border-dashed border-slate-500 opacity-70" />
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) void addAction();
+              }}
+              maxLength={200}
+              placeholder="添加行动，回车保存"
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
+            />
+            {newTitle.trim() && (
+              <button
+                onClick={() => void addAction()}
+                disabled={adding}
+                className="btn-primary shrink-0 rounded-lg px-3 py-1 text-micro font-medium disabled:opacity-50"
+              >
+                {adding ? "保存中…" : "添加"}
+              </button>
+            )}
+          </div>
+
+          {pending.length === 0 && done.length === 0 ? (
+            <div className="py-2 text-center">
+              <p className="text-xs text-ink-dim">今天还没有行动 —— 在上面直接添加一条（自动标记今日 ☀️），或在 todo 里 ✨ 拆解出可执行的行动</p>
+            </div>
+          ) : (
+            <>
+              <ul className="space-y-0.5">
+                {pending.map((a) => {
+                  // 到期提示：行动自身优先，父待办兜底（独立行动只有自身 due）
+                  const isEditing = editingId === a.id;
+                  return (
+                    <li key={a.id} className="group flex items-center gap-3 rounded-lg px-2 py-1.5 transition hover:bg-elevated/60">
+                      {isEditing ? (
+                        /* N3/N6 行内编辑：标题 + 截止；点空白/Esc 取消 */
+                        <Dismissable
+                          onClose={() => {
+                            // 与 startEdit 同口径（本地 datetime-local 串）：原来用 UTC 切片比较，UTC+8 下恒不相等
+                            const dirty = editTitle !== a.title || editDue !== isoToLocalInput(a.due_at);
+                            if (dirty) notify({ ok: true, text: "已取消，未保存" });
+                            setEditingId(null);
+                          }}
+                          className="min-w-0 flex-1 rounded-lg border border-sky-500/40 bg-elevated/60 p-2"
+                        >
+                          <input
+                            ref={editInputRef}
+                            value={editTitle}
+                            onChange={(e) => setEditTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.nativeEvent.isComposing) void saveEdit();
+                              // Esc 与 Dismissable onClose 同口径：有改动轻提示（旧版静默丢弃编辑）；
+                              // stopPropagation 拦住冒泡到 Dismissable 的 document keydown，否则同一提示弹两条；
+                              // isComposing 守卫（十五轮）：组词中按 Esc 取候选词不得当作关闭
+                              if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+                                e.stopPropagation();
+                                const dirty = editTitle !== a.title || editDue !== isoToLocalInput(a.due_at);
+                                if (dirty) notify({ ok: true, text: "已取消，未保存" });
+                                setEditingId(null);
+                              }
+                            }}
+                            className="w-full rounded border border-line-strong bg-surface px-2 py-1 text-sm outline-none focus:border-sky-500"
+                          />
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              type="datetime-local"
+                              value={editDue}
+                              onChange={(e) => setEditDue(e.target.value)}
+                              className="rounded border border-line-strong bg-surface px-2 py-1 text-micro tabular-nums outline-none focus:border-sky-500"
+                            />
+                            <div className="ml-auto flex gap-2">
+                              <button onClick={() => setEditingId(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
+                              <button onClick={() => void saveEdit()} disabled={!editTitle.trim() || editSaving} className="rounded bg-sky-600 px-2.5 py-1 text-micro font-medium text-white hover:bg-sky-500 disabled:opacity-50">保存</button>
+                            </div>
+                          </div>
+                        </Dismissable>
+                      ) : (
+                        <>
+                          <TodoCircle size="md" done={false} disabled={busyId === a.id} onClick={() => toggleDone(a)} />
+                          <ActionRow a={a} space={spaces.find((sp) => sp.id === a.space_id)} onMenu={openMenu} />
+                          {/* 编辑/删除收进 ⋯ 菜单（REQ-009 滚动：行面只留打卡与菜单入口） */}
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {/* 今日已完成 */}
+              {done.length > 0 && (
+                <details className="mt-2 border-t border-line-soft pt-2">
+                  <summary className="cursor-pointer text-xs text-ink-dim">今日已完成 {done.length} 项（可恢复）</summary>
+                  <ul className="mt-1.5 space-y-1">
+                    {done.map((a) => (
+                      <li key={a.id} className="group flex items-center gap-3 rounded-lg px-2 py-1">
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600/80 text-white"><Check size={11} strokeWidth={3} /></span>
+                        <span className="min-w-0 flex-1 truncate text-xs text-ink-dim line-through">{a.title}</span>
+                        {a.repeat_daily && a.repeat_done_count > 0 && (
+                          <span className="shrink-0 text-badge text-success">×{a.repeat_done_count}</span>
+                        )}
+                        <button
+                          onClick={() => toggleDone(a)}
+                          disabled={busyId === a.id}
+                          title="恢复为未完成"
+                          className="row-actions hidden shrink-0 rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-warn group-hover:block disabled:opacity-50"
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+        </>
+      ))}
+    </section>
+  );
+}

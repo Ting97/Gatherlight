@@ -1,0 +1,463 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowLeft, Cake, Calendar, Clock, Coins, Heart, Pencil, Pin, Plus, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import Skeleton from "@/components/skeleton";
+import ContactFormModal from "@/components/contact-form";
+import { TagChip, TONE_BG } from "@/components/tag-chip";
+import { api, ApiClientError } from "@/shared/api"; // 统一走 401 收口层：会话失效跳 /login（裸 client-api 不跳）
+import { toast } from "@/shared/ui/toast";
+import { GROUP_EMOJI, TYPE_EMOJI, birthdayInfoOf, displaySummary, importanceLabel, type InteractionType } from "@/lib/social";
+import { yuan } from "@/lib/finance"; // 金额展示统一走共享 yuan()（整数运算），替换原本地浮点除法版本（¥ 前缀在各调用点拼接）
+import { GROUP_TONE } from "@/lib/group-tone";
+import { useArmConfirm } from "@/lib/use-arm-confirm";
+import { bjDayIdx } from "@/lib/bj-time"; // 实现单源 @shiguangri/shared（UTC+8 推算，禁本地 getter）
+import { InteractionFormModal } from "../../../components/contacts/interaction-form-modal";
+
+interface Contact {
+  id: string;
+  name: string;
+  alias: string | null;
+  group_tag: string;
+  birthday: string | null;
+  birthday_cal: string | null;
+  lunar_month: number | null;
+  lunar_day: number | null;
+  lunar_leap: boolean | null;
+  anniversary: string | null;
+  intimacy: number;
+  importance: number;
+  notes: string | null;
+  created_at: string;
+  ai_profile: { summary: string; likes: string[]; dislikes: string[]; facts: string[] } | null;
+  ai_profile_at: string | null;
+}
+interface TimelineItem {
+  id: string;
+  type: InteractionType | string;
+  summary: string | null;
+  occurred_at: string | null;
+  created_at: string;
+  entry_text: string | null;
+  tx_amount_cents: number | null;
+  tx_direction: "out" | "in" | null;
+  tx_category: string | null;
+}
+interface MoneyItem {
+  id: string;
+  direction: "out" | "in";
+  amount_cents: number;
+  category: string;
+  note: string | null;
+  occurred_at: string;
+}
+
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const zhDay = (iso: string) => {
+  const t = Date.parse(iso);
+  const diff = bjDayIdx(Date.now()) - bjDayIdx(t);
+  const d = new Date(t + 8 * 3600_000);
+  const label = diff === 0 ? "今天" : diff === 1 ? "昨天" : `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  return label;
+};
+/** ISO → 北京时间 MM-DD HH:mm（「提炼于」展示用，禁本地 getter） */
+const bjMDHM = (iso: string) => {
+  const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
+  return `${pad2(d.getUTCMonth() + 1)}-${pad2(d.getUTCDate())} ${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
+};
+
+export function ContactDetailPage() {
+  // 静态导出壳页的水合参数是构建期占位 "__shell__"（硬加载详情 URL 时），此时从真实地址解析 id
+  const params = useParams<{ id: string }>();
+  const id = !params.id || params.id === "__shell__"
+    ? (typeof window !== "undefined" ? window.location.pathname.split("/").filter(Boolean)[1] ?? "" : "")
+    : params.id;
+  const router = useRouter();
+  const [contact, setContact] = useState<Contact | null>(null);
+  const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [money, setMoney] = useState<MoneyItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  // 加载失败态：与 404（真不存在）区分开（历史 bug：请求失败也渲染「联系人不存在」）
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [rev, setRev] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [profiling, setProfiling] = useState(false); // AI 交往画像生成中
+  // 删除档案两步确认（全站规范，替代原生 confirm）
+  const armDelete = useArmConfirm();
+  // 往来时间线单条删除：重入锁（deletingId）+ 两步确认统一走 useArmConfirm
+  // （手写三件套缺 armedIdRef 镜像，<16ms 双击要第三击才确认——十四轮收口）
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const armDel = useArmConfirm();
+  // load 竞态序号：只允许最新一次请求落地（见 load 内说明）
+  const loadSeqRef = useRef(0);
+
+  const load = useCallback(async () => {
+    // seq 竞态守卫（全站范式）：id/rev 切换触发的并发 load 只有最新一次允许落地，
+    // 防慢请求后到覆盖新数据（如快速重试或往来增删与重载并发）
+    const seq = ++loadSeqRef.current;
+    try {
+      const j = await api(`/api/contacts/${id}`, "GET");
+      if (seq !== loadSeqRef.current) return;
+      setContact(j.contact ?? null);
+      setTimeline(j.timeline ?? []);
+      setMoney(j.money ?? []);
+    } catch (e) {
+      if (seq !== loadSeqRef.current) return;
+      throw e;
+    }
+  }, [id]);
+
+  async function runProfile() {
+    if (profiling) return;
+    setProfiling(true);
+    try {
+      const j = await api(`/api/contacts/${id}/ai-profile`, "POST", undefined, undefined, { timeoutMs: 100_000 });
+      // 渲染处直读 .likes.length / .dislikes / .facts：畸形 200 缺数组会整页崩溃，先验形状（同 use-todo-actions 对 decompose 的防御）
+      const p = j?.profile as Contact["ai_profile"] | null | undefined;
+      const okShape = !!p && Array.isArray(p.likes) && Array.isArray(p.dislikes) && Array.isArray(p.facts);
+      setContact((c) => (c ? { ...c, ai_profile: okShape ? p : null, ai_profile_at: okShape ? new Date().toISOString() : null } : c));
+      if (!okShape) throw new Error("画像数据不完整，请稍后重试");
+      toast("✨ 交往画像已更新");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setProfiling(false);
+    }
+  }
+
+  useEffect(() => {
+    setLoading(true);
+    setLoadErr(null);
+    load()
+      .catch((e) => {
+        // 404 才是「不存在」；其余失败置错误态（信息可见 + 重试），不再伪装成 404
+        if (e instanceof ApiClientError && e.status === 404) setContact(null);
+        else setLoadErr(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => setLoading(false));
+  }, [load, rev]);
+
+  function retryLoad() {
+    setRev((r) => r + 1);
+  }
+
+  if (loading) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <Skeleton rows={3} className="py-2" />
+        </div>
+      </main>
+    );
+  }
+  if (loadErr) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <div className="py-16 text-center">
+            <p className="text-sm text-danger">加载失败：{loadErr}</p>
+            <button onClick={retryLoad} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
+              重试
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+  if (!contact) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <p className="py-16 text-center text-xs text-ink-dim">联系人不存在</p>
+        </div>
+      </main>
+    );
+  }
+
+  const bd = birthdayInfoOf(contact);
+  const giftIn = money.filter((m) => m.direction === "in").reduce((s, m) => s + m.amount_cents, 0);
+  const giftOut = money.filter((m) => m.direction === "out").reduce((s, m) => s + m.amount_cents, 0);
+
+  async function removeInteraction(id: string) {
+    if (deletingId) return;
+    if (!armDel.arm(id)) return;
+    setDeletingId(id);
+    try {
+      await api(`/api/interactions/${id}`, "DELETE");
+      toast("🗑 往来已删除");
+      await load();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  async function removeContact() {
+    if (!armDelete.arm(contact!.id)) return;
+    try {
+      await api(`/api/contacts/${contact!.id}`, "DELETE");
+      router.push("/contacts");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    }
+  }
+
+  return (
+    <main className="min-h-screen text-ink">
+      <div className="mx-auto max-w-2xl px-5 py-8">
+
+        <Link href="/contacts" className="mb-4 inline-flex items-center gap-1 text-xs text-ink-dim transition hover:text-accent">
+          <ArrowLeft size={12} aria-hidden /> 返回人际
+        </Link>
+
+        {/* 档案头卡 */}
+        <section className="glass mb-4 rounded-2xl p-5">
+          <div className="flex items-start gap-4">
+            <span
+              className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-line text-2xl ${TONE_BG[GROUP_TONE[contact.group_tag] ?? "sky"]}`}
+            >
+              {GROUP_EMOJI[contact.group_tag] ?? "👤"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <h1 className="flex flex-wrap items-baseline gap-2 text-xl font-bold text-ink">
+                {contact.name}
+                {contact.alias && <span className="text-sm font-normal text-ink-dim">（{contact.alias}）</span>}
+                <TagChip label={contact.group_tag} tone={GROUP_TONE[contact.group_tag] ?? "sky"} size="sm" className="font-normal" />
+                <span className="rounded bg-gradient-to-r from-sky-500/20 to-indigo-500/20 px-1.5 py-0.5 text-badge font-normal text-accent">
+                  {importanceLabel(contact.importance)}
+                </span>
+              </h1>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-mute">
+                {bd && (
+                  <>
+                    <TagChip
+                      icon={<Cake size={12} />}
+                      label={`生日 ${bd.date}${bd.lunar && bd.nextSolar ? `（${bd.nextSolar}）` : ""}`}
+                      tone="rose"
+                      size="sm"
+                    />
+                    {bd.countdown != null && (
+                      <span className="text-ai">
+                        · {bd.countdown === 0 ? "今天生日" : bd.countdown === 1 ? "明天生日" : `${bd.countdown} 天后生日`}
+                      </span>
+                    )}
+                  </>
+                )}
+                {contact.anniversary && (() => {
+                  const [, m, d] = contact.anniversary.split("-");
+                  return <TagChip icon={<Heart size={12} />} label={`纪念日 ${Number(m)}月${Number(d)}日`} tone="rose" size="sm" />;
+                })()}
+                <TagChip icon={<Calendar size={12} />} label={`${timeline.length} 次往来`} tone="sky" size="sm" />
+                {money.length > 0 && (
+                  <TagChip icon={<Coins size={12} />} label={`收 ¥${yuan(giftIn)} / 送 ¥${yuan(giftOut)}`} tone="rose" size="sm" className="tabular-nums" />
+                )}
+              </div>
+            </div>
+            <div className="flex shrink-0 gap-1">
+              {/* 触控热区：px-2 py-1 只有 ~29px 高，390px 小屏误触率高（008 轮 reminders 同款教训）→ p-2 */}
+              <button onClick={() => setEditing(true)} title="编辑档案" className="rounded p-2 text-ink-mute hover:bg-soft hover:text-accent">
+                <Pencil size={13} />
+              </button>
+              <button
+                onClick={removeContact}
+                title={armDelete.armedId ? "3 秒内再点确认删除（往来时间线将一并删除，动态与流水不受影响）" : "删除联系人"}
+                className={`flex items-center rounded p-2 text-[10px] font-medium leading-none ${armDelete.armedId ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:bg-soft hover:text-danger"}`}
+              >
+                {armDelete.armedId ? "确认删除?" : <Trash2 size={13} />}
+              </button>
+            </div>
+          </div>
+          {/* 亲密度 */}
+          <div className="mt-4">
+            <div className="mb-1 flex items-center justify-between text-micro text-ink-dim">
+              <span>亲密度</span>
+              <span className="tabular-nums">{contact.intimacy}/100</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-elevated">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-sky-500 to-pink-400 transition-all duration-500"
+                style={{ width: `${contact.intimacy}%` }}
+              />
+            </div>
+          </div>
+          {contact.notes && (
+            <p className="mt-3 whitespace-pre-wrap rounded-lg border border-line-soft bg-bg/50 px-3 py-2 text-xs leading-relaxed text-ink-soft">
+              {contact.notes}
+            </p>
+          )}
+        </section>
+
+        {/* AI 交往画像（W10）：基于往来记录提炼喜好/忌讳/重要事实 */}
+        <section className="glass mb-4 rounded-2xl p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+              <Sparkles size={14} className="text-ai" aria-hidden />
+              AI 交往画像
+              {contact.ai_profile_at && (
+                <span className="text-micro font-normal text-ink-dim">提炼于 {bjMDHM(contact.ai_profile_at)}</span>
+              )}
+            </h2>
+            <button
+              onClick={runProfile}
+              disabled={profiling}
+              className="whitespace-nowrap rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-ai transition hover:bg-purple-500/20 disabled:opacity-50"
+            >
+              {profiling ? "提炼中…" : contact.ai_profile ? "重新提炼" : "提炼交往画像"}
+            </button>
+          </div>
+          {profiling && <p className="mt-3 animate-pulse text-xs text-ai/80">正在通读往来记录，总结喜好 / 忌讳 / 值得记住的事…</p>}
+          {!profiling && !contact.ai_profile && (
+            <p className="mt-3 text-xs leading-relaxed text-ink-dim">
+              让 AI 通读与 TA 的往来记录和人情账，提炼交往风格、喜好与忌讳 —— 见面前扫一眼。
+            </p>
+          )}
+          {!profiling && contact.ai_profile && (
+            <div className="mt-3 space-y-2.5">
+              <p className="text-sm leading-relaxed text-ink">{contact.ai_profile.summary}</p>
+              {contact.ai_profile.likes.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-0.5 text-micro text-success/80"><Heart size={11} aria-hidden /> 喜欢</span>
+                  {contact.ai_profile.likes.map((x) => (
+                    <span key={x} className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro text-success">{x}</span>
+                  ))}
+                </div>
+              )}
+              {contact.ai_profile.dislikes.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-0.5 text-micro text-danger/80"><TriangleAlert size={11} aria-hidden /> 忌讳</span>
+                  {contact.ai_profile.dislikes.map((x) => (
+                    <span key={x} className="rounded-full bg-rose-500/10 px-2 py-0.5 text-micro text-danger">{x}</span>
+                  ))}
+                </div>
+              )}
+              {contact.ai_profile.facts.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="flex items-center gap-0.5 text-micro text-accent/80"><Pin size={11} aria-hidden /> 记住</span>
+                  {contact.ai_profile.facts.map((x) => (
+                    <span key={x} className="rounded-full bg-sky-500/10 px-2 py-0.5 text-micro text-accent">{x}</span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* 一起经历过的事 */}
+        <section className="glass mb-4 rounded-2xl p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft">
+              <Clock size={14} className="text-accent" aria-hidden />
+              一起经历过的事
+              <span className="text-xs font-normal text-ink-dim">来自动态识别 + 手动补记</span>
+            </h2>
+            <button onClick={() => setAdding(true)} className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-sky-500/20">
+              <Plus size={12} aria-hidden /> 补一笔往来
+            </button>
+          </div>
+          {timeline.length === 0 ? (
+            <p className="py-6 text-center text-xs text-ink-faint">
+              还没有往来记录 —— 动态里提到「{contact.name}」会自动记入，或点右上角补一笔
+            </p>
+          ) : (
+            <ol className="relative space-y-4">
+              {timeline.map((t, idx) => {
+                const when = t.occurred_at ?? t.created_at;
+                return (
+                  <li key={t.id} className="group relative flex gap-3">
+                    {idx < timeline.length - 1 && (
+                      <span className="absolute left-[13px] top-7 -bottom-2 w-px bg-gradient-to-b from-sky-500/40 to-indigo-500/10" />
+                    )}
+                    <span className="z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-sm">
+                      {TYPE_EMOJI[t.type as InteractionType] ?? "•"}
+                    </span>
+                    <div className="min-w-0 flex-1 rounded-xl border border-line-soft bg-bg/40 px-3 py-2">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="rounded bg-elevated px-1.5 py-0.5 text-badge text-ink-mute">{t.type}</span>
+                        <span className="shrink-0 tabular-nums text-ink-dim">{zhDay(when)}</span>
+                        {t.tx_amount_cents != null && (
+                          <span className={`shrink-0 tabular-nums ${t.tx_direction === "out" ? "text-danger" : "text-success"}`}>
+                            {t.tx_direction === "out" ? "送出" : "收到"} ¥{yuan(t.tx_amount_cents)}
+                          </span>
+                        )}
+                        <span className="flex-1" />
+                        <button
+                          onClick={() => void removeInteraction(t.id)}
+                          disabled={deletingId === t.id}
+                          title={armDel.armedId === t.id ? "3 秒内再点确认删除（仅删除这条往来，档案与流水不受影响）" : "删除这条往来"}
+                          className={`row-actions-hidden shrink-0 rounded px-1 py-0.5 text-micro transition ${
+                            armDel.armedId === t.id ? "bg-rose-500/15 text-danger" : "text-ink-faint opacity-0 hover:text-danger group-hover:opacity-100 focus:opacity-100"
+                          }`}
+                        >
+                          {deletingId === t.id ? "删除中…" : armDel.armedId === t.id ? "确认删除" : <Trash2 size={11} aria-hidden />}
+                        </button>
+                      </div>
+                      {t.summary && <p className="mt-1 text-sm text-ink">{displaySummary(t.summary)}</p>}
+                      {t.entry_text && t.entry_text !== t.summary && (
+                        <p className="mt-0.5 truncate text-micro text-ink-dim">「{t.entry_text}」</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </section>
+
+        {/* 关联人情账 */}
+        {money.length > 0 && (
+          <section className="glass rounded-2xl p-5">
+            <h2 className="mb-3 flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
+              <TagChip icon={<Coins size={12} />} label="关联人情账" tone="rose" />
+              {/* 净额为负（净送出）必须带 - 号：绝对值裸显会被误读成净收入 */}
+              <span className="text-xs font-normal text-ink-dim">流水中「对方」为 TA 的人情往来 · 净额 {giftIn - giftOut < 0 ? "-" : ""}¥{yuan(Math.abs(giftIn - giftOut))}</span>
+            </h2>
+            <ul className="space-y-1">
+              {money.map((m) => (
+                <li key={m.id} className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-elevated/60">
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-badge ${m.direction === "out" ? "bg-rose-500/15 text-danger" : "bg-emerald-500/15 text-success"}`}>
+                    {m.direction === "out" ? "送" : "收"}
+                  </span>
+                  <span className="flex-1 truncate text-xs text-ink-soft">{m.note || m.category}</span>
+                  <span className="shrink-0 text-micro tabular-nums text-ink-dim">{zhDay(m.occurred_at)}</span>
+                  <span className={`shrink-0 text-sm font-semibold tabular-nums ${m.direction === "out" ? "text-danger" : "text-success"}`}>
+                    {m.direction === "out" ? "-" : "+"}
+                    ¥{yuan(m.amount_cents)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
+        {editing && (
+          <ContactFormModal
+            initial={contact}
+            onClose={() => setEditing(false)}
+            onSaved={async (text) => {
+              setEditing(false);
+              toast(text);
+              await load();
+            }}
+          />
+        )}
+
+        {adding && (
+          <InteractionFormModal
+            contactName={contact.name}
+            onClose={() => setAdding(false)}
+            onSaved={async (text) => {
+              setAdding(false);
+              toast(text);
+              await load();
+            }}
+          />
+        )}
+      </div>
+    </main>
+  );
+}
+

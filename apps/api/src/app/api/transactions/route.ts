@@ -1,0 +1,136 @@
+import { NextResponse } from "next/server";
+import { pool } from "@/server/platform/db";
+import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { ApiError } from "@/server/platform/http/errors";
+import { isValidYearMonth, optionalTrimmed, assertUuidParam } from "@/server/platform/http/validate";
+import { isParsableMoment } from "@/server/platform/http/datetime";
+import { TX_CATEGORIES } from "@shiguangri/shared/finance";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /api/transactions?month=YYYY-MM&status=all|draft|confirmed&limit=&offset= —— 月度流水列表。
+ * limit>0 时分页返回并附 total 计数（配合「加载更多」）；limit 缺省/0 = 全量，兼容旧调用方 */
+export const GET = withModule("finance", async (req, { user }) => {
+  const url = new URL(req.url);
+  const month = url.searchParams.get("month") ?? "";
+  const status = url.searchParams.get("status") ?? "all";
+  // 仅验形状会放行 2025-13 → to_char 永不命中静默空数据：月份需在 01-12
+  if (!isValidYearMonth(month)) {
+    throw ApiError.badRequest("month 需为 YYYY-MM（月份 01-12）");
+  }
+  const draftCond =
+    status === "draft" ? " and t.is_draft = true" : status === "confirmed" ? " and t.is_draft = false" : "";
+  // 分页参数：非法/负值归零，上限 500 防误传巨值拖库
+  const num = (v: string | null) => {
+    const n = Math.floor(Number(v));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+  const limit = Math.min(num(url.searchParams.get("limit")), 500);
+  const offset = num(url.searchParams.get("offset"));
+  // sargable 化（对齐 finance/overview 九-F 口径）：to_char(occurred_at…)='$3' 对列套函数，
+  // idx_tx_user_time 走不了范围扫描；北京固定 UTC+8，月界预计算成半开区间 [start, end)
+  const [y, m] = month.split("-").map(Number);
+  const monthStart = new Date(Date.UTC(y, m - 1, 1, -8)).toISOString();
+  const monthEnd = new Date(Date.UTC(y, m, 1, -8)).toISOString();
+  const where = `where t.user_id = $1${draftCond}
+       and t.occurred_at >= $2 and t.occurred_at < $3`;
+
+  const [list, count] = await Promise.all([
+    pool.query(
+      `select t.id, t.direction, t.amount_cents, t.category, t.counterparty, t.note,
+            t.occurred_at, t.is_draft, t.source, t.entry_id, t.account_id,
+            a.name as account_name, a.icon as account_icon
+     from transactions t
+     left join accounts a on a.id = t.account_id
+     ${where}
+     order by t.occurred_at desc, t.created_at desc, t.id desc${limit > 0 ? ` limit $4 offset $5` : ""}`,
+      limit > 0 ? [user.id, monthStart, monthEnd, limit, offset] : [user.id, monthStart, monthEnd],
+    ),
+    limit > 0
+      ? pool.query(`select count(*)::int as n from transactions t ${where}`, [user.id, monthStart, monthEnd])
+      : null,
+  ]);
+  return NextResponse.json({
+    transactions: list.rows,
+    ...(limit > 0 ? { total: count!.rows[0].n } : {}),
+  });
+});
+
+/** POST /api/transactions —— 手动记账（直接为已确认流水） */
+export const POST = withModule("finance", async (req, { user }) => {
+  const body = (await readJsonCapped(req) as any) as {
+    direction?: "out" | "in";
+    amountCents?: number;
+    category?: string;
+    accountId?: string | null;
+    occurredAt?: string;
+    note?: string | null;
+    counterparty?: string | null;
+  };
+
+  if (body.direction !== "out" && body.direction !== "in") {
+    throw ApiError.badRequest("方向需为 out/in");
+  }
+  if (!Number.isInteger(body.amountCents) || (body.amountCents ?? 0) <= 0) {
+    throw ApiError.badRequest("金额必须大于 0");
+  }
+  // amount_cents 为 int4 列：与 AI 契约同上限（¥100 万），巨款直落会 22003 → 500
+  if ((body.amountCents ?? 0) > 100_000_000) {
+    throw ApiError.badRequest("单笔金额超出上限（¥100 万）");
+  }
+  // 可选字符串字段预检：非字符串（如 123）原 `?.trim()` 会 TypeError → 500，统一 400
+  const category = optionalTrimmed(body.category, "category") || "其他";
+  if (!TX_CATEGORIES.includes(category)) {
+    throw ApiError.badRequest("无效分类");
+  }
+  // 长度上限（与 people counterparty ≤30 同口径）：无上限值直落 text 列
+  // 会进流水列表、人情账匹配（counterparty）与复盘聚合事实行
+  const rawCounterparty = optionalTrimmed(body.counterparty, "counterparty");
+  if (rawCounterparty && rawCounterparty.length > 30) throw ApiError.badRequest("交易对象最长 30 字");
+  const counterparty = rawCounterparty ?? null;
+  const rawNote = optionalTrimmed(body.note, "note");
+  if (rawNote && rawNote.length > 200) throw ApiError.badRequest("备注最长 200 字");
+  const note = rawNote ?? null;
+  // occurredAt 类型 + 语义双守卫（与 PATCH 同口径）：非字符串（如 epoch 数字）会被 new Date
+  // 静默接受成错误日期入库，isNaN 拦不住——必须先拦类型
+  if (body.occurredAt !== undefined && (typeof body.occurredAt !== "string" || !isParsableMoment(body.occurredAt))) {
+    throw ApiError.badRequest("时间需为合法时间（ISO 格式，如 2025-06-01T09:00）");
+  }
+  const occurredAt = body.occurredAt ? new Date(body.occurredAt) : new Date();
+  if (isNaN(occurredAt.getTime())) {
+    throw ApiError.badRequest("时间格式不正确");
+  }
+
+  // 账户归属校验（只能挂自己的账户）
+  let accountId: string | null = null;
+  if (body.accountId) {
+    assertUuidParam(body.accountId, "accountId"); // 非法 uuid 落 SQL 会 22P02 → 500
+    const owned = await pool.query(
+      `select id from accounts where id = $1 and user_id = $2 and archived = false`,
+      [body.accountId, user.id],
+    );
+    if (owned.rows.length === 0) {
+      throw ApiError.badRequest("账户不存在");
+    }
+    accountId = owned.rows[0].id;
+  }
+
+  const created = (
+    await pool.query(
+      `insert into transactions (user_id, direction, amount_cents, category, account_id, counterparty, note, occurred_at, source, is_draft)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, 'manual', false) returning *`,
+      [
+        user.id,
+        body.direction,
+        body.amountCents,
+        category,
+        accountId,
+        counterparty,
+        note,
+        occurredAt.toISOString(),
+      ],
+    )
+  ).rows[0];
+  return NextResponse.json({ transaction: created });
+});

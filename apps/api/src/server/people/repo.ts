@@ -1,0 +1,227 @@
+/**
+ * people 域 repo（REQ-004 批③ FR-B1.2）：contacts / interactions / AI 画像 SQL 唯一发生地。
+ * 只做数据访问，不做业务判断；动态 set 列名全部来自代码内字面量（参数化值）。
+ */
+import { pool } from "@/server/platform/db";
+
+/** 动态 update 的字段集：列名 → 值（顺序即占位符顺序） */
+export type UpdateField = readonly [column: string, value: unknown];
+
+export const contactsRepo = {
+  /** 列表：含互动次数/最近往来/人情往来净额 */
+  listWithStats(userId: string) {
+    return pool.query(
+      `select c.id, c.name, c.alias, c.group_tag,
+              to_char(c.birthday, 'YYYY-MM-DD') as birthday,
+              c.birthday_cal, c.lunar_month, c.lunar_day, c.lunar_leap,
+              to_char(c.anniversary, 'YYYY-MM-DD') as anniversary,
+              c.intimacy, c.importance, c.notes, c.created_at,
+              -- ::int 收口（二十轮）：count(*) 是 int8，node-pg 返回 string，前端 TS 类型声明 number
+              (select count(*)::int from interactions i where i.contact_id = c.id) as interaction_count,
+              (select i.occurred_at from interactions i where i.contact_id = c.id
+                order by i.occurred_at desc nulls last limit 1) as last_at,
+              (select i.summary from interactions i where i.contact_id = c.id
+                order by i.occurred_at desc nulls last limit 1) as last_summary,
+              coalesce(g.gift_net_cents, 0) as gift_net_cents
+         from contacts c
+         left join (
+           -- 人情净额先按对方聚合一次再 join（contacts.name 有 (user_id,name) 唯一约束，1:1）：
+           -- 旧相关子查询逐联系人扫 transactions（counterparty/category 无索引支撑），联系人多×流水多时列表页明显变慢
+           select t.counterparty,
+                  sum(case when t.direction = 'out' then -t.amount_cents else t.amount_cents end)::bigint as gift_net_cents
+             from transactions t
+            where t.user_id = $1 and t.counterparty is not null
+              and t.category = '人情往来' and t.is_draft = false
+            group by t.counterparty
+         ) g on g.counterparty = c.name
+        where c.user_id = $1
+        order by last_at desc nulls last, c.created_at desc, c.id desc`,
+      [userId],
+    );
+  },
+  /** 建档：with ins 返回 birthday/anniversary 用 to_char 转字符串，防 pg date 被序列化成 UTC ISO 退一天 */
+  create(
+    userId: string,
+    p: {
+      name: string;
+      alias: string | null;
+      group: string;
+      birthday: string | null;
+      birthdayCal: string;
+      lunarMonth: number | null;
+      lunarDay: number | null;
+      lunarLeap: boolean;
+      anniversary: string | null;
+      importance: number;
+      intimacy: number;
+      notes: string | null;
+    },
+  ) {
+    return pool.query(
+      `with ins as (
+         insert into contacts (user_id, name, alias, group_tag, birthday, birthday_cal, lunar_month, lunar_day, lunar_leap, anniversary, importance, intimacy, notes)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         returning *
+       )
+       select ins.*, to_char(ins.birthday, 'YYYY-MM-DD') as birthday,
+              to_char(ins.anniversary, 'YYYY-MM-DD') as anniversary
+       from ins`,
+      [
+        userId,
+        p.name,
+        p.alias,
+        p.group,
+        p.birthday,
+        p.birthdayCal,
+        p.lunarMonth,
+        p.lunarDay,
+        p.lunarLeap,
+        p.anniversary,
+        p.importance,
+        p.intimacy,
+        p.notes,
+      ],
+    );
+  },
+  /** TA 的档案基本信息（含 AI 画像缓存与生成时间） */
+  async detailById(id: string, userId: string) {
+    return (
+      await pool.query(
+        `select id, name, alias, group_tag,
+                to_char(birthday, 'YYYY-MM-DD') as birthday,
+                birthday_cal, lunar_month, lunar_day, lunar_leap,
+                to_char(anniversary, 'YYYY-MM-DD') as anniversary,
+                intimacy, importance, notes, created_at, ai_profile, to_char(ai_profile_at, 'YYYY-MM-DD HH24:MI') as ai_profile_at
+         from contacts where id = $1 and user_id = $2`,
+        [id, userId],
+      )
+    ).rows[0];
+  },
+  async existsById(id: string, userId: string) {
+    return (
+      await pool.query(`select id from contacts where id = $1 and user_id = $2`, [id, userId])
+    ).rows[0];
+  },
+  updateFields(id: string, userId: string, fields: readonly UpdateField[], exec: Pick<typeof pool, "query"> = pool) {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    for (const [col, v] of fields) {
+      vals.push(v);
+      sets.push(`${col} = $${vals.length}`);
+    }
+    vals.push(id, userId);
+    return exec.query(
+      `with upd as (
+         update contacts set ${sets.join(", ")}
+         where id = $${vals.length - 1} and user_id = $${vals.length}
+         returning *
+       )
+       select upd.*, to_char(upd.birthday, 'YYYY-MM-DD') as birthday,
+              to_char(upd.anniversary, 'YYYY-MM-DD') as anniversary
+       from upd`,
+      vals,
+    );
+  },
+  remove(id: string, userId: string) {
+    return pool.query(`delete from contacts where id = $1 and user_id = $2 returning id`, [id, userId]);
+  },
+  /** 一起经历过的事：往来事件（含来源动态原文与关联流水金额）。
+   * user_id 谓词是纵深防御：contact_id 已由调用方做属主校验，双条件防 contact_id 传错时跨用户读时间线 */
+  timelineOf(contactId: string, userId: string) {
+    return pool.query(
+      `select i.id, i.type, i.summary, i.occurred_at, i.created_at,
+              e.raw_text as entry_text,
+              t.amount_cents as tx_amount_cents, t.direction as tx_direction, t.category as tx_category
+         from interactions i
+         left join entries e on e.id = i.entry_id
+         left join transactions t on t.id = i.tx_id
+        where i.contact_id = $1 and i.user_id = $2
+        order by coalesce(i.occurred_at, i.created_at) desc, i.id desc
+        limit 100`,
+      [contactId, userId],
+    );
+  },
+  /** 关联人情账：流水的「对方」字段命中联系人名（含语音/手动/导入，草稿除外） */
+  moneyOf(userId: string, name: string) {
+    return pool.query(
+      `select id, direction, amount_cents, category, note, occurred_at
+         from transactions
+        where user_id = $1 and counterparty = $2 and category = '人情往来' and is_draft = false
+        order by occurred_at desc nulls last, id desc
+        limit 50`,
+      [userId, name],
+    );
+  },
+  /** AI 画像缓存只读 */
+  async aiProfileOf(id: string, userId: string) {
+    return (
+      await pool.query(`select ai_profile, ai_profile_at from contacts where id = $1 and user_id = $2`, [id, userId])
+    ).rows[0];
+  },
+  /** 画像提炼的档案输入 */
+  async profileInputById(id: string, userId: string) {
+    return (
+      await pool.query(
+        `select id, name, alias, group_tag, birthday, anniversary, importance, notes
+         from contacts where id = $1 and user_id = $2`,
+        [id, userId],
+      )
+    ).rows[0];
+  },
+  setAiProfile(id: string, userId: string, profileJson: string) {
+    return pool.query(
+      `update contacts set ai_profile = $3, ai_profile_at = now() where id = $1 and user_id = $2
+       returning ai_profile, ai_profile_at`,
+      [id, userId, profileJson],
+    );
+  },
+};
+
+export const interactionsRepo = {
+  create(userId: string, contactId: string, type: string, summary: string | null, occurredAtIso: string) {
+    return pool.query(
+      `insert into interactions (user_id, contact_id, type, summary, occurred_at)
+       values ($1, $2, $3, $4, $5) returning *`,
+      [userId, contactId, type, summary, occurredAtIso],
+    );
+  },
+  listByContact(userId: string, contactId: string) {
+    return pool.query(
+      `select id, type, summary, occurred_at, entry_id, created_at
+       from interactions where user_id = $1 and contact_id = $2
+       order by occurred_at desc, created_at desc, id desc`,
+      [userId, contactId],
+    );
+  },
+  updateFields(id: string, userId: string, sets: readonly string[], vals: readonly unknown[]) {
+    return pool.query(
+      `update interactions set ${sets.join(", ")} where id = $${vals.length + 1} and user_id = $${vals.length + 2} returning *`,
+      [...vals, id, userId],
+    );
+  },
+  // returning 带 occurred_at：删除让复盘水位（max(occurred_at)）回退，调用方按原发生日失效复盘缓存
+  remove(id: string, userId: string) {
+    return pool.query(`delete from interactions where id = $1 and user_id = $2 returning id, occurred_at`, [id, userId]);
+  },
+  /** 画像提炼的往来记录输入（最近 50 条） */
+  recentForProfile(contactId: string, userId: string) {
+    return pool.query(
+      `select type, summary, occurred_at from interactions
+       where contact_id = $1 and user_id = $2 order by occurred_at desc nulls last, id desc limit 50`,
+      [contactId, userId],
+    );
+  },
+};
+
+export const peopleMoneyRepo = {
+  /** 画像提炼的人情账输入（最近 30 笔；参数顺序沿用原 SQL：$1 对方、$2 用户）。
+   *  与 moneyOf 同口径：只取「人情往来」分类——普通消费同名对方不是人情账 */
+  recentForProfile(name: string, userId: string) {
+    return pool.query(
+      `select direction, amount_cents, category, note, occurred_at from transactions
+       where user_id = $2 and is_draft = false and counterparty = $1 and category = '人情往来'
+       order by occurred_at desc nulls last limit 30`,
+      [name, userId],
+    );
+  },
+};

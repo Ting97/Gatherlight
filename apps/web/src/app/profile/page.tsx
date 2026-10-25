@@ -1,0 +1,350 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Archive, ChevronRight, Gem, Wrench } from "lucide-react";
+import { api, apiBase } from "@/shared/api";
+import { setSessionToken } from "@shiguangri/shared/client-api";
+import Skeleton from "@/components/skeleton";
+import { toast } from "@/shared/ui/toast";
+import { useSession } from "@/shared/session";
+import { TagChip } from "@/components/tag-chip";
+import ModulePrefsSection from "@/components/module-prefs-section";
+import XunjiKeySection from "@/components/xunji-key-section";
+import { useArmConfirm } from "@/lib/use-arm-confirm";
+import { clearCachedApiData } from "@/lib/sw-cache";
+
+const zhDate = (iso: string | null) => {
+  if (!iso) return "—";
+  // 北京时间口径：UTC getter + 8h（getUTC* 等本地 getter 在非中国时区设备会错 8 小时）
+  const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
+  return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+};
+
+export default function ProfilePage() {
+  // 会话走 useSession() 单源（session.tsx 约定：子页面禁止散拉 /api/auth/me——旧版与 Provider 双请求）
+  const { user: me, loading: meLoading, refresh } = useSession();
+  const armLogout = useArmConfirm();
+  const [nickname, setNickname] = useState("");
+  const [savedNick, setSavedNick] = useState<string | null>(null);
+  const [currentPwd, setCurrentPwd] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirmPwd, setConfirmPwd] = useState("");
+  const [busy, setBusy] = useState(false);
+  // 昵称草稿只随会话就绪回填一次（此后由输入/保存驱动，避免会话刷新覆盖正在编辑的内容）
+  const nicknameInitRef = useRef(false);
+  const [quotaErr, setQuotaErr] = useState<string | null>(null);
+  const [quota, setQuota] = useState<{
+    plan: string;
+    used: number;
+    limit: number | null;
+    planExpiresAt: string | null;
+    isAdmin: boolean;
+    byModel?: { model: string; all: { calls: number; promptTokens: number; completionTokens: number }; d30: { calls: number } }[];
+  } | null>(null);
+
+  useEffect(() => {
+    if (me && !nicknameInitRef.current) {
+      nicknameInitRef.current = true;
+      setNickname(me.nickname ?? "");
+      setSavedNick(me.nickname ?? "");
+    }
+  }, [me]);
+
+  const loadQuota = useCallback(() => {
+    setQuotaErr(null);
+    // 套餐与 AI 用量（30 天窗口）
+    api("/api/billing/plan")
+      .then((j) => setQuota(j))
+      .catch((e) => setQuotaErr(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  useEffect(() => {
+    loadQuota();
+  }, [loadQuota]);
+
+  async function saveNickname() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const j = await api<any>("/api/auth/profile", "PATCH", { nickname });
+      toast("✅ 昵称已更新（导航栏即刻生效）");
+      setSavedNick(j.nickname);
+      await refresh(); // 经 SessionProvider 重拉 /api/auth/me：Nav 昵称就地生效（替代旧的 location.reload）
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function savePassword() {
+    if (busy) return;
+    if (newPwd.length < 8) {
+      toast("新密码至少 8 位", "err"); // 前端先拦（二十轮）：服务端 422 兜底但往返慢
+      return;
+    }
+    if (newPwd !== confirmPwd) {
+      toast("两次输入的新密码不一致", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/api/auth/profile", "PATCH", {
+        currentPassword: currentPwd || undefined,
+        newPassword: newPwd,
+      });
+      toast("✅ 密码已更新，下次登录请使用新密码");
+      setCurrentPwd("");
+      setNewPwd("");
+      setConfirmPwd("");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "input-glow w-full rounded-xl border border-line-soft bg-surface/60 px-4 py-2.5 text-sm outline-none placeholder:text-ink-faint";
+
+  return (
+    <main className="min-h-screen text-ink">
+      <div className="mx-auto max-w-2xl px-5 py-8">
+        <h1 className="text-gradient mb-1 text-center text-3xl font-bold sm:text-4xl">我的<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">个人设置</span></h1>
+        <p className="mb-5 text-xs text-ink-dim">个性化你的账号信息</p>
+
+        {!me ? (
+          // SessionProvider 自带 401 重定向与 loading 骨架语义：未加载完先出骨架（admin 页同款门）
+          meLoading ? (
+            <Skeleton rows={3} className="py-2" />
+          ) : null
+        ) : (
+          <>
+            {/* 账号资料 */}
+            <section className="glass mb-5 rounded-2xl p-5">
+              <div className="mb-4 flex items-center gap-4">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-xl font-bold text-white shadow-lg shadow-sky-500/30">
+                  {(savedNick || "我").slice(0, 1).toUpperCase()}
+                </div>
+                <div className="text-sm">
+                  <p className="font-medium">{savedNick || "未设置昵称"}</p>
+                  <p className="mt-0.5 flex items-center gap-2 text-xs text-ink-dim">
+                    {me.phone ? (
+                      <>
+                        {me.phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2")}
+                        <span
+                          className={`rounded px-1.5 py-0.5 text-badge ${
+                            me.phoneVerified ? "bg-emerald-500/10 text-success" : "bg-elevated text-ink-mute"
+                          }`}
+                        >
+                          {me.phoneVerified ? "已验证" : "未验证"}
+                        </span>
+                      </>
+                    ) : (
+                      "未绑定手机号"
+                    )}
+                    {me.isAdmin && (
+                      <span className="rounded bg-gradient-to-r from-sky-500/20 to-indigo-500/20 px-1.5 py-0.5 text-badge text-accent">
+                        管理员
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-badge text-ink-faint">加入于 {zhDate(me.createdAt ?? null)}</p>
+                </div>
+              </div>
+
+              <label className="mb-1 block text-xs text-ink-mute">昵称</label>
+              <div className="flex gap-2">
+                <input
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={20}
+                  placeholder="给自己起个名字"
+                  className={`${inputCls} flex-1`}
+                />
+                <button
+                  onClick={saveNickname}
+                  disabled={busy || nickname.trim() === savedNick}
+                  className="btn-primary shrink-0 rounded-xl px-5 text-sm font-medium"
+                >
+                  保存
+                </button>
+              </div>
+            </section>
+
+            {/* 功能管理（REQ-028 用户自选层）：放在账号资料后，最高频设置位 */}
+            <ModulePrefsSection />
+
+            {/* 训记同步（REQ-042 每用户 apiKey 绑定）：放在功能管理后——训练模块的外部同步入口 */}
+            <XunjiKeySection />
+
+            {/* 修改密码 */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="mb-3 text-sm font-semibold text-ink-soft">修改密码</h2>
+              <div className="space-y-3">
+                <input
+                  value={currentPwd}
+                  onChange={(e) => setCurrentPwd(e.target.value)}
+                  type="password"
+                  placeholder="当前密码（从未设过密码可留空）"
+                  className={inputCls}
+                />
+                <input
+                  value={newPwd}
+                  onChange={(e) => setNewPwd(e.target.value)}
+                  type="password"
+                  placeholder="新密码（至少 8 位）"
+                  className={inputCls}
+                />
+                <input
+                  value={confirmPwd}
+                  onChange={(e) => setConfirmPwd(e.target.value)}
+                  type="password"
+                  placeholder="确认新密码"
+                  className={inputCls}
+                />
+                <button
+                  onClick={savePassword}
+                  disabled={busy || !newPwd}
+                  className="btn-primary w-full rounded-xl py-2.5 text-sm font-medium"
+                >
+                  更新密码
+                </button>
+              </div>
+            </section>
+
+            {/* 使用手册（REQ-使用手册） */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="mb-2 text-sm font-semibold text-ink-soft">使用手册</h2>
+              <p className="mb-3 text-micro text-ink-dim">
+                功能介绍与使用方式：一句话记录、AI 五域识别、各模块玩法与小贴士。
+              </p>
+              <a
+                href="/manual"
+                className="inline-flex items-center gap-1 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-medium text-accent transition hover:bg-sky-500/20"
+              >
+                阅读使用手册
+              </a>
+            </section>
+
+                        {/* 会话安全（4-B FR-C1.3 全端登出） */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="mb-2 text-sm font-semibold text-ink-soft">会话安全</h2>
+              <p className="mb-3 text-micro text-ink-dim">
+                吊销本账号在所有设备（网页/App）上的登录状态，适合怀疑账号异常时使用；本机也会一并退出。
+              </p>
+              <button
+                onClick={async () => {
+                  // 两步确认（全站规范）：首点进入待确认态，3 秒内再点执行
+                  if (!armLogout.arm("logout-all")) return;
+                  await api("/api/auth/logout-all", "POST").catch(() => {});
+                  // 全端登出吊销所有会话：本机 token 同步清除 + SW 个人数据缓存一并清（与 session.logout 同口径）
+                  await setSessionToken(null).catch(() => {});
+                  clearCachedApiData();
+                  window.location.href = "/login";
+                }}
+                className={`w-full rounded-xl border py-2.5 text-sm font-medium transition ${armLogout.armedId ? "border-rose-500 bg-rose-500/20 text-danger" : "border-rose-500/40 bg-rose-500/10 text-danger hover:bg-rose-500/20"}`}
+              >
+                {armLogout.armedId ? "确认在所有设备退出？（3 秒内再点）" : "全端登出"}
+              </button>
+            </section>
+
+            {/* 套餐与 AI 用量（M3 商业化） */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Gem size={12} />} label="套餐与 AI 用量" tone="violet" /></h2>
+              {quota ? (
+                <>
+                  <p className="mt-1 text-xs text-ink-dim">
+                    当前套餐：
+                    <span className={quota.plan === "pro" ? "font-semibold text-amber-400" : "font-semibold text-ink"}>
+                      {quota.plan === "pro" ? "Pro" : "免费版"}
+                    </span>
+                    {quota.planExpiresAt && ` · Pro 有效期至 ${zhDate(quota.planExpiresAt)}`}
+                    {quota.isAdmin && " · 管理员不限量"}
+                  </p>
+                  <div className="mt-2.5">
+                    <div className="flex justify-between text-xs text-ink-dim">
+                      <span>近 30 天 AI 识别次数</span>
+                      <span>{quota.used}{quota.limit === null ? "（不限）" : ` / ${quota.limit}`}</span>
+                    </div>
+                    {quota.limit !== null && (
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-elevated">
+                        <div
+                          className={`h-full rounded-full ${quota.used >= quota.limit ? "bg-rose-500" : "bg-sky-500"}`}
+                          style={{ width: `${Math.min(100, (quota.used / quota.limit) * 100)}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  {quota.byModel && quota.byModel.length > 0 && (
+                    <ul className="mt-2.5 space-y-0.5">
+                      {quota.byModel.map((m) => (
+                        <li key={m.model} className="flex items-center gap-2 text-micro tabular-nums text-ink-mute">
+                          <span className="font-medium text-ink-soft">{m.model || "其他模型"}</span>
+                          <span className="ml-auto">
+                            近30天 {m.d30.calls} 次 · 累计 {m.all.calls} 次 /{" "}
+                            {(m.all.promptTokens + m.all.completionTokens).toLocaleString("zh-CN")} tokens
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="mt-2 text-micro text-ink-faint">语音速记、AI 识别、复盘均消耗次数；Pro 不限量。支付通道接入前，内测期间联系管理员开通 Pro。</p>
+                </>
+              ) : quotaErr ? (
+                <div className="mt-1">
+                  <p className="text-xs text-danger">加载失败：{quotaErr}</p>
+                  <button onClick={loadQuota} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
+                    重试
+                  </button>
+                </div>
+              ) : (
+                <div className="mt-2 space-y-1.5"><div className="skeleton h-4 w-40" /><div className="skeleton h-4 w-28" /></div>
+              )}
+              {/* 管理员：后台入口（管理功能集中在 /admin） */}
+              {quota?.isAdmin && (
+                <a
+                  href="/admin"
+                  className="mt-4 flex items-center gap-3 rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-3 transition hover:bg-sky-500/20"
+                >
+                  <span className="flex h-6 w-6 items-center justify-center text-accent"><Wrench size={16} aria-hidden /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold text-accent">后台管理</span>
+                    <span className="block text-micro text-ink-dim">AI prompt 调优 · 邀请与套餐 · Token 消耗</span>
+                  </span>
+                  <ChevronRight size={14} className="text-ink-mute" aria-hidden />
+                </a>
+              )}
+            </section>
+
+            {/* 数据导出（docs/06 P8）：个人数据可携带 */}
+            <section className="glass rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-ink-soft"><TagChip icon={<Archive size={12} />} label="导出我的数据" tone="slate" /></h2>
+              <p className="mt-1 text-xs text-ink-dim">全量备份包含动态、日程、todo、流水、联系人与往来；Markdown 版可读性更好。建议定期下载备份。</p>
+              <div className="mt-3 flex gap-2">
+                {/* apiBase() 对齐：分离部署时裸 /api 会打到静态站点 origin 而 404 */}
+                <a
+                  href={`${apiBase()}/api/export?format=json`}
+                  className="rounded-xl border border-sky-500/40 bg-sky-500/10 px-4 py-2 text-xs font-medium text-accent transition hover:bg-sky-500/20"
+                >
+                  全量备份 (JSON)
+                </a>
+                <a
+                  href={`${apiBase()}/api/export?format=md`}
+                  className="rounded-xl border border-line-soft bg-surface/60 px-4 py-2 text-xs text-ink-soft transition hover:border-sky-500/50"
+                >
+                  动态日记 (Markdown)
+                </a>
+              </div>
+            </section>
+          </>
+        )}
+        <footer className="mt-10 text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">
+            拾光 · 我的
+          </span>
+        </footer>
+      </div>
+    </main>
+  );
+}

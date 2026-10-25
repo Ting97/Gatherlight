@@ -1,0 +1,124 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { uploadImages } from "@/lib/image";
+import type { DesktopImage, Notify } from "./types";
+
+/**
+ * 桌面输入区随附图片状态机（自 page.tsx 原样迁出）：
+ * 选图（≤9 张）→ 发布后并行上传 → 失败标记 error 可用暂存 entryId 补传重试。
+ */
+export function useDesktopPublisher({ setMsg, load }: { setMsg: Notify; load: () => Promise<void> }) {
+  // 桌面输入区：随动态附带的图片（发布后并行上传；失败可重试）
+  const [desktopImages, setDesktopImages] = useState<DesktopImage[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // 最近一次成功发布的动态 id（图片上传失败补传时使用）
+  const lastEntryId = useRef<string | null>(null);
+  // 补传重试进行中锁：防连点并发重复上传同一批图
+  const retryingRef = useRef(false);
+  // 卸载标记：异步回调回来后不再 setState / revoke
+  const unmountedRef = useRef(false);
+  // 镜像当前图片列表供卸载清理读取（cleanup 闭包拿不到最新 state）
+  const imagesRef = useRef<DesktopImage[]>([]);
+  useEffect(() => {
+    imagesRef.current = desktopImages;
+  }, [desktopImages]);
+  useEffect(
+    () => () => {
+      // 卸载时回收尚未消费的 blob URL：正常路径在删除/补传成功时逐个 revoke，这里兜底卸载泄漏
+      unmountedRef.current = true;
+      for (const i of imagesRef.current) URL.revokeObjectURL(i.url);
+    },
+    [],
+  );
+
+  /** 随动态附图：选择（≤9 张，超出的忽略并提示） */
+  function addDesktopImages(files: File[]) {
+    // 已满 9 张先短路提示：原实现 slice(0,0) 后 imgs 为空，误报「格式不支持」（用户选的明明是图片）
+    if (desktopImages.length >= 9) {
+      setMsg({ ok: false, text: "最多添加 9 张，已忽略新选图片" });
+      return;
+    }
+    const imgs = files
+      .filter((f) => /^image\/(jpeg|png|webp|gif)$/.test(f.type))
+      .slice(0, 9 - desktopImages.length)
+      .map((file) => ({ file, url: URL.createObjectURL(file), status: "ready" as const }));
+    if (files.length && !imgs.length) setMsg({ ok: false, text: "仅支持 jpg/png/webp/gif 图片" });
+    else if (imgs.length < files.length) setMsg({ ok: false, text: "最多添加 9 张，多余图片已忽略" });
+    setDesktopImages((prev) => [...prev, ...imgs]);
+  }
+
+  function removeDesktopImage(index: number) {
+    // revoke 在 updater 外（updater 必须纯函数——StrictMode 双调会重复执行副作用）
+    URL.revokeObjectURL(desktopImages[index]?.url ?? "");
+    setDesktopImages((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  /** 上传失败重试：用暂存的 entryId 重新上传仍处于 error 态的图片 */
+  async function retryDesktopUpload() {
+    if (!lastEntryId.current || retryingRef.current) return; // 防重入：连点会并发重复上传同一批图
+    const retryFiles = desktopImages.filter((i) => i.status === "error").map((i) => i.file);
+    if (!retryFiles.length) return;
+    retryingRef.current = true;
+    try {
+      const { failed } = await uploadImages(lastEntryId.current, retryFiles);
+      if (unmountedRef.current) return; // 卸载后不再提示/刷新
+      if (failed.length) {
+        setMsg({ ok: false, text: `仍有 ${failed.length} 张上传失败，请稍后再试` });
+        void load();
+        return;
+      }
+      setDesktopImages([]);
+      setMsg({ ok: true, text: "✨ 图片已补传完成" });
+      void load();
+    } catch {
+      // 兜底：上传异常不抛出点击处理器（裸 rejection 会触发整页刷新）
+      if (!unmountedRef.current) setMsg({ ok: false, text: "网络异常，请稍后重试" });
+    } finally {
+      retryingRef.current = false;
+    }
+  }
+
+  /**
+   * 发布成功后的随图上传（原 submit 后半段，行为一致）：
+   * 暂存 entryId；无图直接返回；失败留下 error 态供重试，成功则清空缩略条。
+   */
+  async function uploadAfterPublish(entryId: string, files: File[]) {
+    lastEntryId.current = entryId;
+    if (!files.length) return;
+    // 只操作本次提交的 files 对应项（按 File 引用比对）：列表里残留的旧 error 项不属于本批，
+    // 不能卷入——否则被标 uploading 后又被下方 failedSet 过滤掉而静默丢弃，用户失去重试入口
+    const fileSet = new Set(files);
+    setDesktopImages((prev) =>
+      prev.map((i) => (fileSet.has(i.file) ? { ...i, status: "uploading" as const } : i)),
+    );
+    const { failed } = await uploadImages(entryId, files);
+    if (failed.length) {
+      const failedSet = new Set(failed);
+      setDesktopImages((prev) =>
+        // 本批已成功的移除、失败的标回 error；旧 error 项原样保留待用户重试
+        prev
+          .filter((i) => !fileSet.has(i.file) || failedSet.has(i.file))
+          .map((i) => (fileSet.has(i.file) ? { ...i, status: "error" as const } : i)),
+      );
+      setMsg({ ok: false, text: "动态已发布；部分图片上传失败，点缩略图上的「↻ 重试」" });
+    } else {
+      // 只回收本批项的 blob URL，旧 error 项仍在展示中不能 revoke——revoke 在 updater 外（updater 必须纯函数）
+      desktopImages.forEach((i) => {
+        if (fileSet.has(i.file)) URL.revokeObjectURL(i.url);
+      });
+      setDesktopImages((prev) => prev.filter((i) => !fileSet.has(i.file)));
+      setMsg({ ok: true, text: "✨ 动态与图片已发布，AI 正在识别…" });
+    }
+    void load();
+  }
+
+  return {
+    desktopImages,
+    fileInputRef,
+    addDesktopImages,
+    removeDesktopImage,
+    retryDesktopUpload,
+    uploadAfterPublish,
+  };
+}

@@ -1,0 +1,93 @@
+"use client";
+
+import { useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import type { TodoItem, TodoRow } from "@/lib/types";
+import { toast } from "@/shared/ui/toast";
+import { isoToLocalInput, localInputToIso } from "../todo-bits";
+import { isChildId } from "./kit";
+
+/** useTodoEdit 上下文：列表数据 + patchTodo（保存） */
+export interface TodoEditCtx {
+  todos: TodoItem[];
+  patchTodo: (id: string, body: Record<string, unknown>, okText?: string) => Promise<boolean>;
+}
+
+/**
+ * 顶层 todo 行内编辑 hook（拆分自 todo-board，行为零变化）：
+ * 标题 / 截止 / 分类 / 🔁 每日重复（重复仅行动提交，isChildId 判定）。
+ * closeEdit 复刻拆分前 Dismissable onClose 的「有改动轻提示」逻辑。
+ */
+export function useTodoEdit({ todos, patchTodo }: TodoEditCtx) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  // 保存进行中：防双击/Enter+按钮双路径重复 PATCH
+  const [editSaving, setEditSaving] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDue, setEditDue] = useState("");
+  const [editActivity, setEditActivity] = useState("other");
+  // 行动行内编辑的 🔁 每日重复开关
+  const [editRepeat, setEditRepeat] = useState(false);
+
+  function startEdit(t: TodoRow) {
+    setEditingId(t.id);
+    setEditTitle(t.title);
+    setEditDue(isoToLocalInput(t.due_at));
+    setEditActivity(t.activity_id ?? "other");
+    setEditRepeat(t.repeat_daily);
+  }
+
+  /** N3：点空白/Esc 取消，有改动轻提示 */
+  function closeEdit(t: TodoRow) {
+    // 脏检查含「每日重复」（漏掉时切了重复再点空白，改动被静默丢弃且无提示）
+    const dirty = editTitle !== t.title || editDue !== isoToLocalInput(t.due_at) || editActivity !== (t.activity_id ?? "other") || editRepeat !== !!t.repeat_daily;
+    if (dirty) toast("已取消，未保存", "info");
+    setEditingId(null);
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editTitle.trim()) {
+      toast("标题不能为空", "err");
+      return;
+    }
+    if (editSaving) return;
+    setEditSaving(true);
+    try {
+      const ok = await patchTodo(
+        editingId,
+        {
+          title: editTitle.trim(),
+          dueAt: localInputToIso(editDue),
+          activityId: editActivity,
+          ...(isChildId(editingId, todos) ? { repeatDaily: editRepeat } : {}),
+        },
+        "💾 已保存",
+      );
+      // 失败时不关闭编辑态，保留用户正在编辑的内容
+      if (ok) setEditingId(null);
+    } catch {
+      // 兜底：任何异常只提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
+      toast("网络异常，请稍后重试", "err");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  return {
+    editingId,
+    setEditingId: setEditingId as Dispatch<SetStateAction<string | null>>,
+    editTitle,
+    setEditTitle,
+    editDue,
+    setEditDue,
+    editActivity,
+    setEditActivity,
+    editRepeat,
+    setEditRepeat,
+    editSaving,
+    startEdit,
+    closeEdit,
+    saveEdit,
+  };
+}
+
+export type TodoEdit = ReturnType<typeof useTodoEdit>;

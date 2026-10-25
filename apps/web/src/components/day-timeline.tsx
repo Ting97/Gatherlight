@@ -1,0 +1,273 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import { bjToday } from "@/lib/date";
+import { bjNowMin } from "@/lib/bj-time"; // 实现单源 @shiguangri/shared（UTC+8 推算，禁本地 getter）
+import BlockDraftForm, { type BlockDraftValue } from "@/components/block-draft-form";
+import { toast } from "@/shared/ui/toast";
+import { confirmDialog } from "@/shared/ui/confirm";
+import type { Activity, Block } from "@/lib/types";
+
+const PX_PER_MIN = 0.75; // 一天 1080px，一小时 45px
+
+interface Props {
+  date: string; // YYYY-MM-DD
+  blocks: Block[];
+  activities: Activity[];
+  onCreate: (payload: { title: string; startAt: string; endAt: string; activityId: string }) => Promise<boolean>;
+  onEditBlock: (b: Block) => void;
+}
+
+const pad = (n: number) => String(Math.floor(n)).padStart(2, "0");
+function hmOf(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}
+
+export default function DayTimeline({ date, blocks, activities, onCreate, onEditBlock }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const lastAutoDate = useRef<string | null>(null);
+  const isToday = date === bjToday(); // 锚定日对比北京今天（本地 todayStr 在海外设备会差一天）
+  const dayStartMs = useMemo(() => Date.parse(`${date}T00:00:00+08:00`), [date]); // 北京零点基点（本地零点会偏 8 小时）
+
+  // 初值固定 null 不画线：首帧就用真实时钟会 SSR 水合不匹配，挂载后 useEffect 里再校准
+  const [nowMin, setNowMin] = useState<number | null>(null);
+  const [draft, setDraft] = useState<BlockDraftValue | null>(null);
+  const [saving, setSaving] = useState(false);
+  // 补录表单校验错误（结束时间必须晚于开始时间）
+  const [draftErr, setDraftErr] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
+
+  // 表单打开时滚入视口：时间轴自动定位到当前时刻后，点击深处缺口时表单在区域顶部、视口之外，看起来像"没反应"
+  useEffect(() => {
+    if (draft) formRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [draft]);
+
+  useEffect(() => {
+    if (!isToday) return;
+    setNowMin(bjNowMin()); // 挂载先校准一次（初值为 null 不画线）
+    const t = setInterval(() => {
+      setNowMin(bjNowMin());
+    }, 60_000);
+    return () => clearInterval(t);
+  }, [isToday]);
+
+  // 每个日期只在数据到位后自动定位一次：今天→当前时刻；其他日期→第一块日程（无块回顶部）
+  // （父级在 loading 期间卸载本组件，挂载时数据已就绪，无需 loading 守卫）
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || lastAutoDate.current === date) return;
+    lastAutoDate.current = date;
+    if (isToday) {
+      // 直接取实时北京时刻而非 nowMin state：state 初值 null，本 effect 先于定时器校准执行会定位到顶部
+      el.scrollTop = Math.max(0, bjNowMin() * PX_PER_MIN - 160);
+      return;
+    }
+    const starts = blocks.map((b) => minOfDay(b.start_at));
+    el.scrollTop = starts.length ? Math.max(0, Math.min(...starts) * PX_PER_MIN - 160) : 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date, isToday, blocks]);
+
+  /** ISO → 当天分钟数（基点北京零点；跨午夜块可为负，钳到 0~1440） */
+  const minOfDay = (iso: string) => {
+    const m = Math.floor((new Date(iso).getTime() - dayStartMs) / 60_000);
+    return Math.max(0, Math.min(1440, m));
+  };
+  const isoFromMinutes = (minutes: number) =>
+    new Date(dayStartMs + minutes * 60_000).toISOString();
+
+  // 合并已记录区间 → 未记录缺口（>2 分钟）
+  const gaps = useMemo(() => {
+    const sorted = blocks
+      .map((b) => ({ s: minOfDay(b.start_at), e: minOfDay(b.end_at) }))
+      .sort((a, b) => a.s - b.s);
+    const merged: { s: number; e: number }[] = [];
+    for (const seg of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && seg.s <= last.e) last.e = Math.max(last.e, seg.e);
+      else merged.push({ ...seg });
+    }
+    const out: { s: number; e: number }[] = [];
+    let cursor = 0;
+    for (const seg of merged) {
+      if (seg.s - cursor > 2) out.push({ s: cursor, e: Math.min(seg.s, 1440) });
+      cursor = Math.max(cursor, seg.e);
+    }
+    if (1440 - cursor > 2) out.push({ s: cursor, e: 1440 });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocks, date]);
+
+  /** 在绝对分钟处打开补录：定位到该时刻所在的 1 小时整点区间（钳进缺口；贴边不足 5 分钟回退缺口末段一小时） */
+  async function openSlotAt(absMin: number) {
+    // 草稿脏检查（二十轮）：标题已输入时点另一缺口/空白，静默 setDraft 会丢掉整段草稿
+    //（与「Esc 脏关闭零反馈」同族）；confirmDialog 为全站确认范式（禁原生 window.confirm）
+    if (draft && draft.title.trim()) {
+      const ok = await confirmDialog({
+        title: "放弃当前补录草稿？",
+        message: "已输入的标题尚未保存，新建补录会将其清空。",
+        confirmText: "放弃并新建",
+        danger: false,
+      });
+      if (!ok) return;
+    }
+    const gap = gaps.find((g) => absMin >= g.s && absMin <= g.e);
+    if (!gap) return;
+    const hourStart = Math.floor(absMin / 60) * 60;
+    let s = Math.max(gap.s, hourStart);
+    let e = Math.min(gap.e, hourStart + 60);
+    if (e - s < 5) {
+      s = Math.max(gap.s, gap.e - 60);
+      e = gap.e;
+    }
+    // 尾部缺口 e=1440 → hmOf 产出 "24:00"，<input type="time"> 不接受该值（显示被清空而 state 仍是 24:00，
+    // 提交校验 end<=start 反而拦住合法 23:59 起 + 24:00 止的意图）；钳到 23:59 保留起止语义
+    const end = Math.min(e, 1439);
+    setDraft({ title: "", start: hmOf(s), end: hmOf(end), activityId: "other" });
+  }
+
+  /** 点击时间轴空白（左右留白条等缺口按钮未覆盖处）→ 同样定位整点区间 */
+  function containerClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (draft || e.target !== e.currentTarget) return; // 只响应裸背景，缺口/日程块有自己的处理
+    const rect = e.currentTarget.getBoundingClientRect();
+    openSlotAt(Math.max(0, Math.min(1439, (e.clientY - rect.top) / PX_PER_MIN)));
+  }
+
+  async function submitCreate() {
+    if (!draft || !draft.title.trim() || saving) return;
+    // 结束钟点 ≤ 开始钟点 = 跨天次日语义（23:00→01:00）：endAt 用「开始日 + end 钟点，≤ 开始
+    // 自动 +1 天」的跨日组合放行（与动态流行内编辑/日程页编辑同口径），toast 说明防误解——
+    // 旧版恒拦「结束时间必须晚于开始时间」，首页时间轴手动路径同样无法创建跨天块
+    const [sh, sm] = draft.start.split(":").map(Number);
+    const [eh, em] = draft.end.split(":").map(Number);
+    const crossesDay = eh * 60 + em <= sh * 60 + sm;
+    setDraftErr(null);
+    setSaving(true); // 提交期间锁表单：防双击/连按 Enter 重复建块
+    try {
+      const ok = await onCreate({
+        title: draft.title.trim(),
+        startAt: isoFromMinutes(sh * 60 + sm),
+        endAt: isoFromMinutes(eh * 60 + em + (crossesDay ? 1440 : 0)),
+        activityId: draft.activityId,
+      });
+      if (ok) {
+        if (crossesDay) toast(`已按跨天块创建：${draft.start} → 次日 ${draft.end}`);
+        setDraft(null);
+      }
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div>
+      <div ref={formRef}>
+        {draft && (
+          <BlockDraftForm
+            value={draft}
+            activities={activities}
+            busy={saving}
+            err={draftErr}
+            onChange={(v) => {
+              setDraftErr(null); // 用户改动即清除校验错误
+              setDraft(v);
+            }}
+            onCancel={() => setDraft(null)}
+            onSubmit={submitCreate}
+          />
+        )}
+      </div>
+
+      <div ref={containerRef} className="relative max-h-[480px] overflow-y-auto rounded-lg border border-line-soft bg-bg/40">
+        <div className="relative" style={{ height: `${1440 * PX_PER_MIN}px` }} onClick={containerClick}>
+          {Array.from({ length: 25 }, (_, h) => (
+            <div key={h} className="absolute inset-x-0 border-t border-line-soft/70" style={{ top: `${h * 60 * PX_PER_MIN}px` }}>
+              <span
+                className={`absolute -top-2 left-1.5 text-badge tabular-nums ${h % 3 === 0 ? "text-ink-mute" : "text-ink-faint"}`}
+              >
+                {h % 3 === 0 ? `${h}点` : ""}
+              </span>
+            </div>
+          ))}
+
+          {gaps.map((g, i) => (
+            <button
+              key={`gap-${i}`}
+              onClick={(e) => {
+                e.stopPropagation(); // 不冒泡到容器，避免二次计算覆盖
+                const rect = e.currentTarget.getBoundingClientRect();
+                openSlotAt(g.s + (e.clientY - rect.top) / PX_PER_MIN);
+              }}
+              title="点击空白处，按整点定位 1 小时补录"
+              className="group absolute right-2 w-[calc(100%-3rem)] rounded border border-dashed border-line/60 text-left transition hover:border-amber-500/60 hover:bg-amber-500/5"
+              style={{ top: `${g.s * PX_PER_MIN}px`, height: `${Math.max((g.e - g.s) * PX_PER_MIN - 2, 8)}px` }}
+            >
+              {(g.e - g.s) * PX_PER_MIN >= 22 && (
+                <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 text-badge text-ink-faint group-hover:text-warn/80">
+                  ✦ 未记录 {hmOf(g.s)}–{hmOf(g.e)}（{(g.e - g.s) >= 60 ? `${Math.floor((g.e - g.s) / 60)}小时${(g.e - g.s) % 60 || ""}` : `${g.e - g.s}分钟`}）
+                </span>
+              )}
+            </button>
+          ))}
+
+          {blocks.map((b) => {
+            const s = minOfDay(b.start_at);
+            const e = Math.max(minOfDay(b.end_at), s + 2);
+            const h = (e - s) * PX_PER_MIN;
+            return (
+              <button
+                key={b.id}
+                onClick={async () => {
+                  // 草稿脏检查同 openSlotAt（二十轮）：打字中点日程块会打开块编辑器顶掉草稿
+                  if (draft && draft.title.trim()) {
+                    const ok = await confirmDialog({
+                      title: "放弃当前补录草稿？",
+                      message: "已输入的标题尚未保存，打开日程编辑会将其清空。",
+                      confirmText: "放弃草稿",
+                      danger: false,
+                    });
+                    if (!ok) return;
+                  }
+                  onEditBlock(b);
+                }}
+                title="点击修改/删除"
+                className="absolute left-10 right-2 overflow-hidden rounded border-l-4 px-2 text-left transition hover:brightness-125"
+                style={{
+                  top: `${s * PX_PER_MIN}px`,
+                  height: `${h - 2}px`,
+                  backgroundColor: `${b.color}40`,
+                  borderColor: b.color,
+                }}
+              >
+                {h >= 18 && (
+                  <span className="pointer-events-none flex h-full items-center gap-1.5 truncate text-xs">
+                    <span>{b.icon}</span>
+                    <span className="truncate font-medium text-ink">{b.title}</span>
+                    <span className="shrink-0 tabular-nums text-badge text-ink-mute">
+                      {hmOf(s)}–{hmOf(e)}
+                    </span>
+                  </span>
+                )}
+                {h < 18 && h >= 9 && (
+                  <span className="pointer-events-none flex h-full items-center text-badge text-ink-soft">{b.icon}</span>
+                )}
+              </button>
+            );
+          })}
+
+          {isToday && nowMin != null && (
+            <div className="pointer-events-none absolute inset-x-0 z-10" style={{ top: `${nowMin * PX_PER_MIN}px` }}>
+              <div className="relative border-t-2 border-rose-500/80">
+                <span className="absolute -top-2.5 right-1 rounded bg-rose-500 px-1 text-micro font-bold tabular-nums text-white">
+                  {hmOf(nowMin)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+      <p className="mt-2 text-badge text-ink-faint">
+        提示：点击彩色块可修改 · 点击空白处自动定位整点 1 小时补录（表单内可调时间）{isToday ? " · 红线为当前时刻" : ""}
+      </p>
+    </div>
+  );
+}

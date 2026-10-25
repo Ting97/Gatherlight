@@ -1,0 +1,111 @@
+"use client";
+
+import type { MouseEvent } from "react";
+import type { TodoItem, TodoRow } from "@/lib/types";
+import { toast } from "@/shared/ui/toast";
+import { TodoCircle, dueTag } from "../todo-bits";
+import { ActionNotePanel } from "./action-note-panel";
+import type { SubtaskCtl } from "./types";
+import type { ActionNote } from "./use-action-note";
+import { Ellipsis, FileText, Repeat } from "lucide-react";
+
+/** 行动（子任务）区（拆分自 todo-board，行为零变化；最多一层）：详情面板 ↔ 展示行 + 添加输入行 + 空态/已完成提示 */
+export function ChildArea({
+  t,
+  note,
+  sub,
+  onToggleDone,
+  onOpenMenu,
+}: {
+  t: TodoItem;
+  note: ActionNote;
+  sub: SubtaskCtl;
+  onToggleDone: (t: TodoRow) => void;
+  onOpenMenu: (e: MouseEvent, todo: TodoRow, isChild: boolean, parentTitle?: string) => void;
+}) {
+  const done = t.status === "done";
+  return (
+    <div className="ml-8 mt-0.5 space-y-0.5 border-l border-line-soft pl-3">
+      {t.children.map((c) => {
+        const ctag = c.status === "done" ? null : dueTag(c.due_at);
+        const cDone = c.status === "done";
+        return (
+          <div key={c.id} className="group/child rounded-lg px-1.5 py-1 transition hover:bg-elevated/60">
+            {note.noteOpenId === c.id ? (
+              <ActionNotePanel c={c} note={note} />
+            ) : (
+              <div className="flex items-center gap-2.5">
+                <TodoCircle size="sm" done={cDone} onClick={() => onToggleDone(c)} />
+                <span
+                  className={`min-w-0 flex-1 cursor-pointer truncate text-body ${cDone ? "text-ink-faint line-through" : ""}`}
+                  onClick={() => note.openNote(c)}
+                  title={c.note ? `${c.title}（点击查看详情）` : c.title}
+                >
+                  {c.title}
+                </span>
+                {c.note && (
+                  <span className="shrink-0 text-ink-faint" title="有点击查看详情">
+                    <FileText size={11} aria-hidden />
+                  </span>
+                )}
+                {c.repeat_daily && (
+                  <span
+                    className="flex shrink-0 items-center gap-0.5 rounded-lg bg-emerald-500/20 px-1.5 py-0.5 text-badge font-medium text-success"
+                    title="每日重复（06:00 日切自动恢复未完成）"
+                  >
+                    <Repeat size={11} aria-hidden /> {c.repeat_done_count > 0 ? `×${c.repeat_done_count}` : ""}
+                  </span>
+                )}
+                {ctag && <span className={`shrink-0 text-micro ${ctag.cls}`}>{ctag.text}</span>}
+                <button
+                  onClick={(e) => onOpenMenu(e, c, true, t.title)}
+                  title="更多操作"
+                  className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 text-sm leading-none text-ink-dim transition hover:text-ink group-hover/child:block"
+                >
+                  <Ellipsis size={14} className="inline align-[-2px]" />
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {sub.parentId === t.id && (
+        <div className="flex items-center gap-2.5 px-1.5 py-1">
+          <span className="h-5 w-5 shrink-0 rounded-full border-2 border-dashed border-line-strong" />
+          <input
+            autoFocus
+            value={sub.title}
+            onChange={(e) => sub.setTitle(e.target.value)}
+            onBlur={() => {
+              // blur 即"点空白"（N3）；有未提交内容轻提示。
+              // 提交在途（Enter 已触发 addSubtask 未返回）不取消：请求会成功建行动，
+              // 此时 blur 弹「已取消，未保存」并关行会诱导用户重录造成重复行动
+              if (sub.adding) return;
+              if (sub.title.trim()) toast("已取消，未保存", "info");
+              sub.close();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) sub.add(t.id);
+              // Esc 与 onBlur 同口径：有未提交内容轻提示（旧版静默丢弃）；
+              // isComposing 守卫（十五轮）：组词中按 Esc 取候选词不得当作关闭；
+              // stopPropagation（action-note-panel 同款）：本行与行动详情面板可并存，
+              // 不截停的话一次 Esc 会连关详情面板（弹两条「已取消，未保存」）
+              if (e.key === "Escape" && !e.nativeEvent.isComposing) {
+                e.stopPropagation();
+                if (sub.title.trim()) toast("已取消，未保存", "info");
+                sub.close();
+              }
+            }}
+            placeholder="行动，回车添加（Esc 结束）"
+            maxLength={200}
+            className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-ink-faint"
+          />
+        </div>
+      )}
+      {t.children.length === 0 && sub.parentId !== t.id && (
+        <p className="px-1.5 py-1 text-micro text-ink-faint">还没有行动 —— 行右侧「⋯」里添加，或让 AI 拆解</p>
+      )}
+      {done && <p className="px-1.5 py-0.5 text-micro text-ink-faint">已完成的 todo 不可再添加行动</p>}
+    </div>
+  );
+}

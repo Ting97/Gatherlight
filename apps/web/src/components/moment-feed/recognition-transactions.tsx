@@ -1,0 +1,150 @@
+"use client";
+
+import { useState } from "react";
+import type { FeedMoment } from "@/lib/types";
+import { TX_CATEGORIES, yuanToCents, centsToYuanInput } from "@/lib/finance";
+import { Coins } from "lucide-react";
+import { api } from "@/shared/api";
+import { TagChip } from "../tag-chip";
+import { RowAction } from "./row-action";
+import { RowActionMenu, useRowMenu } from "./row-action-menu";
+import { useHoverCapable } from "./use-hover-capable";
+import { yuan } from "./kit";
+import type { DelFn, RunFn } from "./types";
+
+/** 金额流水行内编辑态 */
+interface EditTxState {
+  id: string;
+  direction: string;
+  amount: string;
+  category: string;
+  counterparty: string;
+}
+
+interface TxRowsProps {
+  m: FeedMoment;
+  run: RunFn;
+  del: DelFn;
+  /** 当前处于待确认态的删除 key */
+  delArmed: string | null;
+}
+
+/** ---- 金额流水 ----：展示 + 行内编辑/删除 */
+export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
+  const hoverOk = useHoverCapable();
+  const { menu, open, close } = useRowMenu();
+  const [editTx, setEditTx] = useState<EditTxState | null>(null);
+
+  return (
+    <>
+      {m.transactions.map((x) =>
+        editTx?.id === x.id ? (
+          <div key={x.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-500/40 bg-elevated/60 p-2">
+            <select
+              value={editTx.direction}
+              onChange={(e) => setEditTx({ ...editTx, direction: e.target.value })}
+              className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs outline-none focus:border-sky-500"
+            >
+              <option value="out">支出</option>
+              <option value="in">收入</option>
+            </select>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={editTx.amount}
+              onChange={(e) => setEditTx({ ...editTx, amount: e.target.value })}
+              className="w-24 rounded border border-line-strong bg-surface px-2 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
+              placeholder="金额(元)"
+            />
+            <select
+              value={editTx.category}
+              onChange={(e) => setEditTx({ ...editTx, category: e.target.value })}
+              className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs outline-none focus:border-sky-500"
+            >
+              {TX_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <input
+              value={editTx.counterparty}
+              onChange={(e) => setEditTx({ ...editTx, counterparty: e.target.value })}
+              className="w-24 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
+              placeholder="对方(可空)"
+            />
+            <span className="flex gap-1">
+              <button onClick={() => setEditTx(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
+              <button
+                onClick={() =>
+                  run(async () => {
+                    const cents = yuanToCents(editTx.amount);
+                    if (cents == null || cents <= 0) throw new Error("金额必须大于 0");
+                    await api(`/api/transactions/${x.id}`, "PATCH", {
+                      direction: editTx.direction,
+                      amountCents: cents,
+                      category: editTx.category,
+                      counterparty: editTx.counterparty,
+                    });
+                    setEditTx(null);
+                    return "💾 金额已更新";
+                  })
+                }
+                className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"
+              >
+                保存
+              </button>
+            </span>
+          </div>
+        ) : (
+          <p
+              key={x.id}
+              className="group/row flex items-center gap-x-2 text-ink-mute"
+              onClick={(e) => {
+                if (hoverOk) return;
+                open(`tx:${x.id}`, {
+                  x: e.clientX,
+                  y: e.clientY,
+                  onEdit: () =>
+                    setEditTx({
+                      id: x.id,
+                      direction: x.direction,
+                      amount: centsToYuanInput(x.amountCents),
+                      category: TX_CATEGORIES.includes(x.category) ? x.category : "其他",
+                      counterparty: x.counterparty ?? "",
+                    }),
+                  onDelete: () => del(`tx:${x.id}`, () => api(`/api/transactions/${x.id}`, "DELETE")),
+                });
+              }}
+            >
+            <TagChip
+              icon={<Coins size={12} />}
+              label={`${x.direction === "out" ? "支出" : "收入"} ${yuan(x.amountCents)}`}
+              tone={x.direction === "out" ? "rose" : "emerald"}
+              size="sm"
+              className="shrink-0"
+            />
+            <span className="min-w-0 truncate">
+              {x.category}
+              {x.counterparty ? ` · 对方：${x.counterparty}` : ""}
+            </span>
+            <RowAction
+              onEdit={() =>
+                setEditTx({
+                  id: x.id,
+                  direction: x.direction,
+                  amount: centsToYuanInput(x.amountCents),
+                  category: TX_CATEGORIES.includes(x.category) ? x.category : "其他",
+                  counterparty: x.counterparty ?? "",
+                })
+              }
+              armed={delArmed === `tx:${x.id}`}
+              onDelete={() => del(`tx:${x.id}`, () =>
+                api(`/api/transactions/${x.id}`, "DELETE"))}
+            />
+          </p>
+        ),
+      )}
+      <RowActionMenu menu={menu} onClose={close} />
+    </>
+  );
+}

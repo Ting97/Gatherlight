@@ -1,0 +1,106 @@
+/**
+ * 静态站点托管：把 apps/web 静态导出产物（out/）经本服务同域提供。
+ * - /_next/static/* 由 out/_next/static 读取，immutable 缓存
+ * - 页面路径映射 <path>.html（/ → index.html），防目录穿越
+ * - 目录由环境变量 STATIC_DIR 指定（standalone 部署时为 server.js 同级的 out/）
+ * - 中间件仍先行：未登录页面照常 307 → /login
+ */
+import { NextResponse } from "next/server";
+import { createReadStream, existsSync, statSync } from "node:fs";
+import { join, normalize, extname } from "node:path";
+import { Readable } from "node:stream";
+import { loadConfig } from "@/server/platform/config";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".ico": "image/x-icon",
+  ".txt": "text/plain; charset=utf-8",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".webmanifest": "application/manifest+json",
+  ".map": "application/json",
+};
+
+function staticDir(): string {
+  // STATIC_DIR 由 config 收集（原始值）；node 内置 join 留在本 nodejs 路由做默认回退
+  return loadConfig().staticDir || join(process.cwd(), "out");
+}
+
+function fileStream(path: string): ReadableStream | null {
+  if (!existsSync(path) || !statSync(path).isFile()) return null;
+  // Readable.toWeb 的类型与 Next 期待的 ReadableStream 兼容（运行时为 WHATWG 流）
+  return Readable.toWeb(createReadStream(path)) as unknown as ReadableStream;
+}
+
+function respond(path: string, req: Request): NextResponse {
+  const immutable = path.includes(`${join("_next", "static")}`) || path.includes("_next/static");
+  const stream = fileStream(path);
+  if (!stream) return new NextResponse(null, { status: 404 });
+  const etag = `"${statSync(path).size}-${statSync(path).mtimeMs}"`;
+  // If-None-Match 命中回 304：no-cache 页面资源（html/manifest）每次协商，免重复传 body
+  if (req.headers.get("if-none-match") === etag) {
+    return new NextResponse(null, { status: 304, headers: { ETag: etag, "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache" } });
+  }
+  return new NextResponse(stream, {
+    headers: {
+      "Content-Type": MIME[extname(path).toLowerCase()] ?? "application/octet-stream",
+      "Cache-Control": immutable ? "public, max-age=31536000, immutable" : "no-cache",
+      ETag: etag,
+    },
+  });
+}
+
+async function GET(req: Request) {
+  const { pathname } = new URL(req.url);
+  const dir = staticDir();
+  // 畸形百分号编码（/%zz）decodeURIComponent 抛 URIError → 未处理 500；此文件不走 withRoute 统一错误映射，就地 400
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return new NextResponse(null, { status: 400 });
+  }
+  const clean = normalize(decoded).replace(/\\/g, "/");
+  if (clean.includes("..")) return new NextResponse(null, { status: 400 });
+
+  const candidates: string[] = [];
+  if (clean === "/" || clean === "") {
+    candidates.push(join(dir, "index.html"));
+  } else if (clean.endsWith("/")) {
+    candidates.push(join(dir, clean, "index.html"), join(dir, clean.slice(0, -1) + ".html"));
+  } else {
+    candidates.push(join(dir, clean), join(dir, clean + ".html"), join(dir, clean, "index.html"));
+  }
+  for (const c of candidates) {
+    if (existsSync(c) && statSync(c).isFile()) return respond(c, req);
+  }
+  // 动态段壳页回退：contacts/[id]、spaces/[id] 静态导出只产出 __shell__.html，任意 id 复用它（真实 id 由客户端 useParams 从 URL 读取）
+  const shell = clean.match(/^\/?(contacts|spaces)\/[^/]+\/?$/);
+  if (shell) {
+    const p = join(dir, shell[1], "__shell__.html");
+    if (existsSync(p)) return respond(p, req);
+  }
+  const notFound = join(dir, "404.html");
+  if (existsSync(notFound)) {
+    return new NextResponse(Readable.toWeb(createReadStream(notFound)) as unknown as ReadableStream, {
+      status: 404,
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
+  }
+  return new NextResponse(null, { status: 404 });
+}
+
+export { GET };

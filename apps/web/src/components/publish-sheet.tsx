@@ -1,0 +1,357 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, ImagePlus, RefreshCw, X } from "lucide-react";
+import { uploadImages } from "@/lib/image";
+import { useBodyScrollLock } from "@/components/ui/use-body-scroll-lock";
+import { useDismiss } from "./dismissable";
+
+/**
+ * 发布输入面板（REQ-009 滚动：全端统一移动式交互）——悬浮圆圈点按=空面板；长按语音松开=转写文字带入预览，
+ * 用户确认/修改后点「发布」才真正提交。
+ * 双形态：<640px 底部抽屉（拇指可达）；≥640px 居中卡片（桌面端与移动端同交互）。
+ * 附带图片（REQ-001 R1）：相册多选 ≤9 张 + 触屏设备「拍照」入口；文字秒发后并行上传，失败可重试。
+ */
+interface SheetImage {
+  file: File;
+  url: string;
+  status: "ready" | "uploading" | "error";
+}
+
+export default function PublishSheet({
+  open,
+  initialText,
+  busy,
+  voiceSeconds,
+  onRemoveVoice,
+  onPublish,
+  onClose,
+  notify,
+}: {
+  open: boolean;
+  /** 打开时带入的初始文字（语音转写结果或空串） */
+  initialText: string;
+  /** 语音动态：暂存录音秒数（null=无）；chip 展示，× 移除 */
+  voiceSeconds?: number | null;
+  onRemoveVoice?: () => void;
+  busy: boolean;
+  /** 发布文字动态；返回 entry id（供图片上传），失败/无图返回 null */
+  onPublish: (text: string) => Promise<string | null>;
+  onClose: () => void;
+  /** N3.5 取消且内容有改动时的轻提示（可选） */
+  notify?: (m: { ok: boolean; text: string } | null) => void;
+}) {
+  const [value, setValue] = useState("");
+  const [images, setImages] = useState<SheetImage[]>([]);
+  const [sheetMsg, setSheetMsg] = useState<string | null>(null);
+  // 图片上传进行中：文字已发布、面板保持打开等图片上传，此期间禁止再次发布/重试（防重复动态）
+  const [uploading, setUploading] = useState(false);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const galleryRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  // 打开时的初始文字快照（取消时判断是否"有改动"）
+  const initialRef = useRef("");
+  // 触屏设备提供「拍照」入口（桌面无摄像头场景隐藏）
+  const [canCapture, setCanCapture] = useState(false);
+  useEffect(() => setCanCapture(window.matchMedia("(pointer: coarse)").matches), []);
+  // 最近发布的动态 id（重试用）；重开面板时在 open effect 里复位（见下）
+  const lastEntryId = useRef<string | null>(null);
+  // 镜像当前图片列表：publish 回包后按最新列表圈定本批（state 闭包是发布前快照）
+  const imagesRef = useRef<SheetImage[]>([]);
+  useEffect(() => {
+    imagesRef.current = images;
+  }, [images]);
+
+  // body 滚动锁：面板打开期间锁背景滚动，关闭/卸载还原
+  useBodyScrollLock(open);
+
+  useEffect(() => {
+    if (!open) return;
+    setValue(initialText);
+    initialRef.current = initialText;
+    setImages([]);
+    setSheetMsg(null);
+    // 复位上次发布的动态 id：不复位则重开面板后「发布」钮被 lastEntryId 判定为重传语义，
+    // 空文案可点但点击后走 retryUpload 无效果（假可用）
+    lastEntryId.current = null;
+    // 等挂载/键盘弹起后再聚焦，保证光标落在面板输入框
+    const t = setTimeout(() => inputRef.current?.focus(), 80);
+    return () => clearTimeout(t);
+  }, [open, initialText]);
+
+  // 关闭时统一释放残留的 blob URL（取消/发布失败等路径漏 revoke 的兜底；发布成功路径已 revoke，重复 revoke 无害）。
+  // revoke 必须在 updater 外（imagesRef 镜像）：StrictMode 会双调 updater，副作用入 updater 属规范违例
+  useEffect(() => {
+    if (open) return;
+    imagesRef.current.forEach((i) => URL.revokeObjectURL(i.url));
+    setImages([]);
+  }, [open]);
+
+  /** N3 取消：点空白/Esc/×——内容相对打开时有改动则轻提示"已取消，未保存"。
+   *  useCallback deps 含 value：随击键换新引用，useDismiss 的 effect 相应每键重订阅
+   *  （开销可忽略，闭包恒最新；注释旧版宣称「稳定引用不重订阅」与实现相反，已如实更正） */
+  const cancel = useCallback(() => {
+    if (value.trim() && value.trim() !== initialRef.current.trim()) {
+      notify?.({ ok: true, text: "已取消，未保存" });
+    }
+    // 取消路径也要释放已选图片的 blob URL（发布成功/逐张移除路径已 revoke，这里补齐）——revoke 在 updater 外
+    imagesRef.current.forEach((i) => URL.revokeObjectURL(i.url));
+    setImages([]);
+    onClose();
+  }, [value, notify, onClose]);
+  // N3：点面板外空白 / Esc → 取消关闭（面板渲染期间生效；cancel 引用稳定，不重订阅）
+  const panelRef = useDismiss<HTMLDivElement>(cancel, open);
+
+  if (!open) return null;
+
+  function addImages(files: File[]) {
+    if (images.length >= 9) {
+      setSheetMsg("最多 9 张");
+      return;
+    }
+    const imgs = files
+      .filter((f) => /^image\/(jpeg|png|webp|gif)$/.test(f.type))
+      .slice(0, 9 - images.length)
+      .map((file) => ({ file, url: URL.createObjectURL(file), status: "ready" as const }));
+    if (!imgs.length) setSheetMsg("仅支持 jpg/png/webp/gif 图片");
+    else if (imgs.length < files.length) setSheetMsg("最多添加 9 张，多余图片已忽略");
+    setImages((prev) => [...prev, ...imgs]);
+  }
+
+  async function publish() {
+    const t = value.trim();
+    if (!t || busy || uploading) return;
+    // 动态已发出（lastEntryId 在）且仍有失败图：此时再「发布」会重复发一条同文动态——
+    // 按钮此时已改为「重传图片」语义（见下方 disabled/文案），这里兜底短路
+    if (lastEntryId.current && images.some((i) => i.status === "error")) return;
+    const files = images.filter((i) => i.status !== "error").map((i) => i.file);
+    const entryId = await onPublish(t);
+    if (!entryId) {
+      // 失败保留面板与已输文本（旧实现直接 onClose 会把没发出去的内容弄丢），错误原因在主页横幅
+      setSheetMsg("发布失败，内容已保留，可直接重试");
+      return;
+    }
+    lastEntryId.current = entryId;
+    // files 是发布前快照；await onPublish 期间用户可能增删图片。回包后以最新 state 圈定本批：
+    // - 期间新增的图（非本批 file 引用）保持 ready，可随下次发布上传
+    // - 期间被移除的图不再上传
+    const fileSet = new Set(files);
+    const batch = imagesRef.current.filter((i) => i.status === "ready" && fileSet.has(i.file));
+    if (!batch.length) {
+      onClose(); // 本批全被移走：直接收尾
+      return;
+    }
+    setImages((prev) =>
+      prev.map((i) => (i.status === "ready" && fileSet.has(i.file) ? { ...i, status: "uploading" as const } : i)),
+    );
+    setUploading(true);
+    try {
+      const { failed } = await uploadImages(entryId, batch.map((i) => i.file));
+      const failedSet = new Set(failed);
+      // 本批上传成功的项释放 blob URL（期间新增项仍展示中，不能误 revoke）
+      batch.forEach((i) => {
+        if (!failedSet.has(i.file)) URL.revokeObjectURL(i.url);
+      });
+      if (failed.length) {
+        setImages((prev) =>
+          // 本批成功的移除、失败的标回 error 可重试；期间新增的 ready 项原样保留
+          prev
+            .filter((i) => !fileSet.has(i.file) || failedSet.has(i.file))
+            .map((i) => (fileSet.has(i.file) ? { ...i, status: "error" as const } : i)),
+        );
+        setSheetMsg("动态已发布；部分图片上传失败，可「↻ 重试」或关闭面板");
+        return;
+      }
+      onClose();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function retryUpload() {
+    if (!lastEntryId.current || uploading) return;
+    const retryFiles = images.filter((i) => i.status === "error").map((i) => i.file);
+    if (!retryFiles.length) return;
+    const retrySet = new Set(retryFiles);
+    setImages((prev) => prev.map((i) => (i.status === "error" ? { ...i, status: "uploading" as const } : i)));
+    setUploading(true);
+    try {
+      const { failed } = await uploadImages(lastEntryId.current, retryFiles);
+      if (failed.length) {
+        const failedSet = new Set(failed);
+        setImages((prev) =>
+          // 只处理本批重试项：重传期间新增的 ready/uploading 项原样保留（publish() 的
+          // `!fileSet.has(i.file) || failedSet.has(i.file)` 同口径——旧版只留失败项，
+          // 期间新选的图片连同 blob URL 一起被丢）
+          prev
+            .filter((i) => !retrySet.has(i.file) || failedSet.has(i.file))
+            .map((i) => (retrySet.has(i.file) ? { ...i, status: "error" as const } : i)),
+        );
+        setSheetMsg(`仍有 ${failed.length} 张上传失败，请稍后再试`);
+        return;
+      }
+      setSheetMsg(null);
+      onClose();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <>
+      {/* 遮罩仅视觉；点空白关闭由面板 useDismiss 统一处理（N3）；桌面加 scrim 模糊 */}
+      <div className="fixed inset-0 z-[55] bg-black/50 backdrop-blur-sm" />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="记录此刻"
+        className="safe-bottom anim-modal-pop fixed inset-x-0 bottom-0 z-[56] rounded-t-2xl border-t border-line-soft bg-surface p-4 pb-5 shadow-2xl sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-full sm:max-w-xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:border sm:border-line-soft"
+      >
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-ink-soft">记录此刻</h3>
+          <button
+            type="button"
+            onClick={cancel}
+            aria-label="关闭"
+            className="rounded-full p-1 text-ink-dim hover:bg-white/5 hover:text-ink"
+          >
+            <X size={14} />
+          </button>
+        </div>
+        {voiceSeconds != null && (
+          <p className="mb-2 inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-micro text-accent">
+            🎤 语音已附加 {Math.floor(voiceSeconds / 60)}:{String(voiceSeconds % 60).padStart(2, "0")}
+            {onRemoveVoice && (
+              <button onClick={onRemoveVoice} title="移除语音" className="rounded-full bg-black/30 px-1 leading-none text-white">
+                ✕
+              </button>
+            )}
+          </p>
+        )}
+        <textarea
+          ref={inputRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              if (uploading || busy) return; // 上传/发布进行中：吞掉回车，防二次发布
+              void publish();
+            }
+            // Esc 取消由 Dismissable 统一处理（N3）
+          }}
+          rows={3}
+          maxLength={2000}
+          placeholder='说点什么…（试试"刚跑完步40分钟，心情不错"、"明天下午三点看牙"）'
+          className="input-glow w-full resize-none rounded-xl border border-line-soft bg-surface/60 px-4 py-3 text-sm outline-none placeholder:text-ink-faint"
+        />
+        {/* 接近上限才显示字数，平时不干扰 */}
+        {value.length >= 1800 && (
+          <p className={`mt-1 text-right text-micro tabular-nums ${value.length >= 1950 ? "text-danger" : "text-ink-faint"}`}>
+            {value.length}/2000
+          </p>
+        )}
+
+        {/* 已选图片缩略条（上传失败显示重试） */}
+        {images.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {images.map((img) => (
+              <span key={img.url} className={`relative overflow-hidden rounded-lg border ${img.status === "error" ? "border-rose-500/60" : "border-line-soft"}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url} alt="" className="h-14 w-14 object-cover" />
+                {img.status === "error" ? (
+                  <button
+                    type="button"
+                    onClick={() => void retryUpload()}
+                    className="absolute inset-0 flex items-center justify-center gap-0.5 bg-black/50 text-xs text-white"
+                  >
+                    <RefreshCw size={11} aria-hidden /> 重试
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // revoke 在 updater 外按 url 定位：updater 必须是纯函数（StrictMode 双调下
+                      // 副作用重复执行）；按下标删除在同帧多删时会拿旧下标删错行
+                      URL.revokeObjectURL(img.url);
+                      setImages((prev) => prev.filter((x) => x.url !== img.url));
+                    }}
+                    className="tap-lg absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-white"
+                    aria-label="移除"
+                  >
+                    <X size={10} />
+                  </button>
+                )}
+                {img.status === "uploading" && (
+                  <span className="absolute inset-x-0 bottom-0 bg-black/50 text-center text-micro text-white">上传中…</span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+        {sheetMsg && <p className="mt-1.5 text-micro text-warn">{sheetMsg}</p>}
+
+        <div className="mt-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <label
+              title="从相册选择（最多 9 张）"
+              className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-line-soft bg-surface/60 text-ink-dim transition active:border-sky-500/60"
+            >
+              <ImagePlus size={16} aria-hidden />
+              <input
+                ref={galleryRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addImages(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {canCapture && (
+              <label
+                title="拍照"
+                className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-line-soft bg-surface/60 text-ink-dim transition active:border-sky-500/60"
+              >
+                <Camera size={16} aria-hidden />
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => {
+                    addImages(Array.from(e.target.files ?? []));
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
+            <span className="text-micro text-ink-faint">发布后 AI 自动识别</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              // 已发出动态但仍有失败图：此钮 = 只重传失败图片（不再发新动态）
+              if (lastEntryId.current && images.some((i) => i.status === "error")) void retryUpload();
+              else void publish();
+            }}
+            disabled={busy || uploading || (!value.trim() && !lastEntryId.current)}
+            className="btn-primary rounded-xl px-7 py-2 text-sm font-medium"
+          >
+            {busy
+              ? "识别中…"
+              : uploading
+                ? "上传中…"
+                : lastEntryId.current && images.some((i) => i.status === "error")
+                  ? "重传失败图片"
+                  : "发布"}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}

@@ -1,0 +1,412 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { BarChart3, Bot, CreditCard, Handshake, Puzzle } from "lucide-react";
+import Skeleton from "@/components/skeleton";
+import FinanceTabs from "@/components/finance-tabs";
+import ModuleLocked from "@/components/module-locked";
+import { TagChip, FilterChip } from "@/components/tag-chip";
+import { TX_COLORS } from "@/lib/finance";
+import { addDays as sharedAddDays, bjToday as sharedBjToday, startOfWeek } from "@shiguangri/shared/date";
+import { fmtMoney } from "@/components/finance/kit";
+import { api, ApiClientError } from "@/shared/api";
+import { toast } from "@/shared/ui/toast";
+
+/**
+ * 收支复盘（REQ-003 3-F FR-C2.7；REQ-005 FR-4.4 更名）：日/周统计（纯 SQL）+ AI 收支周报（缓存/配额走复盘管线）。
+ */
+
+interface Stats {
+  period: "day" | "week";
+  date: string;
+  range: { from: string; to: string };
+  totals: { inCents: number; outCents: number; count: number };
+  prev: { inCents: number; outCents: number };
+  byCategory: { category: string; cents: number; pct: number }[];
+  byAccount: { name: string; icon: string; inCents: number; outCents: number }[];
+  topCounterparties: { name: string; count: number; outCents: number }[];
+  daily: { date: string; inCents: number; outCents: number }[];
+}
+interface Review {
+  summary: string;
+  highlights: string[];
+  suggestions: string[];
+}
+
+const fmt = fmtMoney; // 负号在前版格式化（原本地副本收敛）
+const momPct = (cur: number, base: number) => (base > 0 ? Math.round(((cur - base) / base) * 100) : null);
+
+const bjToday = sharedBjToday;
+const addDays = sharedAddDays;
+const mondayOf = startOfWeek; // 周一为一周起点（shared 实现，原本地副本收敛）
+const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+/** ISO → 北京时间 M/D（生成时间展示；北京时间一律 UTC getter + 8h，禁本地 getter） */
+const bjMD = (iso: string) => {
+  const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+};
+
+export default function FinanceReviewPage() {
+  const [locked, setLocked] = useState(false);
+  const [period, setPeriod] = useState<"day" | "week">("week");
+  // SSG 防 hydration mismatch：bjToday() 作初值会把构建日烤进静态导出 HTML（周区间文本 +
+  // 「下一日/周」按钮 disabled 都依赖 anchor），跨日后客户端水合必失配。
+  // 与日历四视图同款 mounted 骨架门：初始 null，mount 后再初始化锚点，就绪前渲染骨架
+  const [anchor, setAnchor] = useState<string | null>(null);
+  useEffect(() => setAnchor(bjToday()), []);
+  const [stats, setStats] = useState<Stats | null>(null);
+  // 统计加载失败态：给出重试入口，避免失败时静默停在骨架屏
+  const [statsErr, setStatsErr] = useState<string | null>(null);
+  const [review, setReview] = useState<Review | null>(null);
+  const [reviewMeta, setReviewMeta] = useState<{ cached: boolean; generatedAt: string; range: { from: string; to: string } } | null>(null);
+  const [genBusy, setGenBusy] = useState(false);
+
+  const rangeFrom = anchor ? (period === "week" ? mondayOf(anchor) : anchor) : ""; // anchor 未就绪时空串（不渲染）
+
+  // 取数序号（use-home-data 同款）：快速翻周/切日视图时仅最新一次请求的响应可落地，
+  // 避免慢响应晚到用旧周期的统计覆盖当前视图
+  const statsSeq = useRef(0);
+  const loadStats = useCallback(async () => {
+    if (!anchor) return; // mounted 前不取数（anchor 由 mount effect 初始化）
+    const seq = ++statsSeq.current;
+    setStatsErr(null);
+    try {
+      const s = await api<Stats>(`/api/finance/stats?period=${period}&date=${anchor}`);
+      if (seq !== statsSeq.current) return;
+      setStats(s);
+    } catch (e) {
+      if (seq !== statsSeq.current) return;
+      if (e instanceof ApiClientError && e.status === 403) {
+        setLocked(true);
+        return;
+      }
+      // 保留已渲染的旧统计（finance 主页口径）：翻周/切日失败仅置错误横幅，
+      // 旧版整屏打成「加载失败」把可用数据也撤走
+      setStatsErr(e instanceof Error ? e.message : String(e));
+    }
+  }, [period, anchor]);
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // 切周/进页面：只读缓存（GET 不耗配额）；生成本身只由按钮触发（reviewSeq 同上防过期覆盖）
+  const reviewSeq = useRef(0);
+  const loadReview = useCallback(async (refresh = false) => {
+    if (period !== "week") return;
+    if (!anchor) return; // mounted 前不取数（anchor 由 mount effect 初始化）
+    if (refresh) {
+      const seq = ++reviewSeq.current;
+      setGenBusy(true);
+      try {
+        const j = await api<any>("/api/finance/review/week", "POST", { date: mondayOf(anchor), refresh: true }, undefined, { timeoutMs: 130_000 });
+        if (seq !== reviewSeq.current) return;
+        setReview(j.review);
+        setReviewMeta({ cached: j.cached, generatedAt: j.generatedAt, range: j.range });
+      } catch (e) {
+        if (seq !== reviewSeq.current) return;
+        const msg = e instanceof Error ? e.message : String(e);
+        toast(/timed out|timeout|aborted/i.test(msg) ? "生成超时：内容较多时需要 1~3 分钟，请再试一次" : msg, "err");
+      } finally {
+        setGenBusy(false);
+      }
+      return;
+    }
+    const seq = ++reviewSeq.current;
+    try {
+      const j = await api<any>(`/api/finance/review/week?date=${mondayOf(anchor)}`);
+      if (seq !== reviewSeq.current) return;
+      if (j.review) {
+        setReview(j.review);
+        setReviewMeta({ cached: true, generatedAt: j.generatedAt, range: j.range });
+      } else {
+        setReview(null);
+        setReviewMeta(null);
+      }
+    } catch (e) {
+      if (seq !== reviewSeq.current) return;
+      if (e instanceof ApiClientError && e.status === 403) {
+        setLocked(true);
+        return;
+      }
+      setReview(null);
+      setReviewMeta(null);
+    }
+  }, [period, anchor]);
+
+  useEffect(() => {
+    setReview(null);
+    setReviewMeta(null);
+    void loadReview(false);
+  }, [loadReview]);
+
+  if (locked) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <ModuleLocked title="收支复盘" desc="该模块由管理员授权后开放，可联系管理员开通。" />
+        </div>
+      </main>
+    );
+  }
+
+  // mounted 门：anchor 未就绪时渲染与首帧 SSG HTML 同构的骨架（下方周区间文本/disabled 都依赖 anchor）
+  if (!anchor) {
+    return (
+      <main className="min-h-screen text-ink">
+        <div className="mx-auto max-w-2xl px-5 py-8">
+          <header className="mb-5 text-center">
+            <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
+              拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">收支复盘</span>
+            </h1>
+            <p className="mt-2 text-xs text-ink-dim">日/周收支结构与 AI 周报 —— 花在哪、怎么调</p>
+          </header>
+          <FinanceTabs />
+          <Skeleton rows={3} className="py-2" />
+        </div>
+      </main>
+    );
+  }
+
+  const outMom = stats ? momPct(stats.totals.outCents, stats.prev.outCents) : null;
+  const inMom = stats ? momPct(stats.totals.inCents, stats.prev.inCents) : null;
+  const maxDaily = stats ? Math.max(1, ...stats.daily.map((d) => Math.max(d.outCents, d.inCents))) : 1;
+  const reviewForThisWeek = review && reviewMeta && reviewMeta.range.from === rangeFrom ? review : null;
+
+  return (
+    <main className="min-h-screen text-ink">
+      <div className="mx-auto max-w-2xl px-5 py-8">
+        <header className="mb-5 text-center">
+          <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
+            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">收支复盘</span>
+          </h1>
+          <p className="mt-2 text-xs text-ink-dim">日/周收支结构与 AI 周报 —— 花在哪、怎么调</p>
+        </header>
+
+        <FinanceTabs />
+
+        {/* 日/周切换 + 日期导航 */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="inline-flex rounded-full border border-line-soft bg-surface/70 p-1">
+            <FilterChip label="日" active={period === "day"} onClick={() => setPeriod("day")} variant="pill" />
+            <FilterChip label="周" active={period === "week"} onClick={() => setPeriod("week")} variant="pill" />
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <button onClick={() => setAnchor(addDays(anchor, period === "day" ? -1 : -7))} aria-label={period === "day" ? "上一日" : "上一周"} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 transition hover:border-sky-500/50">‹</button>
+            <span className="min-w-36 text-center font-semibold tabular-nums text-ink">
+              {period === "day" ? anchor : `${md(rangeFrom)} ~ ${md(addDays(rangeFrom, 6))}`}
+            </span>
+            <button
+              onClick={() => setAnchor(addDays(anchor, period === "day" ? 1 : 7))}
+              disabled={period === "day" ? anchor >= bjToday() : mondayOf(anchor) >= mondayOf(bjToday())}
+              aria-label={period === "day" ? "下一日" : "下一周"}
+              className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 transition hover:border-sky-500/50 disabled:opacity-30"
+            >
+              ›
+            </button>
+            <button
+              onClick={() => setAnchor(bjToday())}
+              className="rounded-lg px-2 py-1.5 text-micro text-ink-mute hover:text-accent"
+            >
+              今
+            </button>
+          </div>
+        </div>
+
+        {!stats ? (
+          statsErr ? (
+            <div className="py-10 text-center">
+              <p className="text-sm text-danger">加载失败：{statsErr}</p>
+              <button onClick={() => void loadStats()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
+                重试
+              </button>
+            </div>
+          ) : (
+            <Skeleton rows={3} className="py-2" />
+          )
+        ) : (
+          <>
+            {/* 刷新失败横幅（保留旧统计口径）：数据可能滞后，给重试入口而不撤走可用数据 */}
+            {statsErr && (
+              <div className="mb-3 flex items-center justify-between rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-danger">
+                <span>刷新失败：{statsErr}（下方为最近成功的数据）</span>
+                <button onClick={() => void loadStats()} className="shrink-0 underline underline-offset-2">
+                  重试
+                </button>
+              </div>
+            )}
+            {/* 统计卡 */}
+            <section className="glass mb-4 rounded-2xl p-5">
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div>
+                  <p className="text-micro text-ink-dim">{period === "day" ? "当日支出" : "本周支出"}</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-danger">{fmt(stats.totals.outCents)}</p>
+                  {outMom != null && (
+                    <p className={`mt-0.5 text-badge tabular-nums ${outMom > 0 ? "text-danger" : "text-success"}`}>
+                      环比 {outMom > 0 ? "+" : ""}{outMom}%
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-micro text-ink-dim">{period === "day" ? "当日收入" : "本周收入"}</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-success">{fmt(stats.totals.inCents)}</p>
+                  {inMom != null && (
+                    <p className={`mt-0.5 text-badge tabular-nums ${inMom > 0 ? "text-success" : "text-danger"}`}>
+                      环比 {inMom > 0 ? "+" : ""}{inMom}%
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-micro text-ink-dim">笔数</p>
+                  <p className="mt-1 text-xl font-bold tabular-nums text-ink">{stats.totals.count}</p>
+                  <p className="mt-0.5 text-badge text-ink-faint">
+                    结余 <span className={stats.totals.inCents - stats.totals.outCents >= 0 ? "text-success" : "text-danger"}>{fmt(stats.totals.inCents - stats.totals.outCents)}</span>
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            {/* 周内日趋势 */}
+            {period === "week" && (
+              <section className="glass mb-4 rounded-2xl p-5">
+                <p className="mb-3"><TagChip icon={<BarChart3 size={12} />} label="日趋势" tone="sky" /></p>
+                <div className="flex items-end justify-between gap-2">
+                  {stats.daily.map((d) => (
+                    <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                      <div className="flex h-16 w-full items-end justify-center gap-0.5">
+                        <div
+                          title={`支出 ${fmt(d.outCents)}`}
+                          className="w-2.5 rounded-t bg-gradient-to-t from-rose-600/50 to-rose-400/80"
+                          style={{ height: d.outCents > 0 ? Math.max(3, (d.outCents / maxDaily) * 64) : 2 }}
+                        />
+                        <div
+                          title={`收入 ${fmt(d.inCents)}`}
+                          className="w-2.5 rounded-t bg-gradient-to-t from-emerald-600/50 to-emerald-400/80"
+                          style={{ height: d.inCents > 0 ? Math.max(3, (d.inCents / maxDaily) * 64) : 2 }}
+                        />
+                      </div>
+                      <span className="text-micro tabular-nums text-ink-faint">{Number(d.date.slice(8))}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-center text-micro text-ink-faint">
+                  <span className="text-danger">▮</span> 支出 <span className="text-success">▮</span> 收入
+                </p>
+              </section>
+            )}
+
+            {/* 分类占比 */}
+            {stats.byCategory.length > 0 && (
+              <section className="glass mb-4 rounded-2xl p-5">
+                <p className="mb-3"><TagChip icon={<Puzzle size={12} />} label="支出分类" tone="rose" /></p>
+                <div className="flex h-2.5 w-full overflow-hidden rounded-full">
+                  {stats.byCategory.map((s) => (
+                    <div
+                      key={s.category}
+                      title={`${s.category} ${fmt(s.cents)}（${s.pct}%）`}
+                      style={{ width: `${s.pct}%`, backgroundColor: TX_COLORS[s.category] ?? "#64748b" }}
+                    />
+                  ))}
+                </div>
+                <ul className="mt-3 space-y-1.5">
+                  {stats.byCategory.map((s) => (
+                    <li key={s.category} className="flex items-center gap-2 text-xs">
+                      <span className="w-16 shrink-0 truncate text-ink-mute">{s.category}</span>
+                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-elevated">
+                        <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-400" style={{ width: `${s.pct}%` }} />
+                      </div>
+                      <span className="w-20 shrink-0 text-right font-semibold tabular-nums text-ink">{fmt(s.cents)}</span>
+                      <span className="w-12 shrink-0 text-right tabular-nums text-ink-faint">{s.pct}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {/* 账户分布 + Top 对方 */}
+            <section className="mb-4 grid gap-4 sm:grid-cols-2">
+              {stats.byAccount.length > 0 && (
+                <div className="glass rounded-2xl p-5">
+                  <p className="mb-3"><TagChip icon={<CreditCard size={12} />} label="账户分布" tone="sky" /></p>
+                  <ul className="space-y-1.5">
+                    {stats.byAccount.map((a) => (
+                      <li key={a.name} className="flex items-center gap-2 text-xs">
+                        <span>{a.icon}</span>
+                        <span className="min-w-0 flex-1 truncate text-ink-mute">{a.name}</span>
+                        <span className="tabular-nums text-danger">{a.outCents > 0 ? `-${fmt(a.outCents)}` : ""}</span>
+                        {a.inCents > 0 && <span className="tabular-nums text-success">+{fmt(a.inCents)}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {stats.topCounterparties.length > 0 && (
+                <div className="glass rounded-2xl p-5">
+                  <p className="mb-3"><TagChip icon={<Handshake size={12} />} label="Top 对方" tone="violet" /></p>
+                  <ul className="space-y-1.5">
+                    {stats.topCounterparties.map((p) => (
+                      <li key={p.name} className="flex items-center gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate text-ink-mute">{p.name}</span>
+                        <span className="text-ink-faint">{p.count} 笔</span>
+                        <span className="tabular-nums text-danger">{fmt(p.outCents)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </section>
+
+            {/* AI 周报卡（仅周视图） */}
+            {period === "week" && (
+              <section className="glass mb-4 rounded-2xl p-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <TagChip icon={<Bot size={12} />} label="AI 交易周报" tone="emerald" />
+                  <span className="flex items-center gap-2">
+                    {reviewMeta && reviewForThisWeek && (
+                      <span className="text-badge text-ink-faint">
+                        {reviewMeta.cached ? "缓存" : "已生成"} · {bjMD(reviewMeta.generatedAt)}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => void loadReview(true)}
+                      disabled={genBusy}
+                      className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-micro font-medium text-emerald-600 transition hover:bg-emerald-500/20 disabled:opacity-40 dark:text-emerald-400"
+                    >
+                      {genBusy ? "生成中…" : reviewForThisWeek ? "重新生成" : "生成周报"}
+                    </button>
+                  </span>
+                </div>
+                {genBusy && !reviewForThisWeek && <p className="py-2 text-center text-xs text-ink-dim">正在读取本周流水并生成解读…</p>}
+                {reviewForThisWeek ? (
+                  <div className="space-y-3">
+                    <p className="text-sm leading-relaxed text-ink">{reviewForThisWeek.summary}</p>
+                    {reviewForThisWeek.highlights.length > 0 && (
+                      <ul className="space-y-1">
+                        {reviewForThisWeek.highlights.map((h, i) => (
+                          <li key={i} className="flex gap-1.5 text-xs text-ink-soft"><span className="text-success">◆</span>{h}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {reviewForThisWeek.suggestions.length > 0 && (
+                      <ul className="space-y-1 border-t border-line-soft pt-2">
+                        {reviewForThisWeek.suggestions.map((s, i) => (
+                          <li key={i} className="flex gap-1.5 text-xs text-ink-mute"><span className="text-accent">✦</span>{s}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : (
+                  !genBusy && <p className="py-2 text-center text-xs text-ink-faint">点「生成周报」让 AI 解读本周收支（走 AI 配额，结果缓存）</p>
+                )}
+              </section>
+            )}
+
+<footer className="mt-10 text-center">
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">拾光 · 收支复盘</span>
+        </footer>
+            <p className="mt-2 text-center text-badge text-ink-faint">统计零 AI 消耗，周报走 AI 配额</p>
+          </>
+        )}
+      </div>
+    </main>
+  );
+}

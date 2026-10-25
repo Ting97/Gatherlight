@@ -1,0 +1,88 @@
+"use client";
+
+import { useState } from "react";
+import { Lightbulb, Sparkles } from "lucide-react";
+import { useCachedReview } from "./use-cached-review";
+import { TagChip } from "@/components/tag-chip";
+import { api } from "@/shared/api";
+
+/** AI 年报（review v3）：挂载时展示上次持久化的小结；点按钮生成/重新生成；分节长文渲染 */
+export default function YearReviewCard({ year, hasRecords, notify }: {
+  year: string; // YYYY
+
+  hasRecords: boolean;
+  notify: (e: string | null) => void;
+}) {
+  const cached = useCachedReview("year", year);
+  const [review, setReview] = useState<{
+    summary: string; sections?: { title: string; text: string }[]; highlights: string[]; suggestions: string[];
+  } | null>(null);
+  const [_generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const shown = review ?? cached;
+
+  async function generate() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const j = await api<any>("/api/review/year", "POST", { year, refresh: shown != null }, undefined, { timeoutMs: 250_000 });
+      setGeneratedAt(j.generatedAt ?? null);
+      setReview(j.review);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      notify(/timed out|timeout|aborted/i.test(msg) ? "生成超时：内容较多时需要 1~3 分钟，请再试一次" : msg);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="glass mt-4 rounded-2xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink-soft">
+          <TagChip icon={<Sparkles size={12} />} label="AI 年报" tone="violet" size="sm" />
+          <span className="ml-2 text-micro font-normal text-ink-dim">{year} 年</span>
+        </h2>
+        <button
+          onClick={generate}
+          disabled={busy || !hasRecords}
+          title={hasRecords ? "基于本年真实记录生成" : "本年还没有记录"}
+          className="rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-xs text-ai transition hover:bg-purple-500/20 disabled:opacity-40"
+        >
+          {busy ? "解读中…" : shown ? "重新生成" : "生成本年小结"}
+        </button>
+      </div>
+      {busy && <p className="mt-3 animate-pulse text-xs text-ai/80">正在通读本年的时间/todo/收支/人际…</p>}
+      {!busy && !shown && !hasRecords && <p className="mt-3 text-xs text-ink-faint">本年还没有记录</p>}
+      {!busy && !shown && hasRecords && (
+        <p className="mt-3 text-xs text-ink-faint">让 AI 通读本年的时间投入/todo/收支/人际，总结这一年</p>
+      )}
+      {!busy && shown && (
+        <div className="mt-3 space-y-2">
+          <p className="text-sm leading-relaxed text-ink">{shown.summary}</p>
+          {(shown.sections ?? []).map((s) => (
+            <div key={s.title}>
+              <h3 className="text-xs font-semibold text-ink-soft">▎{s.title}</h3>
+              <p className="mt-0.5 text-xs leading-relaxed text-ink-mute">{s.text}</p>
+            </div>
+          ))}
+          {(shown.highlights ?? []).length > 0 && (
+            <ul className="space-y-1">
+              {shown.highlights.map((h, i) => (
+                <li key={`${i}-${h}`} className="flex gap-1.5 text-xs text-success/90"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-success/80"></span><span>{h}</span></li>
+              ))}
+            </ul>
+          )}
+          {(shown.suggestions ?? []).length > 0 && (
+            <ul className="space-y-1">
+              {shown.suggestions.map((sg, i) => (
+                <li key={`${i}-${sg}`} className="flex gap-1.5 text-xs text-accent/90"><span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded bg-violet-500/15 leading-none text-ai"><Lightbulb size={10} aria-hidden /></span><span>{sg}</span></li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

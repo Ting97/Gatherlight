@@ -1,0 +1,1210 @@
+/**
+ * timeline 域 service（REQ-004 FR-B1 / 4-C）：动态采集、五域识别编排、确认流。
+ * timeline 是核心域：parse 编排持有识别产物落库的唯一入口（analyzeAndPersist），
+ * confirm/edit 时清理并重写各域子表（四域域表写入的既有语义逐行保留）。
+ * 批③并入 entry 子资源操作：手动补充产物、单域重识别、图片上传/删除、饮食删除、冲突警示关闭。
+ */
+import { pool, findOverlap, overlapError } from "@/server/platform/db";
+import { ruleMood, parseInput, DOMAIN_LABELS, activeModel, toCstWallClock, type Domain, type ParseResult } from "@shiguangri/ai";
+import {
+  catListFromActivities,
+  listUserActivities,
+  listUserFinanceCats,
+  resolveActivityValue,
+} from "@/server/ai/user-vocab";
+import { inferInteractionType } from "@shiguangri/shared/social";
+import { yuanToCents } from "@shiguangri/shared/finance";
+import { checkAiQuota } from "@/server/ai/quota";
+import { writeAuditRecord } from "../ai/audit";
+import { assembleUserPrompt, getPromptBundle, type PromptKey } from "../ai/prompts";
+import { deleteImageFile, sniffImageMime, sniffWavMime, IMAGE_MIME_EXT, newStorageKey, saveImageFile } from "@/server/timeline/storage";
+import { ApiError } from "../platform/http/errors";
+import { isUuid } from "../platform/http/validate";
+import { invalidateReviewCachesForOccurrence } from "@/server/insight";
+import { analyzeAndPersist, listContactNames, resolveFinanceOccurredAt } from "./analyze";
+import { entriesRepo } from "./repo";
+
+/** 手动/确认路径金额上限（分）：与 AI 契约 FinanceDraftV2 max(100_000_000) 对齐，int4 列安全 */
+const MAX_AMOUNT_CENTS = 100_000_000;
+
+/** HH:MM 形状且真实存在（"25:99" 形状合法但拼出的 Date 是 Invalid，toISOString 会抛 RangeError → 500） */
+function parseHHMM(v: unknown): string | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(String(v));
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  return h <= 23 && min <= 59 ? `${m[1]}:${m[2]}` : null;
+}
+
+/** 非法时间串归一：Invalid Date 的 toISOString 抛 RangeError → 500，统一预检拦成 400 */
+function toIsoOr400(v: unknown, message: string): string {
+  const d = new Date(String(v));
+  if (Number.isNaN(d.getTime())) throw ApiError.badRequest(message);
+  return d.toISOString();
+}
+
+/** activity 归属预检：不存在的 activityId 直插 time_blocks 触发复合 FK 23503 → 500，先拦成 400 */
+async function assertActivityExists(client: import("pg").PoolClient, userId: string, activityId: string): Promise<void> {
+  const hit = await client.query(`select 1 from activities where id = $1 and user_id = $2`, [activityId, userId]);
+  if (hit.rows.length === 0) throw ApiError.badRequest("类别不存在");
+}
+
+/** POST /api/parse：动态本体先落地秒回 + 配额 + 后台五域识别（fire-and-forget，成败都打 analyzed_at） */
+export async function ingest(userId: string, text: string, source: "keyboard" | "voice" = "keyboard") {
+  const q = await checkAiQuota(userId);
+  if (!q.allowed) {
+    throw ApiError.quota(
+      `AI 免费额度已用完（30 天内 ${q.used}/${q.limit} 次）·升级 Pro 解锁无限识别`,
+      q,
+    );
+  }
+  const entry = (await entriesRepo.insert(userId, source, text.trim())).rows[0];
+  // FR-C2.4：识别失败不再打 analyzed_at（失败留痕由巡检补跑）；成功路径 analyzeAndPersist 内部落 analyzed_at
+  void analyzeAndPersist(userId, entry.id, text.trim())
+    .catch((e) => {
+      console.error("[analyze] 后台识别失败（巡检将补跑）:", e);
+      return pool.query(`update entries set analyze_retries = analyze_retries + 1 where id = $1`, [entry.id]);
+    });
+  return { entry };
+}
+
+/** POST /api/entries/:id/confirm {domain, ignore?}：确认 pending 识别落库；ignore=true 丢弃 */
+export async function confirmPending(
+  userId: string,
+  entryId: string,
+  domain: Domain | undefined,
+  ignore = false,
+) {
+  if (!domain) throw ApiError.badRequest("domain 必填");
+  const rec = await entriesRepo.pendingRecognition(entryId, userId, domain);
+  if (!rec) throw ApiError.notFound("没有待确认的识别结果");
+
+  if (ignore) {
+    // 状态守卫：只允许 pending → none。并发下 confirm 已把快照置 applied 时，ignore 不再回写状态
+    // （否则 applied → none 会让「已确认」在登记簿上变回待确认）
+    const ignored = await entriesRepo.ignoreRecognition(rec.id);
+    if (ignored.rowCount === 0) throw ApiError.conflict("识别结果已处理，请刷新");
+    return { ok: true as const, domain, ignored: true };
+  }
+
+  const result = rec.result ?? {};
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // per-user advisory lock：跨路径串行化时间块写事务（重叠 check-then-insert 的 TOCTOU 收口，生产 PG13 无 EXCLUDE 约束兜底）
+    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`timeblocks:${userId}`]);
+    // 事务内所有语句统一走 client（否则自动提交让 rollback 形同虚设，中途失败会静默丢数据）
+    const entry = await entriesRepo.rawTextOf(entryId, userId, client);
+    if (!entry) {
+      await client.query("rollback");
+      throw ApiError.notFound("动态不存在");
+    }
+    // 状态守卫前置为事务内首写并检查 rowCount：pending 快照在事务外读入，期间可能已被
+    // 并发 confirm 置 applied / 被编辑重识别清掉 / 被 ignore 置 none——按陈旧快照继续落库
+    // 会把过期日程块/流水永久挂在改写后的动态上（且 apply 的 0 行守卫被无视后无人察觉）
+    const applied = await entriesRepo.applyRecognition(rec.id, client);
+    if (applied.rowCount === 0) {
+      await client.query("rollback");
+      throw ApiError.conflict("识别结果已失效，请刷新后重试");
+    }
+    // 用户确认 = 在动态上落定数据：打点 analyzed_at（幂等），巡检不再补跑识别清掉本条
+    await entriesRepo.stampAnalyzedAt(client, entryId);
+
+    // 事件发生日收集：提交后据此失效对应周期的四档复盘缓存（buildLatest 水位多按事件时间列，
+    // 滞后确认历史时刻不抬水位，缓存被误判「仍新鲜」→ 历史复盘长期陈旧；十一轮 P2 修复）
+    const invalidateAts: Date[] = [new Date(entry.created_at)];
+
+    switch (domain) {
+      case "mood": {
+        if (result.label) {
+          await client.query(`update entries set mood = $1, mood_score = $2 where id = $3`, [
+            result.label, result.score ?? 0, entryId,
+          ]);
+        }
+        break;
+      }
+      case "schedule": {
+        if (result.startAt && result.endAt && result.activityId && result.title) {
+          // 快照防御：识别产物可能含脏时间，Invalid Date 落 findOverlap 的 ::timestamptz 会 500，先拦成 400
+          if (Number.isNaN(new Date(result.startAt).getTime()) || Number.isNaN(new Date(result.endAt).getTime())) {
+            throw ApiError.badRequest("识别快照时间无效，请重新识别");
+          }
+          // pending 快照是识别时刻的，确认可能发生在数小时后——落库前同样做重叠检测
+          //（与 createBlock/appendManual/reRecognize 对齐，否则确认路径可绕过「一个时刻只做一件事」）。
+          // 排除本 entry 自己的块：识别 pending 期间用户已手动补录过同条动态时，替换式写入（下方 delete+insert）
+          // 语义本就是覆盖自己——命中自己的块报 409 会让确认流死锁（与 reRecognize 同根，009 轮补齐）
+          const conflict = await findOverlap(userId, result.startAt, result.endAt, undefined, entryId, client);
+          if (conflict) {
+            throw ApiError.conflict(overlapError(conflict, {
+              title: result.title, start: result.startAt, end: result.endAt,
+            }));
+          }
+          await assertActivityExists(client, userId, result.activityId);
+          await client.query(`delete from time_blocks where entry_id = $1 and user_id = $2`, [entryId, userId]);
+          await client.query(
+            `insert into time_blocks (user_id, entry_id, activity_id, title, start_at, end_at, time_mode, source)
+             values ($1,$2,$3,$4,$5,$6,'default','keyboard')`,
+            [userId, entryId, result.activityId, result.title, result.startAt, result.endAt],
+          );
+          // start 与 end 都失效：跨天块结束日分摊时长，只按 start 失效漏掉结束日缓存（analyze 主路径同口径）
+          invalidateAts.push(new Date(result.startAt));
+          invalidateAts.push(new Date(result.endAt));
+        }
+        break;
+      }
+      case "todo": {
+        if (result.dueAt && result.title) {
+          // 快照防御：无效 dueAt 会让 remind_at 推算与 ::timestamptz 落库 500，与 schedule 分支同口径 400
+          if (Number.isNaN(new Date(result.dueAt).getTime())) {
+            throw ApiError.badRequest("识别快照时间无效，请重新识别");
+          }
+          // 替换式重写前先解挂拆解行动（parent_todo_id on delete cascade 且行动自身无 entry_id）：
+          // 直接删会把用户手动加的子行动连带清掉，parent 置 null 保留
+          await client.query(
+            `update todos set parent_todo_id = null where parent_todo_id in (select id from todos where entry_id = $1 and user_id = $2)`,
+            [entryId, userId],
+          );
+          await client.query(`delete from todos where entry_id = $1 and user_id = $2`, [entryId, userId]);
+          await client.query(
+            `insert into todos (user_id, entry_id, title, due_at, remind_at, source, space_id)
+             values ($1,$2,$3,$4,$5,'keyboard',(select space_id from entries where id = $2))`,
+            [userId, entryId, result.title, result.dueAt, new Date(new Date(result.dueAt).getTime() - 15 * 60_000).toISOString()],
+          );
+          invalidateAts.push(new Date(result.dueAt));
+        }
+        break;
+      }
+      case "finance": {
+        if (result.amountCents != null) {
+          // 快照防御：脏 occurredAt 落 ::timestamptz 会 500，与 schedule/todo 分支同口径 400
+          // 话术带日期的花销 → 记对应日期（REQ-009 FR-E6）；无则按动态发生时刻（与 analyze 主路径
+          // `?? r.time.end` 同口径）——FinanceDraft 快照无 occurredAt 字段，此前回落 now()，
+          // 次日才确认的话钱会被记到确认日（日账/月视图错天）
+          const occurredAt =
+            resolveFinanceOccurredAt((result as { occurredDate?: string | null }).occurredDate, entry.created_at) ??
+            new Date(entry.created_at).toISOString();
+          if (Number.isNaN(new Date(occurredAt).getTime())) {
+            throw ApiError.badRequest("识别快照时间无效，请重新识别");
+          }
+          await client.query(`delete from transactions where entry_id = $1 and user_id = $2`, [entryId, userId]);
+          await client.query(
+            `insert into transactions (user_id, entry_id, direction, amount_cents, category, counterparty, note, occurred_at)
+             values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              userId, entryId,
+              result.direction === "in" ? "in" : "out",
+              Math.abs(result.amountCents),
+              result.category ?? "其他",
+              result.counterparty ?? null,
+              entry.raw_text,
+              occurredAt,
+            ],
+          );
+          invalidateAts.push(new Date(occurredAt));
+        }
+        break;
+      }
+      case "diet": {
+        if (result.items?.length) {
+          await client.query(`delete from diet_records where entry_id = $1 and user_id = $2`, [entryId, userId]);
+          await client.query(
+            `insert into diet_records (user_id, entry_id, meal, items, total_kcal)
+             values ($1,$2,$3,$4,$5)`,
+            [userId, entryId, result.meal ?? "未知", JSON.stringify(result.items), result.totalKcal ?? null],
+          );
+        }
+        break;
+      }
+    }
+
+    // applyRecognition 已在事务内前置完成（状态守卫 + 防重复落库），此处直接提交
+    await client.query("commit");
+    // 滞后确认的产物按事件发生日失效复盘缓存（函数内部吞错降级，不阻塞确认）
+    for (const at of invalidateAts) void invalidateReviewCachesForOccurrence(userId, at);
+    return { ok: true as const, domain };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    if (e instanceof ApiError) throw e;
+    throw ApiError.upstream("确认失败", String(e).slice(0, 200));
+  } finally {
+    client.release();
+  }
+}
+
+export interface FeedQuery {
+  limit: number;
+  offset: number;
+  q: string;
+  spaceId: string;
+  /** 历史回看锚点：只取 created_at 严格早于该时刻的动态——首条即锚点日（或更早最近日）的最后一条 */
+  before?: string;
+}
+
+/** GET /api/feed：动态流（聚合五域产物/图片/识别登记簿；关键字检索；空间过滤） */
+export async function listFeed(userId: string, query: FeedQuery) {
+  const { limit, offset, q, spaceId, before } = query;
+  let spaceSql = "";
+  // 占位符动态取号：q 存在时检索 ilike 占用 $4，空间过滤顺延为 $5（避免双 $4 实参错位 → uuid 解析 500）
+  const spaceParamIndex = q ? 5 : 4;
+  // 是否带空间过滤必须与实参数组用同一谓词，否则绑定参数数量与占位符不一致 → bind message 500；
+  // uuid 形状用严格 8-4-4-4-12（宽松 36 位会放行无连字符串 → PG ::uuid cast 500）
+  // 非法值此前静默按「全部」处理（过滤意图被吞），与 patchFeed 的 isUuid 预检口径对齐改 400
+  if (spaceId !== "none" && spaceId !== "all" && !isUuid(spaceId)) {
+    throw ApiError.badRequest("spaceId 参数不合法");
+  }
+  const spaceFiltered = spaceId !== "none" && spaceId !== "all";
+  if (spaceId === "none") spaceSql = ` and e.space_id is null`;
+  else if (spaceFiltered) spaceSql = ` and e.space_id = $${spaceParamIndex}::uuid`;
+
+  // before 占位号：q($4)/space($4|$5) 之后的顺延位
+  const beforeIdx = spaceFiltered ? spaceParamIndex + 1 : spaceParamIndex;
+  const beforeSql = before ? ` and e.created_at < $${beforeIdx}::timestamptz` : "";
+
+  const searchSql = q
+    ? `and (
+         e.raw_text ilike $4
+         or exists (select 1 from time_blocks b where b.entry_id = e.id and b.title ilike $4)
+         or exists (select 1 from todos t where t.entry_id = e.id and t.title ilike $4)
+         or exists (select 1 from transactions x where x.entry_id = e.id
+                    and (x.category ilike $4 or x.counterparty ilike $4 or x.note ilike $4))
+         or exists (select 1 from interactions i join contacts c on c.id = i.contact_id
+                    where i.entry_id = e.id and c.name ilike $4)
+         or exists (select 1 from diet_records d where d.entry_id = e.id and d.items::text ilike $4)
+       )`
+    : "";
+
+  const { rows } = await pool.query(
+    `select e.id, e.raw_text, e.source, e.mood, e.mood_score, e.created_at, e.analyzed_at,
+       case when e.analyzed_at is null and e.created_at < now() - interval '10 minutes' then 'timeout' end as recognize_state,
+       (select jsonb_build_object('id', gs.id, 'name', gs.name, 'icon', gs.icon, 'color', gs.color)
+          from goal_spaces gs where gs.id = e.space_id) as space,
+       count(*) over () as total_count,
+       coalesce((
+         select jsonb_agg(jsonb_build_object(
+           'id', b.id, 'title', b.title, 'startAt', b.start_at, 'endAt', b.end_at,
+           'durationMin', b.duration_min, 'activityId', b.activity_id,
+           'activityName', a.name, 'icon', a.icon, 'color', a.color
+         ) order by b.start_at)
+         from time_blocks b join activities a on a.id = b.activity_id and a.user_id = b.user_id
+         where b.entry_id = e.id
+       ), '[]') as blocks,
+       coalesce((
+         select jsonb_agg(jsonb_build_object(
+           'id', t.id, 'title', t.title, 'dueAt', t.due_at, 'startAt', t.start_at, 'status', t.status, 'activityId', t.activity_id
+         ) order by t.created_at)
+         from todos t where t.entry_id = e.id
+       ), '[]') as todos,
+       coalesce((
+         select jsonb_agg(jsonb_build_object(
+           'id', x.id, 'amountCents', x.amount_cents, 'direction', x.direction,
+           'category', x.category, 'counterparty', x.counterparty
+         ))
+         from transactions x where x.entry_id = e.id
+       ), '[]') as transactions,
+       coalesce((
+         select jsonb_agg(jsonb_build_object('interactionId', i.id, 'name', c.name, 'summary', i.summary))
+         from interactions i join contacts c on c.id = i.contact_id
+         where i.entry_id = e.id
+       ), '[]') as people,
+       e.audio_url,
+       coalesce((
+         select jsonb_agg(jsonb_build_object(
+           'id', g.id, 'storageKey', g.storage_key, 'mime', g.mime, 'width', g.width, 'height', g.height, 'sort', g.sort
+         ) order by g.sort, g.created_at)
+         from entry_images g where g.entry_id = e.id
+       ), '[]') as images,
+       (select jsonb_build_object('id', d.id, 'meal', d.meal, 'items', d.items, 'totalKcal', d.total_kcal)
+         from diet_records d where d.entry_id = e.id) as diet,
+       coalesce((
+         select jsonb_object_agg(rg.domain, jsonb_build_object(
+           'status', rg.status, 'confidence', rg.confidence, 'reason', rg.result->>'reason', 'engine', rg.engine,
+           'reasonDismissed', coalesce(rg.result->>'reasonDismissed', 'false')::boolean))
+         from entry_recognitions rg where rg.entry_id = e.id
+       ), '{}'::jsonb) as recognitions
+     from entries e
+     where e.user_id = $1 ${searchSql} ${spaceSql} ${beforeSql}
+     order by e.created_at desc, e.id desc
+     limit $2 offset $3`,
+    ((): unknown[] => {
+      // 实参顺序与占位号一一对应：q → space → before（均按存在性追加）
+      const params: unknown[] = [userId, limit, offset];
+      if (q) params.push(`%${q.replace(/[\\%_]/g, "\\$&")}%`);
+      if (spaceFiltered) params.push(spaceId);
+      if (before) params.push(before);
+      return params;
+    })(),
+  );
+  const total = rows[0] ? Number(rows[0].total_count) : 0;
+  return { moments: rows, total };
+}
+
+export interface FeedPatch {
+  mood?: string | null;
+  raw_text?: string;
+  spaceId?: string | null;
+}
+
+/** PATCH /api/feed/:id：手动归属空间 / 编辑原文重识别 / 修正心情（三选一语义互斥） */
+export async function patchFeed(userId: string, entryId: string, body: FeedPatch) {
+  // 三字段皆未传时旧版会径直落到末尾的 mood 分支：按 label=null 清空心情并打 analyzed_at——
+  // 空更新被当成「清除心情」，这里 400 拦下（与 updateTodo/builds 的「没有可更新的字段」同口径）
+  if (body.mood === undefined && body.raw_text === undefined && body.spaceId === undefined) {
+    throw ApiError.badRequest("没有可更新的字段");
+  }
+  // 手动归属空间：校验空间属主（null=移除归属）
+  if (body.spaceId !== undefined) {
+    let sid: string | null = null;
+    if (body.spaceId) {
+      // 归属是赋值语义（null=移除），listFeed 的 "none"/"all" 过滤语义值在这里无意义且同样会
+      // 在 spaceOwnerExists 的 uuid cast 上 500 → 一律 uuid 预检拦成 400
+      if (!isUuid(body.spaceId)) throw ApiError.badRequest("spaceId 参数不合法");
+      const hit = await entriesRepo.spaceOwnerExists(body.spaceId, userId);
+      if (!hit.rows[0]) throw ApiError.badRequest("空间不存在");
+      sid = hit.rows[0].id;
+    }
+    const updated = (await entriesRepo.setSpace(entryId, userId, sid)).rows[0];
+    if (!updated) throw ApiError.notFound("动态不存在");
+    return { ok: true as const, entry: updated };
+  }
+
+  if (body.raw_text !== undefined) {
+    const text = body.raw_text.trim();
+    if (!text) throw ApiError.badRequest("内容不能为空");
+    if (text.length > 2000) throw ApiError.badRequest("动态最长 2000 字");
+    const q = await checkAiQuota(userId);
+    if (!q.allowed) {
+      throw ApiError.quota(`AI 免费额度已用完（30 天内 ${q.used}/${q.limit} 次）·升级 Pro 解锁无限识别`, q);
+    }
+
+    const client = await pool.connect();
+    let updated;
+    let eventTimes: Date[] = [];
+    try {
+      await client.query("begin");
+      // editRawText 先更新 entry 行（取得行锁）再清子表——统一「先锁 entry 再动子表」顺序，
+      // 防与后台补跑识别（select for update → 清旧插新）反序加锁死锁
+      updated = (await entriesRepo.editRawText(client, entryId, userId, text)).rows[0];
+      // 事件时间须在 clearDerived 前采集（同 deleteFeed）：编辑清掉的历史块/流水按事件日失效，
+      // 只按 created_at 失效覆盖不到「昨天发生、今天发布」的行
+      if (updated) eventTimes = await entriesRepo.eventTimesOf(client, entryId, userId);
+      await entriesRepo.clearDerived(client, entryId, userId);
+      if (!updated) {
+        await client.query("rollback");
+        throw ApiError.notFound("动态不存在");
+      }
+      await client.query("commit");
+    } catch (e) {
+      await client.query("rollback").catch(() => {});
+      if (e instanceof ApiError) throw e;
+      throw ApiError.upstream("编辑失败", String(e).slice(0, 200));
+    } finally {
+      client.release();
+    }
+    // 后台全域重识别（同发动态：秒回 + fire-and-forget）；成功自打 analyzed_at，失败留巡检
+    void analyzeAndPersist(userId, entryId, text)
+      .catch((e) => console.error(`[analyze] entry ${entryId} 编辑重识别失败（巡检将补跑）:`, e));
+    // 编辑清派生（历史块/饮食/流水被删）会让对应周期水位盲区陈旧——按动态创建日 + 全部事件日失效（十一轮 P2 / 十七轮补全）
+    void invalidateReviewCachesForOccurrence(userId, new Date(updated.created_at));
+    for (const at of eventTimes) void invalidateReviewCachesForOccurrence(userId, at);
+    return { ok: true as const, entry: updated };
+  }
+
+  const label = body.mood?.trim() || null;
+  const score = label ? (ruleMood(label)?.score ?? 0) : null;
+  const updated = (await entriesRepo.setMoodByEntry(entryId, userId, label, score)).rows[0];
+  if (!updated) throw ApiError.notFound("动态不存在");
+  // 手设/清除心情改写复盘直接消费的数据（moods 聚合 + 明细行），而 created_at 不变、
+  // 心情不在任何水位列——不显式失效则历史 entry 改心情后该周期复盘持续陈旧（十一轮 P2，
+  // 与 raw_text 编辑分支同口径；函数内部吞错降级，不阻塞心情保存）
+  void invalidateReviewCachesForOccurrence(userId, new Date(updated.created_at));
+  return { entry: updated };
+}
+
+type ManualDomain = "schedule" | "todo" | "finance" | "mood" | "diet" | "people";
+const MANUAL_VALID: ManualDomain[] = ["schedule", "todo", "finance", "mood", "diet", "people"];
+const RECOGNIZE_VALID = ["schedule", "todo", "finance", "mood", "diet", "people"] as const;
+
+/**
+ * POST /api/entries/:id/manual { domain, payload } —— 手动补充识别产物（不经 AI）
+ * 六域各自落库并写登记簿（engine='manual'），来源动态在动态流中完整呈现。
+ */
+export async function appendManual(
+  userId: string,
+  entryId: string,
+  body: { domain?: string; payload?: Record<string, unknown> },
+) {
+  const domain = body.domain as ManualDomain | undefined;
+  const p = (body.payload ?? {}) as Record<string, any>;
+  if (!domain || !MANUAL_VALID.includes(domain)) {
+    throw ApiError.badRequest("domain 需为 schedule/todo/finance/mood/diet/people");
+  }
+
+  const entry = (
+    await pool.query(`select id, raw_text, created_at from entries where id = $1 and user_id = $2`, [entryId, userId])
+  ).rows[0];
+  if (!entry) throw ApiError.notFound("动态不存在");
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // per-user advisory lock：跨路径串行化时间块写事务（重叠 check-then-insert 的 TOCTOU 收口，生产 PG13 无 EXCLUDE 约束兜底）
+    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`timeblocks:${userId}`]);
+    // 手动补录 = 用户在该动态上落定数据：先打 analyzed_at（幂等，UPDATE 同时取得 entry 行锁，
+    // 与 analyzeAndPersist/confirmPending「先锁 entry 再动子表」同序）。识别若还在飞行中，
+    // 落库阶段看到 analyzed_at 已置会主动放弃清写——否则本条手动数据会被识别结果整体覆盖
+    const stamped = await entriesRepo.stampAnalyzedAt(client, entryId);
+    // 事务内复检（二十轮，对齐 confirmPending）：事务外属主检查后动态被并发删除时，
+    // 后续子表 insert 触发 FK 23503 → 500「手动添加失败」；此处改判 404
+    if (stamped.rowCount === 0) throw ApiError.notFound("动态不存在");
+    let message = "";
+    let result: unknown = {};
+    // 事件发生日收集：提交后据此失效对应周期的四档复盘缓存（滞后补录历史时刻不抬 buildLatest
+    // 水位，缓存被误判「仍新鲜」；十一轮 P2 修复，与 confirmPending 同口径）
+    const invalidateAts: Date[] = [new Date(entry.created_at)];
+
+    switch (domain) {
+      case "schedule": {
+        const title = String(p.title ?? "").trim();
+        if (!title || !p.startTime || !p.endTime) {
+          throw ApiError.badRequest("需要标题与起止时间");
+        }
+        // 与 createBlock 同口径（≤100）：超长标题进冲突 409 文案与日程视图
+        if (title.length > 100) throw ApiError.badRequest("标题最长 100 字");
+        if (!/^\d{2}:\d{2}$/.test(String(p.startTime)) || !/^\d{2}:\d{2}$/.test(String(p.endTime))) {
+          throw ApiError.badRequest("起止时间格式需为 HH:MM");
+        }
+        // 形状之外还须真实存在："25:99" 拼出的 Date 是 Invalid，下方 toISOString 会抛 RangeError → 500
+        const startHM = parseHHMM(p.startTime);
+        const endHM = parseHHMM(p.endTime);
+        if (!startHM || !endHM) {
+          throw ApiError.badRequest("起止时间需为真实存在的时刻（如 09:30）");
+        }
+        // 以动态创建日（北京日历日）为基准日拼接 HH:MM：UTC getter + 8h 推算，不依赖宿主时区；
+        // 解析时显式追加 +08:00（无后缀的 ISO 串会按宿主时区解析，非 CST 宿主上会偏 8 小时）
+        const base = new Date(entry.created_at);
+        const day = new Date(base.getTime() + 8 * 3600_000).toISOString().slice(0, 10);
+        const start = new Date(`${day}T${startHM}:00+08:00`).toISOString();
+        // 跨日程：结束按同一北京日拼接，< 开始自动 +1 天（如 23:00–06:00 睡眠块）；
+        // 相等视为输入失误报 400（旧 +1 天会生成 24h 全天块并触发全天冲突）
+        let end = new Date(`${day}T${endHM}:00+08:00`).toISOString();
+        if (end === start) {
+          throw ApiError.badRequest("结束时间需晚于开始时间（跨天场景如 23:00–06:00 可直接填写）");
+        }
+        if (end < start) {
+          end = new Date(new Date(end).getTime() + 86_400_000).toISOString();
+        }
+        // 排除本 entry 自己的块：AI 已为该动态落过日程块时，用户手动补充修正时段
+        // （与本块重叠）不应 409 死锁——与 confirmPending/reRecognize 同口径
+        const conflict = await findOverlap(userId, start, end, undefined, entryId, client);
+        if (conflict) {
+          throw ApiError.conflict(overlapError(conflict));
+        }
+        const activityId = typeof p.activityId === "string" && p.activityId ? p.activityId : "other";
+        await assertActivityExists(client, userId, activityId);
+        await client.query(
+          `insert into time_blocks (user_id, entry_id, activity_id, title, start_at, end_at, time_mode, source)
+           values ($1,$2,$3,$4,$5,$6,'explicit','manual')`,
+          [userId, entryId, activityId, title, start, end],
+        );
+        result = { title, start, end };
+        message = `🕒 已手动添加日程「${title}」`;
+        // start 与 end 都失效：跨天块结束日分摊时长（confirmPending 同口径）
+        invalidateAts.push(new Date(start));
+        invalidateAts.push(new Date(end));
+        break;
+      }
+      case "todo": {
+        const title = String(p.title ?? "").trim();
+        if (!title) {
+          throw ApiError.badRequest("标题不能为空");
+        }
+        // 与 createTodo 同口径（≤200）：超长标题进列表/提醒推送
+        if (title.length > 200) throw ApiError.badRequest("标题太长了（≤200 字）");
+        // 快照防御：非法 dueAt 的 toISOString 会抛 RangeError → 500（与 confirmPending todo 分支同口径 400）
+        const dueAt = p.dueAt ? toIsoOr400(p.dueAt, "到期时间格式不正确") : null;
+        const activityId = typeof p.activityId === "string" && p.activityId ? p.activityId : "other";
+        // todos.activity_id 是 (activity_id, user_id) 复合外键：任意串直插 23503 → 事务回滚 500（schedule 分支同款预检）
+        await assertActivityExists(client, userId, activityId);
+        await client.query(
+          `insert into todos (user_id, entry_id, title, activity_id, due_at, remind_at, source, space_id)
+           values ($1,$2,$3,$4,$5,$6,'manual',(select space_id from entries where id = $2))`,
+          [userId, entryId, title, activityId, dueAt, dueAt ? new Date(new Date(dueAt).getTime() - 15 * 60_000) : null],
+        );
+        result = { title, dueAt };
+        message = `📋 已手动添加 todo「${title}」`;
+        if (dueAt) invalidateAts.push(new Date(dueAt));
+        break;
+      }
+      case "finance": {
+        // 金额经 yuanToCents 字符串解析（x.xx5 元浮点乘法系统性舍错 1 分——客户端
+        // 已统一走该函数，此处收口服务端最后一条直传 Number 的通道；兼容历史客户端 number 形态）
+        const cents = yuanToCents(typeof p.yuan === "string" ? p.yuan : String(p.yuan));
+        if (cents == null || cents <= 0) {
+          throw ApiError.badRequest("金额需大于 0");
+        }
+        // 上限与 AI 契约对齐：amount_cents 为 int4，巨款直落 22003 → 500
+        if (cents > MAX_AMOUNT_CENTS) {
+          throw ApiError.badRequest("单笔金额超出上限（¥100 万）");
+        }
+        const direction = p.direction === "in" ? "in" : "out";
+        // 与 contacts 姓名/分类词表同口径（≤30）：超长值进流水列表、人情账匹配（counterparty=name）与画像 prompt
+        const category = typeof p.category === "string" && p.category ? p.category : "其他";
+        const counterparty = typeof p.counterparty === "string" && p.counterparty ? p.counterparty : null;
+        if (category.length > 30) throw ApiError.badRequest("分类最长 30 字");
+        if (counterparty && counterparty.length > 30) throw ApiError.badRequest("交易对象最长 30 字");
+        await client.query(
+          `insert into transactions (user_id, entry_id, direction, amount_cents, category, counterparty, note, occurred_at, is_draft)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,true)`,
+          [
+            userId, entryId, direction, cents,
+            category,
+            counterparty,
+            entry.raw_text,
+            // 发生日取动态创建日北京钟点（与 confirmPending finance 分支同口径）：
+            // 恒 now() 会把十天前动态上补录的流水记到今天，日账/月视图错天
+            new Date(entry.created_at).toISOString(),
+          ],
+        );
+        // 登记簿只存整数分（金额一律分）：浮点元入库是整数纪律破口，下游再算术必引浮点误差
+        result = { direction, cents };
+        message = `💰 已手动添加${direction === "out" ? "支出" : "收入"} ¥${(cents / 100).toFixed(2)}（待确认）`;
+        break;
+      }
+      case "mood": {
+        const label = typeof p.label === "string" ? p.label.trim() : "";
+        if (!label) {
+          throw ApiError.badRequest("请选择心情");
+        }
+        // 与联系人类字段同口径（≤20）：超长心情词进动态流标签与复盘事实行
+        if (label.length > 20) throw ApiError.badRequest("心情最长 20 字");
+        // mood_score 列 check(-100~100)：非有限数/越界曾直落 PG 违约 500，先拦成 400
+        const score = Number(p.score ?? 0);
+        if (!Number.isFinite(score) || score < -100 || score > 100) {
+          throw ApiError.badRequest("心情强度需为 -100~100 的数值");
+        }
+        await client.query(`update entries set mood = $2, mood_score = $3 where id = $1`, [entryId, label, score]);
+        result = { label };
+        message = `😊 已设置心情「${label}」`;
+        break;
+      }
+      case "diet": {
+        const text = typeof p.text === "string" ? p.text.trim() : "";
+        if (!text) {
+          throw ApiError.badRequest("请填写吃了什么");
+        }
+        const meal = ["早餐", "午餐", "晚餐", "加餐", "夜宵", "未知"].includes(String(p.meal)) ? String(p.meal) : "未知";
+        // total_kcal 为 int4 且 AI 契约 max(5000)：非整数（22P02）/巨数（22003）直落 500，不合法时按"估不出"落 null
+        const kcalRaw = Number(p.kcal);
+        const kcal = Number.isInteger(kcalRaw) && kcalRaw > 0 && kcalRaw <= 5000 ? kcalRaw : null;
+        // diet_records.entry_id 有唯一索引：动态已有饮食记录（AI 已落/已确认）时先删旧再插，否则唯一冲突整个事务 500
+        await client.query(`delete from diet_records where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        await client.query(
+          `insert into diet_records (user_id, entry_id, meal, items, total_kcal) values ($1,$2,$3,$4,$5)`,
+          [userId, entryId, meal, JSON.stringify([{ name: text.slice(0, 40), amount: null, kcal }]), kcal],
+        );
+        result = { meal, text, kcal };
+        message = `🍽 已手动添加饮食「${text}」`;
+        break;
+      }
+      case "people": {
+        const name = typeof p.name === "string" ? p.name.trim() : "";
+        if (!name) {
+          throw ApiError.badRequest("请填写姓名");
+        }
+        // 与 createContact 同口径（≤30）：超长名会进 409 文案、AI 画像 prompt 与图谱节点
+        if (name.length > 30) throw ApiError.badRequest("姓名最长 30 字");
+        const type = ["见面", "通话", "送礼", "收礼", "请客", "帮忙", "其他"].includes(String(p.type)) ? String(p.type) : "见面";
+        const c = (
+          await client.query(
+            `insert into contacts (user_id, name) values ($1, $2)
+             on conflict (user_id, name) do update set name = excluded.name returning id`,
+            [userId, name],
+          )
+        ).rows[0];
+        // 幂等：同动态同人重复补录先清旧往来再插（只清本条联系人，不动同动态其他人）
+        await client.query(`delete from interactions where entry_id = $1 and user_id = $2 and contact_id = $3`, [
+          entryId, userId, c.id,
+        ]);
+        await client.query(
+          `insert into interactions (user_id, contact_id, entry_id, type, summary, occurred_at)
+           values ($1,$2,$3,$4,$5,$6)`,
+          // 发生日取动态创建日北京钟点（同函数 finance 分支口径）：恒 now() 会把十天前动态上
+          // 补录的往来记到今天，contactDetail 时间线排序失真
+          [userId, c.id, entryId, type, entry.raw_text, new Date(entry.created_at).toISOString()],
+        );
+        result = { name, type };
+        message = `👥 已记录与「${name}」的往来`;
+        break;
+      }
+    }
+
+    // 登记簿：手动添加标记为 applied + manual
+    await client.query(
+      `insert into entry_recognitions (user_id, entry_id, domain, status, result, confidence, engine)
+       values ($1,$2,$3,'applied',$4,1,'manual')
+       on conflict (entry_id, domain) do update set
+         status = 'applied', result = excluded.result, confidence = 1,
+         engine = 'manual', updated_at = now()`,
+      [userId, entryId, domain, JSON.stringify(result ?? {})],
+    );
+
+    await client.query("commit");
+    // 手动补录按事件发生日失效复盘缓存（函数内部吞错降级，不阻塞补录）
+    for (const at of invalidateAts) void invalidateReviewCachesForOccurrence(userId, at);
+    return { ok: true as const, message };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    if (e instanceof ApiError) throw e;
+    throw ApiError.upstream("手动添加失败", String(e).slice(0, 200));
+  } finally {
+    client.release();
+  }
+}
+
+function confidenceOf(r: ParseResult, domain: string): number {
+  switch (domain) {
+    case "people": return 0.9;
+  }
+  switch (domain as Domain) {
+    case "schedule": return r.scheduleConfidence;
+    case "todo": return r.todoConfidence;
+    case "finance": return r.financeConfidence;
+    case "mood": return r.mood.confidence;
+    case "diet": return r.diet.confidence;
+  }
+  return 0.9;
+}
+
+/**
+ * POST /api/entries/:id/recognize { domain } —— 单域重新识别（替换式）
+ * mood: 覆写/清空 | schedule: 冲突检测通过才换块 | todo/finance: 删旧落新 | diet: upsert
+ */
+export async function reRecognize(userId: string, entryId: string, domain?: string) {
+  const q = await checkAiQuota(userId);
+  if (!q.allowed) {
+    throw ApiError.quota(
+      `AI 免费额度已用完（30 天内 ${q.used}/${q.limit} 次）·升级 Pro 解锁无限识别`,
+      q,
+    );
+  }
+  if (!domain || !RECOGNIZE_VALID.includes(domain as Domain | "people")) {
+    throw ApiError.badRequest("domain 需为 schedule/todo/finance/mood/diet/people");
+  }
+
+  const entry = (
+    await pool.query(`select id, raw_text, created_at from entries where id = $1 and user_id = $2`, [entryId, userId])
+  ).rows[0];
+  if (!entry) throw ApiError.notFound("动态不存在");
+
+  const t0 = Date.now();
+  let promptTokens = 0;
+  let completionTokens = 0;
+  // 输入装配（3-A）：单域 key 按 DB 配置组装 user prompt；people 域联系人受开关控制
+  const key = `extract_domain_${domain}` as PromptKey;
+  const bundle = await getPromptBundle(key);
+  const contactsOn = domain === "people" && bundle.config.inject.contactList;
+  const contactNames = contactsOn ? await listContactNames(userId, bundle.config.caps.contactCount) : undefined;
+  const contactList =
+    contactsOn && contactNames && contactNames.length
+      ? `\n已有联系人（人物识别时称呼对齐到名单原文）：${contactNames.join("、")}`
+      : "";
+  // 单域注入（与全量同源）：schedule→分类对照（用户活动分类），finance→常用分类词表。
+  // todo 域同取 userActs（仅供下方归一，不注入 todo prompt）——todo 分支同样把 r.activity
+  // 直插 todos.activity_id 复合外键，归一无词表会把用户自定义分类一律回落 other
+  let userActs: { id: string; name: string; isPreset: boolean }[] = [];
+  let catList = "";
+  let financeCats = "";
+  if ((domain === "schedule" || domain === "todo") && bundle.config.inject.catList) {
+    userActs = await listUserActivities(userId);
+    if (domain === "schedule") {
+      catList = userActs.length
+        ? catListFromActivities(userActs.slice(0, bundle.config.caps.catCount ?? 50))
+        : "";
+    }
+  }
+  if (domain === "finance" && bundle.config.inject.financeCats) {
+    const cats = await listUserFinanceCats(userId, bundle.config.caps.financeCatCount ?? 15);
+    if (cats.length) financeCats = `
+常用分类（category 优先从中选取）：${cats.join("、")}`;
+  }
+  const userPrompt = await assembleUserPrompt(key, bundle, {
+    nowCst: toCstWallClock(new Date()),
+    catList,
+    financeCats,
+    contactList,
+    text: entry.raw_text,
+  }, { userId });
+  const r: ParseResult = await parseInput(entry.raw_text, {
+    domain, // 单域专属提示词：只判本域，更准更省
+    contactNames,
+    systemPrompt: bundle.system,
+    userPrompt,
+    onUsage: (u) => {
+      // 历史消耗口径：修复重问等多轮调用逐次累加，不取最后一次
+      promptTokens += u.prompt_tokens;
+      completionTokens += u.completion_tokens;
+    },
+  });
+  // schedule/todo 域自定义分类归一：与全量 analyzeAndPersist 同语义、无条件执行——
+  // 两域都把模型原始 r.activity 直插复合外键（time_blocks / todos.activity_id），模型自由串
+  // 任一漏网都 23503 整事务回滚 500；此前 todo 分支漏归一，单域重识别 todo 恒失败。
+  // 门禁 userActs.length 时（早期账号分类播种前/userActs 拉取失败）归一兜底回落 "other"（预设分类，FK 安全）
+  if (domain === "schedule" || domain === "todo") {
+    r.activity = resolveActivityValue(r.activity, userActs);
+  }
+  // 整次重识别一行审计：tokens 为历次 LLM 调用合计（含修复重问）；降级但已耗 token 时如实归属模型。
+  // 按落库结果补记（此前在 DB 事务前固定 ok:true——409 冲突/陈旧文本失败也计入配额口径）
+  const auditBase = {
+    userId, entryId, stage: "parse" as const,
+    model: r.engine !== "rules" || promptTokens > 0 ? activeModel() : null,
+    engine: r.engine,
+    promptTokens, completionTokens,
+  };
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // per-user advisory lock：跨路径串行化时间块写事务（重叠 check-then-insert 的 TOCTOU 收口，生产 PG13 无 EXCLUDE 约束兜底）
+    await client.query(`select pg_advisory_xact_lock(hashtext($1))`, [`timeblocks:${userId}`]);
+    // 全局加锁约定（entriesRepo.rawTextOf）：写事务先锁 entry 行，与后台识别落库阶段互斥串行。
+    // 同时 stampAnalyzedAt（用户显式重识别 = 已落定）：仍在飞的旧后台识别进入落库阶段时
+    // 会按「识别期间已有用户落定数据」跳过清写——旧版无锁无置位，用户刚重识别的产物
+    // 会被后台识别整体 clearDerived 后重写（静默丢用户结果）
+    const current = await entriesRepo.rawTextOf(entryId, userId, client);
+    if (!current) throw ApiError.notFound("动态不存在");
+    if (String(current.raw_text) !== entry.raw_text) {
+      // 识别调用期间原文被编辑：本次产物基于旧文本，落库会覆盖新文本的语义 → 拒绝（与 analyze 陈旧校验同语义）
+      throw ApiError.conflict("原文已变更，请刷新后重新识别");
+    }
+    await entriesRepo.stampAnalyzedAt(client, entryId);
+    // 替换式重写前采集旧派生行事件时间（同 deleteFeed）：重识别把块/流水挪天时，
+    // 旧事件日的复盘缓存也须失效——只失效 created_at + 新事件时间漏掉旧发生日
+    const oldEventTimes = await entriesRepo.eventTimesOf(client, entryId, userId);
+    let applied = false;
+    let result: unknown = null;
+    let message = "";
+    // finance 分支实际落库的 occurred_at（话术带日期时是历史日）：提交后按它失效复盘缓存
+    let financeOccurredAt: string | null = null;
+
+    // 快照防御：todo/finance/people 三个分支都用 r.time.* 推 remind_at 或落 ::timestamptz，
+    // 形状合法但日历非法的值（如 2025-02-30）会 NaN/PG 报错 → 500；与 schedule 分支同口径统一拦 400
+    if (domain === "todo" || domain === "finance" || domain === "people") {
+      if (Number.isNaN(new Date(r.time.start).getTime()) || Number.isNaN(new Date(r.time.end).getTime())) {
+        throw ApiError.badRequest("识别结果时间无效，请重试");
+      }
+    }
+
+    switch (domain) {
+      case "mood": {
+        applied = !!r.mood.label;
+        result = r.mood;
+        await client.query(`update entries set mood = $1, mood_score = $2 where id = $3`, [
+          applied ? r.mood.label : null,
+          applied ? r.mood.score : null,
+          entryId,
+        ]);
+        message = applied ? `😊 识别到心情：${r.mood.label}` : "未识别出心情，已清除原心情";
+        break;
+      }
+      case "schedule": {
+        if (!r.scheduleApplicable || r.intent === "todo") {
+          // 识别不出：删旧块，动态变纯动态
+          await client.query(`delete from time_blocks where entry_id = $1 and user_id = $2`, [entryId, userId]);
+          result = { reason: "未识别出日程" };
+          message = "未识别出日程，已移除原日程块";
+          break;
+        }
+        // 冲突检测在删旧块之前做，但必须排除本 entry 自身旧块（重识别为替换式，
+        // 否则命中自己的旧块永远 409）。走事务 client 查询：entry_id 可空（on delete set null），
+        // 用 is distinct from 同时排除多条自有块且保留 NULL entry_id 的他人块检测。
+        // 快照防御：脏时间落 ::timestamptz 会 500，与 confirmPending 同口径拦 400
+        if (Number.isNaN(new Date(r.time.start).getTime()) || Number.isNaN(new Date(r.time.end).getTime())) {
+          throw ApiError.badRequest("识别结果时间无效，请重试");
+        }
+        const conflict = (
+          await client.query(
+            `select id, title, start_at, end_at
+               from time_blocks
+              where user_id = $1
+                and entry_id is distinct from $4::uuid
+                and tstzrange(start_at, end_at, '[)') && tstzrange($2::timestamptz, $3::timestamptz, '[)')
+              order by start_at
+              limit 1`,
+            [userId, r.time.start, r.time.end, entryId],
+          )
+        ).rows[0] ?? null;
+        if (conflict) {
+          throw ApiError.conflict(
+            overlapError(conflict, { title: r.title, start: r.time.start, end: r.time.end }),
+          );
+        }
+        await client.query(`delete from time_blocks where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        const block = (
+          await client.query(
+            `insert into time_blocks (user_id, entry_id, activity_id, title, start_at, end_at, time_mode, source)
+             values ($1,$2,$3,$4,$5,$6,$7,'keyboard') returning *`,
+            [userId, entryId, r.activity, r.title, r.time.start, r.time.end, r.time.mode],
+          )
+        ).rows[0];
+        applied = true;
+        result = { blockId: block.id, title: r.title, startAt: r.time.start, endAt: r.time.end };
+        message = `🕒 日程已更新：${r.title}`;
+        break;
+      }
+      case "todo": {
+        // 替换式重写前先解挂拆解行动（parent_todo_id on delete cascade 且行动自身无 entry_id）：
+        // 直接删会把用户手动加的子行动连带清掉，parent 置 null 保留
+        await client.query(
+          `update todos set parent_todo_id = null where parent_todo_id in (select id from todos where entry_id = $1 and user_id = $2)`,
+          [entryId, userId],
+        );
+        await client.query(`delete from todos where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        if (r.intent === "todo") {
+          const remind = new Date(new Date(r.time.start).getTime() - 15 * 60_000);
+          const todo = (
+            await client.query(
+              `insert into todos (user_id, entry_id, title, activity_id, due_at, remind_at, source, space_id)
+               values ($1,$2,$3,$4,$5,$6,'keyboard',(select space_id from entries where id = $2)) returning id`,
+              [userId, entryId, r.title, r.activity, r.time.start, remind.toISOString()],
+            )
+          ).rows[0];
+          applied = true;
+          result = { todoId: todo.id, title: r.title };
+          message = `📋 todo 已更新：${r.title}`;
+        } else {
+          result = { reason: "未识别出 todo" };
+          message = "未识别出 todo，已移除原 todo";
+        }
+        break;
+      }
+      case "finance": {
+        await client.query(`delete from transactions where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        if (r.finance.hasAmount && r.finance.amountCents != null) {
+          financeOccurredAt = resolveFinanceOccurredAt(r.finance.occurredDate, entry.created_at) ?? r.time.end;
+          await client.query(
+            `insert into transactions (user_id, entry_id, direction, amount_cents, category, counterparty, note, occurred_at)
+             values ($1,$2,$3,$4,$5,$6,$7,$8)`,
+            [
+              userId, entryId,
+              r.finance.direction === "in" ? "in" : "out",
+              Math.abs(r.finance.amountCents),
+              r.finance.category ?? "其他",
+              r.finance.counterparty ?? null,
+              entry.raw_text,
+              financeOccurredAt,
+            ],
+          );
+          applied = true;
+          result = r.finance;
+          message = `💰 收支已更新：¥${(Math.abs(r.finance.amountCents) / 100).toFixed(0)}`;
+        } else {
+          result = { reason: "未识别出金额" };
+          message = "未识别出收支，已移除原流水";
+        }
+        break;
+      }
+      case "diet": {
+        await client.query(`delete from diet_records where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        if (r.diet.applicable && r.diet.items.length > 0) {
+          await client.query(
+            `insert into diet_records (user_id, entry_id, meal, items, total_kcal)
+             values ($1,$2,$3,$4,$5)`,
+            [userId, entryId, r.diet.meal, JSON.stringify(r.diet.items), r.diet.totalKcal ?? null],
+          );
+          applied = true;
+          result = r.diet;
+          const kcal = r.diet.totalKcal != null ? ` · ≈${r.diet.totalKcal} kcal` : "";
+          message = `🍽 饮食已更新：${r.diet.meal}${kcal}`;
+        } else {
+          result = { reason: "未识别出饮食" };
+          message = "未识别出饮食记录";
+        }
+        break;
+      }
+      case "people": {
+        // 关系域：删旧往来，按解析结果重建（精确名/别名命中已有联系人则复用，避免称呼变体重建档）
+        await client.query(`delete from interactions where entry_id = $1 and user_id = $2`, [entryId, userId]);
+        let added = 0;
+        // 命中查询批量预取（与 analyze.persistPeople 同款 unnest + lateral）：逐人 select 是 N+1
+        if (r.people.length > 0) {
+          const names = r.people.map((p) => p.name);
+          const hits = await client.query(
+            `select p.name as asked, c.id from unnest($2::text[]) as p(name)
+             left join lateral (
+               select id from contacts where user_id = $1 and (name = p.name or alias = p.name) limit 1
+             ) c on true`,
+            [userId, names],
+          );
+          const hitByName = new Map<string, string>();
+          for (const row of hits.rows) {
+            if (row.id && !hitByName.has(row.asked)) hitByName.set(row.asked, String(row.id));
+          }
+          for (const p of r.people) {
+            const contactId =
+              hitByName.get(p.name) ??
+              (
+                await client.query(
+                  `insert into contacts (user_id, name) values ($1, $2)
+                   on conflict (user_id, name) do update set name = excluded.name returning id`,
+                  [userId, p.name],
+                )
+              ).rows[0].id;
+            const summary = p.event ? (p.event === r.title ? p.event : `${p.event}：${r.title}`) : r.title;
+            await client.query(
+              `insert into interactions (user_id, contact_id, entry_id, type, summary, occurred_at)
+               values ($1,$2,$3,$4,$5,$6)`,
+              [userId, contactId, entryId, inferInteractionType(p.event), summary, r.time.end],
+            );
+            added++;
+          }
+        }
+        applied = added > 0;
+        result = { people: r.people };
+        message = added > 0 ? `👥 关系已更新（${added} 人）` : "未识别出人物，已移除原关联";
+        break;
+      }
+    }
+
+    await client.query(
+      `insert into entry_recognitions (user_id, entry_id, domain, status, result, confidence, engine)
+       values ($1,$2,$3,$4,$5,$6,$7)
+       on conflict (entry_id, domain) do update set
+         status = excluded.status, result = excluded.result,
+         confidence = excluded.confidence, engine = excluded.engine, updated_at = now()`,
+      [userId, entryId, domain, applied ? "applied" : "none", JSON.stringify(result ?? {}), confidenceOf(r, domain), r.engine],
+    );
+
+    await client.query("commit");
+    void writeAuditRecord({ ...auditBase, latencyMs: Date.now() - t0, ok: true });
+    // 重识别删旧插新后按事件发生日失效复盘缓存（旧块/旧流水被删会让对应历史周期水位盲区陈旧；十一轮 P2 同批，
+    // 十七轮补旧派生行事件日：挪天重识别不再让旧发生日缓存滞留已删数据）
+    void invalidateReviewCachesForOccurrence(userId, new Date(entry.created_at));
+    // start 与 end 都失效（二十轮，与 analyze/confirmPending/appendManual 同口径）：
+    // schedule 跨天块（睡眠 23:00→07:00）结束日分摊时长，只失效 start 漏掉结束日；
+    // todo 分支落库 due_at = r.time.start 而旧代码只失效 end，到期日同样漏
+    void invalidateReviewCachesForOccurrence(userId, new Date(r.time.start));
+    void invalidateReviewCachesForOccurrence(userId, new Date(r.time.end));
+    for (const at of oldEventTimes) void invalidateReviewCachesForOccurrence(userId, at);
+    // 新流水按 occurredDate 落历史日时，目标历史日的既有缓存同样要失效（与 confirmPending/analyze 同口径）
+    if (domain === "finance" && financeOccurredAt) {
+      void invalidateReviewCachesForOccurrence(userId, new Date(financeOccurredAt));
+    }
+    return { ok: true as const, applied, domain, message: `${domain === "people" ? "关系" : DOMAIN_LABELS[domain as Domain]}：${message}` };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    // LLM 调用已发生（token 已耗）：失败也如实落审计（ok:false 不计配额，与 analyze 失败路径同口径）
+    void writeAuditRecord({ ...auditBase, latencyMs: Date.now() - t0, ok: false });
+    if (e instanceof ApiError) throw e;
+    throw ApiError.upstream("重识别失败", String(e).slice(0, 200));
+  } finally {
+    client.release();
+  }
+}
+
+const MAX_PER_ENTRY = 9;
+const MAX_BYTES = 5 * 1024 * 1024; // 压缩后兜底上限
+
+/**
+ * POST /api/entries/:id/images —— 发布文字动态后并行上传图片（formData 字段 files，多文件）
+ * 校验：登录 → entry 属主 → 单条 ≤9 张（含已有）→ 单张 ≤5MB → 魔数白名单；写盘 + 落库（事务）
+ */
+export async function addEntryImages(userId: string, entryId: string, form: FormData) {
+  const entry = (
+    await pool.query(`select id from entries where id = $1 and user_id = $2`, [entryId, userId])
+  ).rows[0];
+  if (!entry) throw ApiError.notFound("动态不存在");
+
+  const files = form.getAll("files").filter((f): f is File => f instanceof File);
+  if (files.length === 0) throw ApiError.badRequest("没有文件");
+  // 廉价计数预检前置于缓冲：9 张上限在缓冲循环之后才判的话，超量文件已被整体读进内存
+  const existing = await pool.query(`select count(*)::int as n from entry_images where entry_id = $1 and user_id = $2`, [entryId, userId]);
+  if (existing.rows[0].n + files.length > MAX_PER_ENTRY) {
+    throw ApiError.badRequest(`一条动态最多 ${MAX_PER_ENTRY} 张图片`);
+  }
+
+  // 逐一校验（大小 + 魔数），全部通过才落库
+  const prepared: { mime: string; bytes: number; data: Buffer; key: string }[] = [];
+  for (const f of files) {
+    if (f.size > MAX_BYTES) {
+      throw ApiError.badRequest(`单张图片不能超过 5MB`);
+    }
+    const data = Buffer.from(await f.arrayBuffer());
+    const sniffed = sniffImageMime(data);
+    if (!sniffed || !(sniffed in IMAGE_MIME_EXT)) {
+      throw ApiError.badRequest("仅支持 jpg/png/webp/gif 图片");
+    }
+    prepared.push({ mime: sniffed, bytes: data.length, data, key: newStorageKey(sniffed) });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // 计数在事务 + entry 行锁内做：并发上传同一动态的 check-then-insert 可越 9 张上限（TOCTOU）
+    await client.query(`select id from entries where id = $1 and user_id = $2 for update`, [entryId, userId]);
+    const have = (
+      await client.query(`select count(*)::int as n from entry_images where entry_id = $1 and user_id = $2`, [entryId, userId])
+    ).rows[0].n;
+    if (have + files.length > MAX_PER_ENTRY) {
+      throw ApiError.badRequest(`单条动态最多 ${MAX_PER_ENTRY} 张（已有 ${have} 张）`);
+    }
+    const inserted: { id: string; storageKey: string; mime: string; width: number | null; height: number | null; sort: number }[] = [];
+    let sort = have; // 追加到已有图片之后
+    for (const p of prepared) {
+      const { rows } = await client.query(
+        `insert into entry_images (user_id, entry_id, storage_key, mime, bytes, width, height, sort)
+         values ($1,$2,$3,$4,$5,$6,$7,$8)
+         returning id, storage_key, mime, width, height, sort`,
+        [userId, entryId, p.key, p.mime, p.bytes, null, null, sort++],
+      );
+      const r = rows[0];
+      inserted.push({ id: r.id, storageKey: r.storage_key, mime: r.mime, width: r.width, height: r.height, sort: r.sort });
+    }
+    await client.query("commit");
+    // 落库成功后写盘；失败则回删行（个人系统：极小概率，保证不留死链）
+    const written: typeof prepared = [];
+    try {
+      for (const p of prepared) { await saveImageFile(p.key, p.data); written.push(p); }
+    } catch (e) {
+      await pool.query(`delete from entry_images where entry_id = $1 and storage_key = any($2)`, [
+        entryId,
+        prepared.map((p) => p.key),
+      ]).catch(() => {});
+      // 已写盘的前若干个文件一并清掉，否则成为无人引用的永久孤儿
+      for (const p of written) void deleteImageFile(p.key);
+      throw e;
+    }
+    return { ok: true as const, images: inserted };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    if (e instanceof ApiError) throw e; // 上限/校验类 4xx 不得被吞成 500
+    console.error("[images] 上传失败:", e);
+    throw new ApiError(500, "upstream", "上传失败，请重试");
+  } finally {
+    client.release();
+  }
+}
+
+/** DELETE /api/entries/:id/images/:imageId —— 删除单张图片（删行 + 异步删盘上文件） */
+export async function deleteEntryImage(userId: string, entryId: string, imageId: string) {
+  const { rows } = await pool.query(
+    `delete from entry_images where id = $1 and entry_id = $2 and user_id = $3 returning storage_key`,
+    [imageId, entryId, userId],
+  );
+  if (!rows[0]) throw ApiError.notFound("图片不存在");
+  void deleteImageFile(rows[0].storage_key);
+  return { ok: true as const };
+}
+
+/** DELETE /api/entries/:id/diet —— 删除该动态的饮食记录（识别产物可单独删除） */
+export async function deleteEntryDiet(userId: string, entryId: string) {
+  // 删记录与登记簿置状态必须同事务：第二条失败会让「实际无记录但登记簿仍 applied」（重识别/统计失真）
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const { rowCount } = await client.query(
+      `delete from diet_records where entry_id = $1 and user_id = $2`,
+      [entryId, userId],
+    );
+    // 登记簿只在确实删了记录时改写（rowCount=0 说明本来就没有，404 之外不该动登记状态）
+    if (rowCount) {
+      await client.query(
+        `update entry_recognitions set status = 'none', result = result || '{"reason": "用户已删除饮食记录"}'::jsonb
+         where entry_id = $1 and user_id = $2 and domain = 'diet'`,
+        [entryId, userId],
+      );
+    }
+    await client.query("commit");
+    if (!rowCount) throw ApiError.notFound("没有饮食记录");
+    // kcal 事实行删除不在任何水位列里（diet_records 无时间列）——按动态创建日失效复盘缓存（十一轮 P2）
+    void invalidateReviewCachesForOccurrence(
+      userId,
+      new Date((await pool.query(`select created_at from entries where id = $1 and user_id = $2`, [entryId, userId])).rows[0]?.created_at),
+    );
+    return { ok: true as const };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** POST /api/feed/:id/dismiss-conflict —— 关闭日程冲突警示条（服务端标记 reasonDismissed，多端持久） */
+export async function dismissScheduleConflict(userId: string, entryId: string) {
+  const { rowCount } = await pool.query(
+    `update entry_recognitions
+     set result = coalesce(result, '{}'::jsonb) || '{"reasonDismissed": true}'::jsonb
+     where entry_id = $1 and user_id = $2 and domain = 'schedule'`,
+    [entryId, userId],
+  );
+  if (!rowCount) throw ApiError.notFound("无冲突提示可关闭");
+  return { ok: true as const };
+}
+
+/**
+ * POST /api/entries/:id/audio：语音动态音频（16k wav，≤5MB，一条动态一个语音）
+ * 属主校验 → 魔数嗅探 → 删旧音频文件 → 写盘 → 落 entries.audio_url（写盘失败不落库由调用顺序保证：先写盘再 update）
+ */
+export async function setEntryAudio(userId: string, entryId: string, data: Buffer): Promise<{ ok: true; audioUrl: string }> {
+  const own = await pool.query(`select id from entries where id = $1 and user_id = $2`, [entryId, userId]);
+  if (!own.rows[0]) throw ApiError.notFound("动态不存在");
+  const mime = sniffWavMime(data);
+  if (!mime) throw ApiError.badRequest("仅支持 wav 格式语音");
+  if (data.length > 5 * 1024 * 1024) throw ApiError.badRequest("音频超过 5MB 上限");
+  // 旧音频先取后删（替换录音场景）：行更新成功后清盘上旧文件；
+  // user_id 谓词纵深防御：属主校验与取旧值之间 entry 理论上可被并发删除/属主校验依赖前置查询，
+  // 无谓词时会读到（并随后删掉）他人/他条音频文件
+  const prev = (await pool.query(`select audio_url from entries where id = $1 and user_id = $2`, [entryId, userId])).rows[0]?.audio_url ?? null;
+  const key = newStorageKey(mime);
+  await saveImageFile(key, data);
+  const upd = await pool.query(`update entries set audio_url = $1 where id = $2 and user_id = $3`, [key, entryId, userId]);
+  // 属主校验后 entry 被并发删除时 rowCount=0：回删刚写的文件，不留孤儿音频
+  if (upd.rowCount === 0) {
+    void deleteImageFile(key);
+    throw ApiError.notFound("动态不存在");
+  }
+  if (prev) void deleteImageFile(prev);
+  return { ok: true, audioUrl: key };
+}
+
+/** DELETE /api/feed/:id：删除动态及全部识别产物（子表显式清理，盘上图片异步清） */
+export async function deleteFeed(userId: string, entryId: string) {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    // 先锁 entry 行（与 analyzeAndPersist/confirmPending 同序），防与后台补跑识别反序加锁死锁
+    const gone = await entriesRepo.rawTextOf(entryId, userId, client);
+    if (!gone) {
+      await client.query("rollback");
+      throw ApiError.notFound("动态不存在");
+    }
+    const imageKeys = await entriesRepo.imageKeysOf(client, entryId, userId);
+    if (imageKeys.length) {
+      await client.query(`delete from entry_images where entry_id = $1 and user_id = $2`, [entryId, userId]);
+    }
+    // 语音附件（entries.audio_url）随行删除，盘上文件一并清
+    const audioKey = (await client.query(`select audio_url from entries where id = $1 and user_id = $2`, [entryId, userId])).rows[0]?.audio_url ?? null;
+    // 事件时间须在 clearDerived 前采集：删行会让对应周期水位回退，仅按 created_at 失效
+    // 覆盖不到「昨天发生、今天发布」的历史行（发生日缓存被误判仍新鲜，已删数据滞留历史复盘）
+    const eventTimes = await entriesRepo.eventTimesOf(client, entryId, userId);
+    await entriesRepo.clearDerived(client, entryId, userId);
+    const { rowCount } = await entriesRepo.deleteEntry(client, entryId, userId);
+    if (!rowCount) {
+      await client.query("rollback");
+      throw ApiError.notFound("动态不存在");
+    }
+    await client.query("commit");
+    // 删除会让复盘水位（max(created_at)）回退、当期缓存被判「仍新鲜」回旧数据——
+    // 与 finance 删交易同口径，按动态创建日 + 全部派生行事件日显式失效四档复盘缓存（函数内部吞错降级，不阻塞删除）
+    void invalidateReviewCachesForOccurrence(userId, new Date(gone.created_at));
+    for (const at of eventTimes) void invalidateReviewCachesForOccurrence(userId, at);
+    for (const k of imageKeys) void deleteImageFile(k);
+    if (audioKey) void deleteImageFile(audioKey);
+    return { ok: true as const };
+  } catch (e) {
+    await client.query("rollback").catch(() => {});
+    if (e instanceof ApiError) throw e;
+    throw ApiError.upstream("删除失败", String(e).slice(0, 200));
+  } finally {
+    client.release();
+  }
+}

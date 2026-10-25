@@ -1,0 +1,147 @@
+/**
+ * Web 端 fetch 封装。
+ * - 同域：直接用，cookie 自动携带（与旧版行为完全兼容）
+ * - 跨 origin 分离部署：走 Bearer token + CORS；token 存储由调用方注入（localStorage）
+ * - API_BASE：同域留空；分离部署时经环境变量注入（NEXT_PUBLIC_API_BASE）
+ */
+
+export interface TokenStore {
+  get(): Promise<string | null>;
+  set(token: string | null): Promise<void>;
+}
+
+const memory: { token: string | null } = { token: null };
+
+/** 兜底存储：仅内存（App 重启丢会话，建议宿主注入正式实现） */
+export const memoryTokenStore: TokenStore = {
+  async get() {
+    return memory.token;
+  },
+  async set(token) {
+    memory.token = token;
+  },
+};
+
+/** Web localStorage 实现 */
+export const localStorageTokenStore: TokenStore = {
+  async get() {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("shiguang_token");
+  },
+  async set(token) {
+    if (typeof window === "undefined") return;
+    if (token === null) window.localStorage.removeItem("shiguang_token");
+    else window.localStorage.setItem("shiguang_token", token);
+  },
+};
+
+let store: TokenStore = typeof window !== "undefined" ? localStorageTokenStore : memoryTokenStore;
+
+/** 宿主注入正式 token 存储（Expo SecureStore 等），应在应用启动时调用一次 */
+export function setTokenStore(s: TokenStore): void {
+  store = s;
+}
+
+/** API 基址（分离部署时指向 API 域；同域部署为 ""）。导出供 fetch 之外的入口（<a href> 数据导出直链）对齐 */
+export function apiBase(): string {
+  // Next/Expo 分别在构建期内联自己的 PUBLIC_ 变量；无打包器的环境落到 ""
+  if (typeof process !== "undefined" && process.env) {
+    return process.env.NEXT_PUBLIC_API_BASE || "";
+  }
+  return "";
+}
+
+/** 登录/注册等响应体里的 token 自动入库；传 null 清除（登出/401） */
+export async function setSessionToken(token: string | null): Promise<void> {
+  await store.set(token);
+}
+
+export async function getSessionToken(): Promise<string | null> {
+  return store.get();
+}
+
+/** 通用 JSON 请求封装：可选 JSON body 与附加头（如 setup 一次性令牌 x-setup-token）；返回解析后的 JSON（默认 any——历史调用点直接取字段） */
+
+/** AbortSignal.timeout 降级：静态方法需 Chrome 103+/Safari 16+，旧浏览器上不存在会在
+ *  fetch 前同步抛 TypeError、全部请求不可用（二十轮） */
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(ms);
+  }
+  if (typeof AbortController !== "undefined") {
+    const ctl = new AbortController();
+    setTimeout(() => ctl.abort(), ms);
+    return ctl.signal;
+  }
+  return undefined;
+}
+
+export async function api<T = any>(
+  url: string,
+  method: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+  /** 可选超时覆盖（毫秒）：LLM 识别/拆解、交易同步等服务端耗时远超 30s 的接口放宽 */
+  opts?: { timeoutMs?: number },
+): Promise<T> {
+  const headers: Record<string, string> = { ...extraHeaders };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const token = await store.get();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const r = await fetch(apiBase() + url, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    // 慢网/挂起请求不再无限等待（超时抛 TimeoutError，调用方按网络错误口径提示重试）
+    signal: timeoutSignal(opts?.timeoutMs ?? 30_000),
+  });
+  return parseResponse<T>(r);
+}
+
+/** 带错误 status 的客户端异常：调用方可按状态码分支（409 冲突 / 401 会话等） */
+export class ApiClientError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiClientError";
+    this.status = status;
+  }
+}
+
+async function parseResponse<T>(r: Response): Promise<T> {
+  // 解析失败与空对象成功要分开（十五轮）：200 + 非 JSON 体（会话被网关重定向到登录 HTML 时
+  // fetch 跟随且最终 200）旧版被 catch 吃成 {}——调用方读字段全 undefined 静默假成功
+  let parseFailed = false;
+  const j = await r.json().catch(() => {
+    parseFailed = true;
+    return {};
+  });
+  if (!r.ok) {
+    if (r.status === 401) await store.set(null); // 会话失效即清 token
+    throw new ApiClientError((j as { error?: string }).error ?? "操作失败", r.status);
+  }
+  if (parseFailed) throw new ApiClientError("响应格式错误（响应非 JSON），请刷新重试", r.status);
+  // 登录/注册/setup 响应附带 token：自动入库，后续请求带 Bearer。
+  // 仅限 auth 路径：任何接口若恰好返回名为 token 的字段，静默覆盖会话属于隐性踩踏
+  const t = (j as { token?: unknown }).token;
+  if (typeof t === "string" && t && /\/api\/auth(\/|$)/.test(new URL(r.url, "http://x").pathname)) {
+    await store.set(t);
+  }
+  return j as T;
+}
+
+/** FormData 上传（语音/图片等）：不设 Content-Type，交由浏览器生成 boundary */
+export async function apiForm<T = any>(url: string, form: FormData, method = "POST"): Promise<T> {
+  const headers: Record<string, string> = {};
+  const token = await store.get();
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const r = await fetch(apiBase() + url, {
+    method,
+    headers,
+    body: form,
+    // 上传（多图/语音）弱网耗时更长，给 120s；JSON 通道 30s
+    signal: timeoutSignal(120_000),
+  });
+  return parseResponse<T>(r);
+}

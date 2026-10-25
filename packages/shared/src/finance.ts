@@ -1,0 +1,105 @@
+/** 财务模块纯函数 —— 金额一律用「分」（整数），显示层再转元 */
+
+/** 流水分类（与动态识别的分类词保持一致；「还款」由账单导入产生） */
+export const TX_CATEGORIES = ["餐饮", "交通", "人情往来", "学习", "购物", "娱乐", "医疗", "居住", "还款", "其他"];
+
+/** 分类配色（展示层）：报表条形/图例共用，缺省灰 */
+export const TX_COLORS: Record<string, string> = {
+  餐饮: "#f97316",
+  交通: "#78716c",
+  人情往来: "#ec4899",
+  学习: "#10b981",
+  购物: "#8b5cf6",
+  娱乐: "#eab308",
+  医疗: "#14b8a6",
+  居住: "#0ea5e9",
+  还款: "#6366f1",
+  其他: "#64748b",
+};
+
+export interface CategorySlice {
+  category: string;
+  cents: number;
+  pct: number; // 0~100
+}
+
+/** 分类占比（支出）：按金额降序，pct 保留一位小数 */
+export function categoryBreakdown(
+  byCategory: Record<string, number>,
+): CategorySlice[] {
+  const total = Object.values(byCategory).reduce((s, v) => s + v, 0);
+  if (total <= 0) return [];
+  return Object.entries(byCategory)
+    .filter(([, cents]) => cents > 0)
+    .sort((a, b) => b[1] - a[1])
+    .map(([category, cents]) => ({
+      category,
+      cents,
+      pct: Math.round((cents / total) * 1000) / 10,
+    }));
+}
+
+/** 储蓄率：(收入-支出)/收入 ×100，收入为 0 时返回 null（无法计算） */
+export function savingsRate(incomeCents: number, expenseCents: number): number | null {
+  if (incomeCents <= 0) return null;
+  return Math.round(((incomeCents - expenseCents) / incomeCents) * 1000) / 10;
+}
+
+export type BudgetTone = "safe" | "warn" | "over" | "none";
+
+/** 预算进度状态：>=100% 超支(红)，>=阈值 预警(黄)，未设置 none */
+export function budgetTone(
+  spentCents: number,
+  limitCents: number,
+  threshold = 80,
+): { tone: BudgetTone; pct: number } {
+  if (limitCents <= 0) return { tone: "none", pct: 0 };
+  const pct = Math.round((spentCents / limitCents) * 1000) / 10;
+  if (pct >= 100) return { tone: "over", pct };
+  if (pct >= threshold) return { tone: "warn", pct };
+  return { tone: "safe", pct };
+}
+
+/** 分 → 元字符串（整数元不带小数，非整保留两位）；整数取商余拼接，避免浮点除法/浮点余数的精度误差 */
+export function yuan(cents: number): string {
+  const neg = cents < 0;
+  const abs = Math.abs(cents);
+  const whole = Math.floor(abs / 100);
+  const rem = abs % 100;
+  const body = rem === 0 ? String(whole) : `${whole}.${String(rem).padStart(2, "0")}`;
+  return neg ? `-${body}` : body;
+}
+
+/** 分 → 表单回填用元输入串：与 yuan() 同商余口径，替代散落各表单的 String(cents / 100)
+ *  浮点除法（本仓约定禁浮点除法；提交侧再走 yuanToCents 字符串解析往返精确） */
+export function centsToYuanInput(cents: number): string {
+  return yuan(cents);
+}
+
+
+
+/** 环比变化百分比：(cur-prev)/prev ×100，prev 为 0 时 null */
+export function momChange(cur: number, prev: number): number | null {
+  if (prev <= 0) return null;
+  return Math.round(((cur - prev) / prev) * 1000) / 10;
+}
+
+/**
+ * 元字符串 → 分（整数）：「12.345」→1235（四舍五入到分）、「12.3」→1230、「12」→1200。
+ * 用字符串解析而非 Math.round(parseFloat(x)*100)：1.115*100=111.49999… 系统性舍错
+ * （type="digit" 键盘允许输三位小数，金额「分」铁律要求精确入账）。非法输入返回 null。
+ * 上限守卫：amount_cents 为 int4，超 ¥100 万返回 null（与 duration.ts/csv-import.ts 的 CAP 同源）——
+ * 旧版 `(…)|0` 在 ≥¥21,474,836.48 时 int32 回卷成错值静默入账。
+ */
+export function yuanToCents(input: string): number | null {
+  const s = (input ?? "").toString().trim().replace(/[¥￥,\s]/g, "");
+  if (!/^-?\d+(\.\d+)?$/.test(s)) return null;
+  const neg = s.startsWith("-");
+  const body = neg ? s.slice(1) : s;
+  const [int, frac = ""] = body.split(".");
+  let cents = Number(int) * 100 + Number(((frac + "00").slice(0, 2) || "0"));
+  // 第三位小数四舍五入（仅非负尾部；frac 第三位 ≥5 进 1）
+  if (Number(frac[2] ?? "0") >= 5) cents += 1;
+  if (cents > 100_000_000) return null;
+  return neg ? -cents : cents;
+}

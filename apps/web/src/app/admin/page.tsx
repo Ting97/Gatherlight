@@ -1,0 +1,86 @@
+"use client";
+
+import { useState } from "react";
+import { BarChart3, Bot, Lightbulb, Megaphone, Puzzle } from "lucide-react";
+import { useSession } from "@/shared/session";
+import Skeleton from "@/components/skeleton";
+import { toast } from "@/shared/ui/toast";
+import AdminAiPanel from "@/components/admin-ai-panel";
+import AdminDataPanel from "@/components/admin-data-panel";
+import AdminMarketingPanel from "@/components/admin-marketing-panel";
+import AdminModulesPanel from "@/components/admin-modules-panel";
+import { FilterChip, TagChip } from "@/components/tag-chip";
+
+/**
+ * /admin 后台（REQ-001 R4 + REQ-005 R5 + REQ-028）：仅管理员。AI 管理（prompt 在线调优 + AI 协助优化）
+ * + 营销管理 + 模块开关（全局层/按用户覆盖）+ 数据面（类别清单/数据目录/在线试查）。
+ * 门禁：静态导出页面无服务端鉴权——前端 403 态 + /api/admin/* 层 role 硬校验（安全边界）。
+ */
+
+type Tab = "ai" | "marketing" | "modules" | "data";
+
+export default function AdminPage() {
+    // 会话走 useSession() 单源（session.tsx 约定：子页面禁止散拉 /api/auth/me——旧版与 Provider 双请求）
+  const { user: me, loading: meLoading } = useSession();
+  const [tab, setTab] = useState<Tab>("ai");
+
+  // 各管理面板统一经 notify 上报操作结果 → 全局 toast
+  const notify = (text: string, ok = true) => toast(text, ok ? "ok" : "err");
+
+  return (
+    <main className="min-h-screen text-ink">
+      <div className="mx-auto max-w-6xl px-5 pb-16 pt-8">
+
+        {me && !me.isAdmin ? (
+          <div className="glass mt-10 rounded-2xl p-10 text-center">
+            <p className="text-4xl">🔒</p>
+            <h1 className="mt-3 text-lg font-bold">需要管理员权限</h1>
+            <p className="mt-1 text-xs text-ink-dim">此页面仅超级管理员可见</p>
+            <a href="/" className="btn-primary mt-5 inline-block rounded-xl px-5 py-2 text-sm font-medium">
+              返回首页
+            </a>
+          </div>
+        ) : (
+          <>
+            {/* 模块头 */}
+            <div className="glass mb-5 flex flex-col gap-3 rounded-2xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <h1 className="text-gradient text-xl font-bold tracking-wide">
+                后台管理
+                <span className="ml-2 align-middle text-xs font-normal tracking-normal text-ink-dim">
+                  AI prompt 在线调优 · 营销集中 · 数据面
+                </span>
+              </h1>
+              <div className="flex rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs sm:w-auto">
+                <FilterChip variant="pill" active={tab === "ai"} onClick={() => setTab("ai")} icon={<Bot size={12} />} label="AI 管理" />
+                <FilterChip variant="pill" active={tab === "marketing"} onClick={() => setTab("marketing")} icon={<Megaphone size={12} />} label="营销管理" />
+                <FilterChip variant="pill" active={tab === "modules"} onClick={() => setTab("modules")} icon={<Puzzle size={12} />} label="模块" />
+                <FilterChip variant="pill" active={tab === "data"} onClick={() => setTab("data")} icon={<BarChart3 size={12} />} label="数据" />
+              </div>
+            </div>
+
+            {!me ? (
+              // SessionProvider 自带 401 重定向与 loading 骨架语义：未加载完先出骨架
+              meLoading ? (
+                <Skeleton rows={3} className="py-2" />
+              ) : null
+            ) : tab === "ai" ? (
+              <section className="glass rounded-2xl p-5">
+                <p className="mb-4 flex items-center gap-1.5 text-micro text-ink-dim">
+                  <TagChip icon={<Lightbulb size={12} />} label="保存即生效" tone="amber" size="sm" />
+                  改坏可回滚版本历史或秒切代码默认；AI 优化只出建议稿，采纳后仍需手动保存
+                </p>
+                <AdminAiPanel notify={notify} />
+              </section>
+            ) : tab === "marketing" ? (
+              <AdminMarketingPanel notify={notify} />
+            ) : tab === "modules" ? (
+              <AdminModulesPanel notify={notify} />
+            ) : (
+              <AdminDataPanel notify={notify} />
+            )}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}

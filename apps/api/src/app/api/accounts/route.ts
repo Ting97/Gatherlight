@@ -1,0 +1,66 @@
+import { NextResponse } from "next/server";
+import { pool } from "@/server/platform/db";
+import { withModule, readJsonCapped } from "@/server/platform/http/route";
+import { ApiError } from "@/server/platform/http/errors";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/** GET /api/accounts —— 全部账户（余额=期初，流水不入账；camelCase 规范字段，snake_case 旧别名兼容一版） */
+export const GET = withModule("finance", async (_req, { user }) => {
+  const { rows } = await pool.query(
+    `select a.id, a.name, a.icon, a.sort_order,
+            a.opening_balance_cents, a.opening_balance_cents as "openingBalanceCents",
+            a.opening_balance_cents as balance_cents, a.opening_balance_cents as "balanceCents"
+     from accounts a
+     where a.user_id = $1 and a.archived = false
+     order by a.sort_order, a.created_at`,
+    [user.id],
+  );
+  // ::bigint 防 int4 溢出，但 node-pg 对 bigint 返回 string：序列化统一 Number()，响应类型不变
+  // opening 两键一并 Number()：web 端 `v !== a.openingBalanceCents` 按数值比较，string 恒 !== 导致未改也发 PATCH
+  const accounts = rows.map((r) => ({
+    ...r,
+    balance_cents: Number(r.balance_cents),
+    balanceCents: Number(r.balanceCents),
+    opening_balance_cents: Number(r.opening_balance_cents),
+    openingBalanceCents: Number(r.openingBalanceCents),
+  }));
+  return NextResponse.json({ accounts });
+});
+
+/** POST /api/accounts —— 新建账户 {name, icon?, openingBalanceCents?} */
+export const POST = withModule("finance", async (req, { user }) => {
+  const body = (await readJsonCapped(req) as any) as {
+    name?: string;
+    icon?: string;
+    openingBalanceCents?: number;
+  };
+  if (body.name != null && typeof body.name !== "string") throw ApiError.badRequest("账户名称需为字符串");
+  if (body.icon != null && typeof body.icon !== "string") throw ApiError.badRequest("图标需为字符串");
+  const name = body.name?.trim();
+  if (!name) throw ApiError.badRequest("账户名称必填");
+  if (name.length > 20) throw ApiError.badRequest("账户名称过长");
+  const opening = body.openingBalanceCents ?? 0;
+  // 上限对齐 transactions（¥100 万）：bigint 列吃 1e21 时 pg 序列化成 "1e+21" → 22P02 → 500
+  if (!Number.isInteger(opening) || Math.abs(opening) > 100_000_000) throw ApiError.badRequest("期初余额需为整数（分），不超过 ¥100 万");
+
+  try {
+    const created = (
+      await pool.query(
+        `insert into accounts (user_id, name, icon, opening_balance_cents, sort_order)
+         values ($1, $2, $3, $4, (select coalesce(max(sort_order), 0) + 1 from accounts where user_id = $1))
+         returning *`,
+        [user.id, name, body.icon?.trim().slice(0, 8) || "💳", opening], // icon 截 8 字（与 activities 同口径）：text 列无界，1MB 串会随每次列表全量回传
+      )
+    ).rows[0];
+    // opening_balance_cents（bigint）node-pg 返回 string：与 GET 同口径 Number()，web 端按数值比较/展示
+    return NextResponse.json({ account: { ...created, opening_balance_cents: Number(created.opening_balance_cents) } });
+  } catch (e) {
+    // 050 起唯一约束是部分索引（仅未归档行），违例报索引名；兼容旧约束名
+    if (String(e).includes("accounts_user_id_name_key") || String(e).includes("accounts_user_id_name_active_uidx")) {
+      throw ApiError.badRequest("已存在同名账户");
+    }
+    throw e;
+  }
+});

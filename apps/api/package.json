@@ -1,0 +1,29 @@
+{
+  "name": "@shiguangri/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build && node scripts/emit-migrations-manifest.mjs",
+    "start": "next start -p 3001",
+    "test": "tsx --test --test-concurrency=1 test/*.test.ts"
+  },
+  "dependencies": {
+    "@shiguangri/ai": "*",
+    "@shiguangri/shared": "*",
+    "next": "^15.5.0",
+    "nodemailer": "^10.0.10",
+    "pg": "^8.23.0",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "^3.25.76",
+    "undici": "^6.28.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pg": "^8.23.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

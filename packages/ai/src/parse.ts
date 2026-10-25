@@ -1,0 +1,750 @@
+/**
+ * 解析管线 v2：AI 完全自主识别，规则引擎降级为灾难兜底
+ *
+ * 双模式：
+ * - 全量（发动态/编辑）：一次 GLM 调用五域联合（FullExtractionV2）
+ * - 单域（识别菜单重识别）：该域专属提示词（DOMAIN_PROMPTS + domainExtractionV2），只出本域
+ *
+ * 规则引擎仅在四类灾难场景接管：无 Key / chat 抛错（含额度熔断）/ 重问后仍 schema 不合格 / forceRules（测试）。
+ * 成功路径不做任何规则语义干预——仅保留确定性后处理（时间合法性校验、区间→时长换算、ongoing 推导、kcal 求和）。
+ */
+import { chat, extractJson, hasApiKey, isQuotaTripped, GlmError } from "./glm";
+import { EXTRACT_SYSTEM_PROMPT, DOMAIN_PROMPTS, OPEN_VOCAB_SYSTEM_PROMPT, buildExtractUserPrompt, buildRepairUserPrompt, buildOpenVocabUserPrompt } from "./prompt";
+import {
+  ParseResult, FullExtractionV2, OpenVocabExtraction, domainExtractionV2, ACTIVITY_IDS,
+  type LlmExtraction as LlmExtractionT, type ParseResult as ParseResultT, type OpenVocabExtractionT,
+} from "./schema";
+import { jevAsk, jevEnabled, JevError } from "./jev";
+import { BASE_FIN_CATEGORY_CRITERIA, extractClosedSetQuestions } from "./questions/jev-sets";
+import { inferTimeBlock, detectPeriod, detectFuture, parseClockRange, resolveExplicitRange, resolveMoment, anchorRangeToToday, anchorMomentToToday, detectDayRef } from "./time-infer";
+import { parseAmountCents, parseDuration, cnToNumber } from "./duration";
+import { ruleMood } from "./mood-rules";
+
+export interface ParseOptions {
+  now?: Date;
+  /** 类别默认时长表（activityId → 分钟）；仅规则兜底路径使用 */
+  defaults?: Partial<Record<(typeof ACTIVITY_IDS)[number], number>>;
+  /** 强制使用规则引擎（测试用） */
+  forceRules?: boolean;
+  /** 单域模式：只识别该域（schedule/todo/finance/mood/diet/people） */
+  domain?: string;
+  /** 用户已有联系人名单（人物识别时对齐称呼，避免重复建档） */
+  contactNames?: string[];
+  /** 覆盖 system prompt（DB 纳管值注入；缺省用包内默认）。仅影响 LLM 路径，规则兜底不受影响 */
+  systemPrompt?: string;
+  /** 覆盖完整 user prompt（REQ-003 3-A：apps/api 按 DB 配置装配后传入；缺省用包内默认装配）。仅影响 LLM 路径 */
+  userPrompt?: string;
+  /** LLM 成功响应后回调 token 用量（审计/成本核算用） */
+  onUsage?: (usage: { prompt_tokens: number; completion_tokens: number }) => void;
+}
+
+/** 单域识别的合法域 */
+const DOMAIN_MODES = ["schedule", "todo", "finance", "mood", "diet", "people"] as const;
+
+// ---------- 规则引擎（灾难兜底，原样保留） ----------
+
+const RULE_KEYWORDS: Array<[RegExp, LlmExtractionT["schedule"]["activity"]]> = [
+  [/午睡|睡觉|补觉/, "sleep"],
+  [/通勤|路上|地铁|公交|打车/, "commute"],
+  [/开[了了个]*会|评审|周报|报告|代码|开发|编程|邮件|客户|上班|加班|项目/, "work"],
+  [/学|看书|阅读|读书|英语|上课|刷题|三章/, "study"],
+  [/跑|撸铁|健身|锻炼|球类|散步|拉伸/, "fitness"],
+  [/抖音|电影|游戏|刷手机|逛街/, "fun"],
+  [/打扫|买菜|超市|做饭|洗衣|房间|垃圾/, "chores"],
+  // 人名不进关键词表（人物识别由联系人名单驱动，FR-D2.3）；爸妈为通用亲属称谓非演示人名
+  [/吃饭|聊|电话|爸妈|朋友|同事|随礼|满月|搬家|帮忙/, "social"],
+];
+
+/** 规则人物识别（FR-D2.3）：演示人名已移除——由调用方传入的联系人名单动态生成；空名单不产人物。
+ * 空白名单项必须剔除：new RegExp("") 匹配一切位置 + 「n.includes("") 恒真」会把所有真人名滤空（contacts.name 无非空 CHECK） */
+function peopleRegexFrom(names: string[] | undefined): RegExp[] {
+  if (!names || names.length === 0) return [];
+  return names
+    .slice(0, 100)
+    .map((n) => n.trim())
+    .filter((n) => n.length > 0)
+    .map((n) => new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"));
+}
+
+const DIET_RE = /(吃了|吃了个|吃了点|吃了顿|吃饭|喝了一?杯|喝了杯|喝了瓶|早茶|早饭|早餐|午饭|晚餐|晚饭|下午茶|加餐|夜宵|宵夜|奶茶|咖啡|汉堡|烧烤|火锅|面条|牛肉面|米饭|泡面|外卖|零食|可乐|雪碧|啤酒|水果|苹果|香蕉|火腿肠)/;
+/** 明确无热量的饮品不计入饮食 */
+const DIET_EXCLUDE_RE = /(白开水|矿泉水|喝了口?水|买了瓶水|纯净水)/;
+
+/**
+ * 规则引擎标题：剥离时间/金额/时段等修饰成分，保留事项本身（不截尾）。
+ * "刚跑完步，练了40分钟" → "刚跑完步"；"明天下午三点去看牙医" → "去看牙医"
+ */
+function makeTitle(text: string): string {
+  const cleaned = text
+    .replace(/(待会儿?|等会儿?|一会儿|晚点|稍后|明天|后天|下周[一二三四五六日天]?|早上|上午|中午|下午|傍晚|晚上|凌晨|刚刚?)/g, " ")
+    .replace(/\d{1,2}\s*[点:：时]\d{0,2}\s*分?/g, " ")
+    .replace(/(\d+|[一二两俩三四五六七八九十百]+)\s*(个半|半)?\s*(个小时|小时|钟头|分钟|分|min)/g, " ")
+    .replace(/(花费|消费|花|随|付|充值|打款)了?\s*\d+(?:\.\d+)?\s*(块|元|钱)?/g, " ")
+    .replace(/\d+(?:\.\d+)?\s*(块|元)/g, " ")
+    .replace(/(记得|要|打算|计划|准备)/g, " ")
+    .replace(/[\s，,。！!？?、；;]+/g, " ")
+    .trim()
+    .replace(/(练了|聊了|看了|搞了|弄了|花了|用了)$/u, "")
+    .trim();
+  // 码点级截断：UTF-16 码元 slice 会把骑边界的 emoji 切成孤代理对（落库变 U+FFFD）
+  return Array.from(cleaned || text).slice(0, 20).join("");
+}
+
+/**
+ * 话术日期词 → 花销发生日（北京 YYYY-MM-DD，REQ-009 FR-E6 确定性防漂移）。
+ * 实测（2026-10-03）：GLM 对相对日期推算不可靠（前天/上周五均算错一天以上），
+ * 明确日期词一律以本确定性引擎为准覆盖模型输出；解析不出才信模型给的 occurredDate。
+ * 相对日词表与日程域 time-infer.detectDayRef 同源（大前天/前天/昨天系/周X/上礼拜X/上周）：
+ * 旧版自维护词表缺「礼拜」「昨夜/昨儿」，「上礼拜五随了600」按今天记账，与同句日程锚（上周五）分裂。
+ * 注意：「M月N号/YYYY年M月N号」带月/年限定的日期不在此解析（历史上裸匹配只取到 N号，
+ * 把模型算对的跨月日期错误覆盖成本月 N 日）——带限定时返回 null 交回模型输出。
+ * 未来话术（下周X/明天/月底…）同样返回 null：周X 词表只认 (上)? 前缀，「下周三」会被当过去语境错偏 7 天。
+ */
+export function deterministicOccurredDate(text: string, now: Date): string | null {
+  const ymd = (d: Date) => d.toISOString().slice(0, 10);
+  const bj = new Date(now.getTime() + 8 * 3600_000);
+  const shift = (n: number) => ymd(new Date(bj.getTime() + n * 86_400_000));
+  if (/今天|今晚|今早|今晨|刚才|刚刚/.test(text)) return shift(0);
+  // 未来话术守卫（十轮检视）：「下周三交房租」的 周X 段会被 detectDayRef 当过去语境偏移 -7 天
+  //（其词表只认 (上)? 前缀，"下"不入），且此处结果在 mapAiResult 无条件覆盖模型输出——错 7 天还压不住模型的正确值。
+  // 花销发生日必为过去/当日：检出未来词一律返回 null 交回模型/按当天记（今天等当日词已在上方先行命中，不受影响）
+  if (detectFuture(text) !== null) return null;
+  // 相对日（过去/当日）：与 detectDayRef 同词表同偏移（周一为一周之始，北京口径）
+  const dayRef = detectDayRef(text, now);
+  if (dayRef !== null) {
+    // 双保险：detectFuture 漏网的「下周X/明周X」（周X 前缀为 下/明）同样不得当过去语境消费
+    if (/(?:下|明)\s*(?:周|礼拜|星期)[一二三四五六日天]/.test(text)) return null;
+    return shift(dayRef);
+  }
+  // (上|本)个月初/底/末：月初=1 号、月底/末=该月最后一天——与「上个月15号」同属高频补记话术，
+  // 词表空白会落回「模型输出或今天」，跨月错账（十三轮收口）。落在未来（如本月月底但今天未到）→ null
+  const relEdge = /(?:上|本)\s*个?月\s*(初|底|末)/.exec(text);
+  if (relEdge) {
+    const isPrev = relEdge[0].startsWith("上");
+    const m0 = bj.getUTCFullYear() * 12 + bj.getUTCMonth() - (isPrev ? 1 : 0);
+    const day = relEdge[1] === "初" ? 1 : new Date(Date.UTC(Math.floor(m0 / 12), m0 % 12 + 1, 0)).getUTCDate();
+    const cand = new Date(Date.UTC(Math.floor(m0 / 12), m0 % 12, day));
+    if (cand.getTime() <= bj.getTime()) return ymd(cand);
+    return null;
+  }
+  // 上(个)月N号 / 本(个)月N号：补记上月的最高频话术——旧版数字月分支要求月前是数字、
+  // 裸 N号 lookbehind 又把「月N号」排除，整类话术交回相对月推算不可靠的模型（十一轮 P3 收口）。
+  // 数字类含中文数字（「上个月十五号随了600」，与 monthDayBase 同口径 cnToNumber 换算）。
+  // 花销发生日必为过去：换算结果落在北京今天之后 → null（宁缺勿错，与未来守卫双保险）
+  const relMd = /(?:上|本)\s*个?月\s*([一两俩二三四五六七八九十\d]{1,3})\s*[号日]/.exec(text);
+  if (relMd) {
+    const n = /^\d+$/.test(relMd[1]) ? Number(relMd[1]) : cnToNumber(relMd[1]);
+    if (n !== null && n >= 1 && n <= 31) {
+      const isPrev = relMd[0].startsWith("上");
+      const m0 = bj.getUTCFullYear() * 12 + bj.getUTCMonth() - (isPrev ? 1 : 0);
+      const cand = new Date(Date.UTC(Math.floor(m0 / 12), m0 % 12, n));
+      if (cand.getUTCDate() === n && cand.getTime() <= bj.getTime()) return ymd(cand);
+      return null;
+    }
+  }
+  // M月N号/M月N日（可带 YYYY 年）：确定性换算（花销发生日必为过去——未带年份且落在中国今天之后 → 按去年）
+  const md = /(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]/.exec(text);
+  if (md) {
+    const mo = Number(md[2]);
+    const day = Number(md[3]);
+    if (mo >= 1 && mo <= 12 && day >= 1 && day <= 31) {
+      const year = md[1] ? Number(md[1]) : bj.getUTCFullYear();
+      let cand = new Date(Date.UTC(year, mo - 1, day));
+      if (!md[1] && cand.getTime() > bj.getTime()) cand = new Date(Date.UTC(year - 1, mo - 1, day));
+      if (cand.getUTCDate() !== day) return null; // 2月30 之类不存在的日期：宁缺勿错
+      // 带显式年份的未来日期同样违反「花销发生日必为过去」不变量（「2027年1月1号转了1000」不得直通）
+      if (cand.getTime() > bj.getTime()) return null;
+      return ymd(cand);
+    }
+  }
+  // N号/N日（裸日，前面不带 月/年 限定）：N 大于今天（未来）→ 往回找最近一个存在 N 日的月份
+  // （补记上月的常见话术；旧版近似回退 30 天再取 N，N 大于上月天数时 Date.UTC 静默进位出未来日期）
+  // lookbehind 追加量词/编号类：「3号球衣/5号工牌」的 N号 是编号非日期——误判把花销记错月份（宁缺勿错）
+  // lookahead 追加线址类后缀：「2号线/3号楼/5号门」同理是编号（实测「坐2号线花了4块」被记到 2 号，
+  // 覆盖模型正确输出的优先级在 mapAiResult——通勤话术高频，宁可落默认今天也不回跳 N-20 天）
+  const m = /(?<![月年\d个件条辆间套位张台页只支])(\d{1,2})[号日](?![线楼层栋路室排座门])/.exec(text);
+  if (m) {
+    const n = Number(m[1]);
+    if (n >= 1 && n <= 31) {
+      const day = bj.getUTCDate();
+      for (let back = n <= day ? 0 : 1; back <= 12; back++) {
+        const cand = new Date(Date.UTC(bj.getUTCFullYear(), bj.getUTCMonth() - back, n));
+        if (cand.getUTCDate() === n && cand.getTime() <= bj.getTime()) return ymd(cand);
+      }
+      return null;
+    }
+  }
+  return null;
+}
+
+function ruleExtract(text: string, contactNames?: string[], now: Date = new Date()): LlmExtractionT {
+  let activity: LlmExtractionT["schedule"]["activity"] = "other";
+  for (const [re, act] of RULE_KEYWORDS) {
+    if (re.test(text)) { activity = act; break; }
+  }
+  const amount = parseAmountCents(text);
+  // 人物去重："同事小陈"与"小陈"同时命中时保留更短的称呼
+  const rawNames = peopleRegexFrom(contactNames).map((re) => [...text.matchAll(re)].map((m) => m[0])).flat();
+  // 人物去重："同事小陈"与"小陈"同时命中时保留更短称呼——联系人名单里是"小陈"，
+  // 保留长串会让 people 落库成带前缀的称呼对不上名单（旧版行为与注释相反，实际保留了长串）
+  const people = [...new Set(rawNames)]
+    .filter((n) => !rawNames.some((m) => m !== n && n.includes(m)))
+    .map((name) => ({ name, event: undefined }));
+  const mood = ruleMood(text);
+  const isFuture = detectFuture(text) !== null;
+  // 「花了0元」非真实流水：0 分金额置无金额（schema FinanceDraft.amountCents>0 契约 + rulesPipeline 双保险，十轮检视）
+  const hasAmount = amount !== null && amount > 0;
+  // 日程适用启发式：命中活动词/有显式时长/有饮食（吃饭喝水都占时间）→ 已发生的"事"；纯感想不适用
+  const dietHit = DIET_RE.test(text) && !DIET_EXCLUDE_RE.test(text);
+  const scheduleApplicable = !isFuture && (activity !== "other" || parseDuration(text) !== null || dietHit);
+  return {
+    reasoning: {},
+    schedule: {
+      applicable: scheduleApplicable,
+      activity,
+      title: makeTitle(text),
+      durationMin: parseDuration(text) ?? undefined,
+      periodHint: detectPeriod(text) ?? "now",
+      confidence: scheduleApplicable ? 0.7 : 0.5,
+    },
+    todo: { applicable: isFuture, confidence: isFuture ? 0.8 : 0.6 },
+    finance: hasAmount
+      ? {
+          hasAmount: true,
+          // 「发红包/发了红包/包红包」是支出：先行判出，避免「红包」关键词把它顶成收入；
+          // 「(收到的)发的红包」定语形态不匹配（发+的），仍按收入
+          direction: /发了个?红包|发红包|包了?个?红包/.test(text)
+            ? ("out" as const)
+            : /收到|到账|工资|红包|奖金|进账|报销|退款|退了|入账/.test(text)
+              ? ("in" as const)
+              : ("out" as const),
+          amountCents: amount,
+          category: /随(礼|份子)|礼金|份子|红包/.test(text)
+            ? "人情往来"
+            : /超市|买菜|购物/.test(text)
+              ? "购物"
+              : "餐饮",
+          occurredDate: deterministicOccurredDate(text, now),
+          counterparty: people[0]?.name,
+          confidence: 0.8,
+        }
+      : { hasAmount: false, confidence: 0.7 },
+    mood: mood ? { label: mood.label, score: mood.score, confidence: 0.7 } : { label: null, score: null, confidence: 0.6 },
+    diet: {
+      applicable: dietHit,
+      meal: /夜宵|宵夜/.test(text) ? "夜宵" : /加餐|下午茶/.test(text) ? "加餐" : /早/.test(text) ? "早餐" : /午饭|中午/.test(text) ? "午餐" : /晚/.test(text) ? "晚餐" : "未知",
+      items: dietHit
+        // 码点级截断（同 makeTitle）：UTF-16 码元 slice 会把骑边界的 emoji 切成孤代理对（落库变 U+FFFD）
+        ? (recoverDietItemsFromText(text) ?? [{ name: Array.from(text).slice(0, 12).join(""), amount: null, kcal: null }])
+        : [],
+      totalKcal: null,
+      confidence: dietHit ? 0.6 : 0.5,
+    },
+    people,
+    ambiguity: null,
+  };
+}
+
+/** GLM 提示词用北京时间墙钟：+8h 后必须读 UTC getter（getHours 等读宿主机时区，CST 机器上会二次 +8） */
+export function toCstWallClock(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  const c = new Date(d.getTime() + 8 * 3600_000);
+  return `${c.getUTCFullYear()}-${p(c.getUTCMonth() + 1)}-${p(c.getUTCDate())} ${p(c.getUTCHours())}:${p(c.getUTCMinutes())}（北京时间）`;
+}
+
+/** 从原话确定性恢复饮食条目（规则路径整句当 name 的兜底，ruleExtract 接线使用）：剥不动前缀 → null（不像饮食流水账） */
+export function recoverDietItemsFromText(text: string): { name: string; amount: string | null; kcal: number | null }[] | null {
+  const t = text.trim()
+    .replace(/^(今天|今日|刚才|刚刚|现在|早上|中午|晚上)/, "")
+    .replace(/^(喝了|吃了|喝|吃|点了|点了)/, "")
+    .replace(/^(了)/, "");
+  if (t === text) return null; // 没去掉任何时间/动词前缀 → 不像饮食流水账，放弃恢复
+  const items: { name: string; amount: string | null; kcal: number | null }[] = []; // name 经下方长度校验后 push，不可能为 null
+  for (const rawPart of t.split(/和|及|还有|，|,|、/)) {
+    const seg = rawPart.trim().replace(/^一点点/, "").replace(/([0-9一二两三四五六七八九十半]+)(杯|碗|瓶|罐|份|个|根|块|片|包|盒|盘|颗)/g, "、");
+    for (const piece of seg.split("、")) {
+      const name = piece.replace(/^[杯碗瓶罐份个根条块片包盒盘颗]/, "").trim();
+      if (name.length >= 2 && name.length <= 12 && !/[了的在]/.test(name)) {
+        items.push({ name, amount: null, kcal: null });
+      }
+    }
+  }
+  return items.length >= 1 ? items : null;
+}
+
+// ---------- AI 路径（v2 主干） ----------
+
+/** AI 调用与校验：失败时抛错（由 parseInput 决定降级）；输出不合格自动带错误清单重问一次 */
+export async function aiExtract(
+  text: string,
+  domain: string | undefined,
+  now: Date,
+  onUsage?: ParseOptions["onUsage"],
+  contactNames?: string[],
+  systemOverride?: string,
+  userOverride?: string,
+): Promise<{ ext: LlmExtractionT; engine: "llm" | "llm-repaired" }> {
+  // 非法 domain（DOMAIN_PROMPTS 之外）回落全量提示词，避免 system=undefined 让调用方拿到裸 Error
+  const system = systemOverride ?? (domain ? DOMAIN_PROMPTS[domain] ?? EXTRACT_SYSTEM_PROMPT : EXTRACT_SYSTEM_PROMPT);
+  const schema = domain ? domainExtractionV2(domain) : FullExtractionV2;
+  // user prompt 覆盖优先（3-A 输入装配）；缺省用包内默认装配
+  const base = userOverride ?? buildExtractUserPrompt(text, toCstWallClock(now), contactNames);
+
+  let raw = await chat({ system, user: base, onUsage });
+  let parsed = schema.safeParse(extractJson(raw));
+  if (!parsed.success) {
+    // 一次自修复重问：把校验错误清单反馈给模型（仅畸形输出多花一次调用）
+    const issues = parsed.error.issues.slice(0, 6).map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+    console.warn(`[ai] 输出未通过校验，重问：${issues.join("；").slice(0, 200)}`);
+    raw = await chat({ system, user: buildRepairUserPrompt(base, raw, issues), onUsage });
+    parsed = schema.safeParse(extractJson(raw));
+    if (!parsed.success) {
+      throw new GlmError("badOutput", `重问后仍不合格：${parsed.error.issues.slice(0, 3).map((i) => i.message).join("；")}`);
+    }
+    return { ext: assembleExtraction(parsed.data, domain), engine: "llm-repaired" };
+  }
+  return { ext: assembleExtraction(parsed.data, domain), engine: "llm" };
+}
+
+// ---------- Jev 混合引擎（REQ-003 3-D：Jev 闭集 + GLM 开放词汇瘦身提取） ----------
+
+/** 混合引擎不可用（Jev 未启用/调用失败、或瘦身提取失败）——调用方降级全量 GLM */
+export class HybridUnavailableError extends Error {
+  constructor(public reason: string) {
+    super(`[hybrid] ${reason}`);
+    this.name = "HybridUnavailableError";
+  }
+}
+
+export interface HybridParseOptions extends ParseOptions {
+  /** 瘦身开放词汇提取的 system/user prompt（apps/api 按 DB 配置装配传入；缺省用包内默认） */
+  slimSystemPrompt?: string;
+  slimUserPrompt?: string;
+  /** 用户自定义活动分类（id→「自定义分类：名称」）：合并进 Jev activity 闭集选项，key 即答案 */
+  activityCriteria?: Record<string, string>;
+  /** 用户常用花销分类（分类名→说明）：合并进 Jev fin_category 闭集选项 */
+  financeCriteria?: Record<string, string>;
+}
+
+/** GLM 瘦身提取：只出开放词汇字段（校验不过自动带错误清单重问一次，与 aiExtract 同策略） */
+async function openVocabExtract(text: string, now: Date, opts: HybridParseOptions): Promise<OpenVocabExtractionT> {
+  const system = opts.slimSystemPrompt ?? OPEN_VOCAB_SYSTEM_PROMPT;
+  const base = opts.slimUserPrompt ?? buildOpenVocabUserPrompt(text, toCstWallClock(now), opts.contactNames);
+  let raw = await chat({ system, user: base, onUsage: opts.onUsage });
+  let parsed = OpenVocabExtraction.safeParse(extractJson(raw));
+  if (!parsed.success) {
+    const issues = parsed.error.issues.slice(0, 6).map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`);
+    console.warn(`[hybrid] 瘦身输出未通过校验，重问：${issues.join("；").slice(0, 200)}`);
+    raw = await chat({ system, user: buildRepairUserPrompt(base, raw, issues), onUsage: opts.onUsage });
+    parsed = OpenVocabExtraction.safeParse(extractJson(raw));
+    if (!parsed.success) {
+      throw new GlmError("badOutput", `瘦身重问后仍不合格：${parsed.error.issues.slice(0, 3).map((i) => i.message).join("；")}`);
+    }
+  }
+  return parsed.data;
+}
+
+/** noul 答案 → 布尔 + 校准概率（概率存在时原样透传；缺失/undefined 时给 missingP，未指定按布尔给保守值） */
+function noulOf(jev: Awaited<ReturnType<typeof jevAsk>>, key: string, missingP?: number): { v: boolean; p: number } {
+  const a = jev.answers[key];
+  const v = a?.value === true;
+  const p = a?.probabilities && typeof a.probabilities.true === "number"
+    ? a.probabilities.true
+    : missingP ?? (v ? 0.9 : 0.5);
+  return { v, p };
+}
+
+/**
+ * 混合解析（3-D 接管路径）：Jev 一次并行回答闭集 12 问，GLM 瘦身提取只出开放词汇，合并层拼装后走与全量
+ * GLM 完全相同的确定性后处理（mapAiResult）。Jev 未启用/调用失败、或瘦身提取失败 → 抛 HybridUnavailableError，
+ * 由调用方降级全量 GLM（rules 兜底仍在 parseInput 内）。
+ */
+export async function parseHybridInput(text: string, opts: HybridParseOptions = {}): Promise<ParseResultT> {
+  // 拷贝后再清秒：原地 setSeconds 会突变调用方传入的 opts.now（埋雷）
+  const now = new Date((opts.now ?? new Date()).getTime());
+  now.setSeconds(0, 0);
+  if (opts.forceRules) throw new HybridUnavailableError("force-rules");
+  if (!hasApiKey() || isQuotaTripped()) throw new HybridUnavailableError("glm-unavailable");
+  if (!jevEnabled()) throw new HybridUnavailableError("jev-not-enabled");
+
+  // 1) Jev 闭集（一次并行；网络/超时/鉴权失败即整体不可用）
+  let jev: Awaited<ReturnType<typeof jevAsk>>;
+  try {
+    const state = `用户随口记录了一句话（当前时间：${toCstWallClock(now)}）：\n「${text}」`;
+    jev = await jevAsk(state, extractClosedSetQuestions({ activityCriteria: opts.activityCriteria, financeCriteria: opts.financeCriteria }));
+  } catch (e) {
+    throw new HybridUnavailableError(e instanceof JevError ? e.kind : String(e).slice(0, 120));
+  }
+
+  // 2) GLM 瘦身开放词汇
+  let g: OpenVocabExtractionT;
+  try {
+    g = await openVocabExtract(text, now, opts);
+  } catch (e) {
+    throw new HybridUnavailableError(`open-vocab: ${e instanceof GlmError ? e.kind : String(e).slice(0, 100)}`);
+  }
+
+  // 3) 合并：闭集信 Jev，开放字段信 GLM
+  const sched = noulOf(jev, "sched_applicable");
+  const todo = noulOf(jev, "todo_applicable");
+  const fin = noulOf(jev, "fin_applicable");
+  const moodA = noulOf(jev, "mood_applicable", 0.6);
+  const dietA = noulOf(jev, "diet_applicable");
+  const peopleA = noulOf(jev, "people_applicable");
+  const recordFuture = jev.answers["record_type"]?.value === "future";
+  const activityRaw = jev.answers["activity"]?.value;
+  const customActivityIds = Object.keys(opts.activityCriteria ?? {});
+  const activity =
+    (ACTIVITY_IDS as readonly string[]).includes(activityRaw as string) ||
+    customActivityIds.includes(activityRaw as string)
+      ? (activityRaw as string)
+      : "other";
+  const dirRaw = jev.answers["fin_direction"]?.value;
+  const mealRaw = jev.answers["diet_meal"]?.value;
+  const meal = (["早餐", "午餐", "晚餐", "加餐", "夜宵", "未知"] as readonly string[]).includes(mealRaw as string)
+    ? (mealRaw as LlmExtractionT["diet"]["meal"])
+    : "未知";
+  const periodRaw = jev.answers["period"]?.value;
+  const periodHint = (["now", "morning", "noon", "afternoon", "evening", "night", "lateNight"] as readonly string[]).includes(periodRaw as string)
+    ? (periodRaw as LlmExtractionT["schedule"]["periodHint"])
+    : null;
+
+  const scheduleApplicableHybrid = sched.v && !recordFuture;
+
+  const ext: LlmExtractionT = {
+    reasoning: {},
+    schedule: {
+      applicable: scheduleApplicableHybrid,
+      activity,
+      // applicable 但 GLM 未抽出标题 → 从原话兜底（v2 同语义：空标题日程不得入库）；超 30 字截断（ParseResult 契约）
+      title: scheduleApplicableHybrid && !(g.title ?? "").trim() ? makeTitle(text) : Array.from(g.title ?? "").slice(0, 30).join(""),
+      durationMin: g.durationMin ?? null,
+      // 瘦身模型给出的起止（ISO）；mapAiResult 的确定性校验兜住不合法区间（域降级）
+      start: g.start ?? null,
+      end: g.end ?? null,
+      periodHint,
+      confidence: sched.p,
+    },
+    todo: { applicable: todo.v || recordFuture, due: g.due ?? null, confidence: Math.max(todo.p, recordFuture ? 0.9 : 0) },
+    finance: {
+      // 有金额判定信 Jev；但金额数只能来自 GLM——闭集说有而开放字段没抽出金额时按无金额处理（宁漏勿错）
+      hasAmount: fin.v && g.amountCents != null,
+      direction: dirRaw === "income" ? "in" : "out",
+      amountCents: g.amountCents ?? null,
+      // Jev 答案校验：基础七类 ∪ 用户常用分类之外的一律落「其他」（防模型编造）
+      category: fin.v
+        ? ((c) => {
+            const valid = [...Object.keys(BASE_FIN_CATEGORY_CRITERIA), ...Object.keys(opts.financeCriteria ?? {})];
+            return typeof c === "string" && valid.includes(c) ? c : "其他";
+          })(jev.answers["fin_category"]?.value)
+        : null,
+      counterparty: g.counterparty ?? null,
+      confidence: fin.p,
+    },
+    mood: {
+      label: moodA.v ? g.mood?.label ?? null : null,
+      score: moodA.v ? g.mood?.score ?? null : null,
+      // 概率存在时原样透传，不抬轿（Math.max 低概率强抬过 0.6 阈值会让该域跳过待确认）；仅缺失时回落 0.6
+      confidence: moodA.p,
+    },
+    diet: {
+      applicable: dietA.v,
+      meal,
+      items: dietA.v ? g.dietItems ?? [] : [],
+      totalKcal: null,
+      confidence: dietA.p,
+    },
+    people: peopleA.v ? g.people ?? [] : [],
+    ambiguity: null,
+  };
+  return mapAiResult(ext, text, now, "jev-hybrid");
+}
+
+/** 把全量/单域的 v2 校验结果拼装回统一 Extraction 形状（单域模式其余域为中性"不适用"） */
+function assembleExtraction(data: unknown, domain: string | undefined): LlmExtractionT {
+  const d = data as Record<string, unknown>;
+  const neutralSchedule = { applicable: false, activity: "other" as const, title: "", durationMin: null, periodHint: null, confidence: 0.9 };
+  const neutralTodo = { applicable: false, due: null, confidence: 0.9 };
+  const neutralFinance = { hasAmount: false, direction: null, amountCents: null, category: null, counterparty: null, confidence: 0.9 };
+  const neutralMood = { label: null, score: null, confidence: 0.9 };
+  const neutralDiet = { applicable: false, meal: "未知" as const, items: [], totalKcal: null, confidence: 0.9 };
+  if (!domain) return data as unknown as LlmExtractionT; // 全量：v2 已严格校验，直接装配（不再过旧宽松 schema——会误抛）
+  return {
+    reasoning: {},
+    schedule: domain === "schedule" ? (d.schedule as LlmExtractionT["schedule"]) : neutralSchedule,
+    todo: domain === "todo" ? (d.todo as LlmExtractionT["todo"]) : neutralTodo,
+    finance: domain === "finance" ? (d.finance as LlmExtractionT["finance"]) : neutralFinance,
+    mood: domain === "mood" ? (d.mood as LlmExtractionT["mood"]) : neutralMood,
+    diet: domain === "diet" ? (d.diet as LlmExtractionT["diet"]) : neutralDiet,
+    people: domain === "people" ? ((d.people ?? []) as LlmExtractionT["people"]) : [],
+    ambiguity: null,
+  };
+}
+
+/** AI 结果 → ParseResult：确定性后处理（校验/换算），无规则语义 */
+function mapAiResult(ext: LlmExtractionT, text: string, now: Date, engine: "llm" | "llm-repaired" | "jev-hybrid"): ParseResultT {
+  const future = ext.todo.applicable; // AI 判定即最终判定
+
+  // —— 确定性日程救回（REQ-011 三端体验实测）——
+  // 两类漏判都用规则引擎兜：「中午和老王吃饭花了260，吃得挺开心」（时段词+活动词+过去时）
+  // ① 小模型直接判否（prompt 示例俱全仍回「无事件信号」）；② 开闸但起止缺失（域降级为不适用）。
+  // 规则引擎此时能正确给出 12:00–13:00。命中时以 0.5 置信度转「待确认」（低于 0.6 直落阈值）：
+  // 不硬覆盖高置信结论，用户一键确认即落库，误救回忽略即可。未来话术（归 todo）不参与。
+  if (!future && detectFuture(text) === null) {
+    const missingSchedule = !ext.schedule.applicable || !ext.schedule.start || !ext.schedule.end;
+    if (missingSchedule) {
+      const ruleExt = ruleExtract(text, undefined, now);
+      const hasExplicitTime =
+        parseClockRange(text, ruleExt.schedule.periodHint ?? null) !== null ||
+        /\d{1,2}\s*[点时]/.test(text) ||
+        detectPeriod(text) !== null ||
+        parseDuration(text) !== null ||
+        /刚(刚)?|完(了|成)/.test(text);
+      if (ruleExt.schedule.applicable && hasExplicitTime) {
+        const rescuedMin = ruleExt.schedule.durationMin ?? DEFAULT_ACTIVITY_MIN[ruleExt.schedule.activity] ?? 30;
+      const rescued = inferTimeBlock(text, now, rescuedMin, ruleExt.schedule.periodHint ?? undefined, false);
+        console.warn(`[ai] 日程救回：模型漏判/缺起止，规则引擎命中活动词+显式时间信号，转待确认（${text.slice(0, 24)}）`);
+        ext.schedule = {
+          applicable: true,
+          activity: ruleExt.schedule.activity,
+          title: makeTitle(text),
+          start: rescued.start.toISOString(),
+          end: rescued.end.toISOString(),
+          durationMin: rescued.durationMin,
+          periodHint: ruleExt.schedule.periodHint ?? null,
+          confidence: 0.5,
+        };
+      }
+    }
+  }
+
+  // 日期锚定：话术无日期词时模型偶发把当天区间挪到明天（17:22 说"下午2点到6点"→次日），
+  // 按用户规则「没写哪一天都按当天算」整天平移回今天（凌晨补记昨天除外）
+  const rangeRaw = resolveExplicitRange(ext.schedule.start ?? null, ext.schedule.end ?? null, now);
+  const range = rangeRaw ? anchorRangeToToday(rangeRaw, text, now) : null;
+  if (rangeRaw && range && rangeRaw.start.getTime() !== range.start.getTime()) {
+    console.warn(`[ai] 区间日期锚定：${rangeRaw.start.toISOString()} → ${range.start.toISOString()}（话术无日期词）`);
+  }
+  const dueRaw = resolveMoment(ext.todo.due ?? null, now);
+  let due = dueRaw ? anchorMomentToToday(dueRaw, text, now) : null;
+  // hybrid 合并层 todo 缺「future→due 必填」降级：Jev 判 future 而瘦身模型未抽出 due 时，
+  // tb 落 default 块（start=now-30min 过去），analyze 拿它当 dueAt → 立即弹过期待办。
+  // 与规则路径 inferFuture soon 分支同语义：due 兜底 now+1h（记下别忘，不产生过期提醒）。
+  // 锚定平移进过去的 due 同样兜底（十五轮）：「买牛奶」无日期词被 anchorMomentToToday 拉回
+  // 今天、AI 又给了明天 9 点 → 平移成今天 9 点已过期，立即误报过期待办
+  if (future && (!due || due.getTime() <= now.getTime())) due = new Date(now.getTime() + 3600_000);
+
+  // 日程时刻：AI 区间为准；applicable 但区间不合法（超幅等，schema 已保证可解析）→ 该域降级为不适用并留痕
+  let scheduleApplicable = !future && ext.schedule.applicable;
+  if (scheduleApplicable && !range) {
+    console.warn("[ai] schedule.applicable 但起止不合法，域降级：", ext.schedule.start, ext.schedule.end);
+    scheduleApplicable = false;
+  }
+  const intent: ParseResultT["intent"] = future ? "todo" : scheduleApplicable ? "schedule" : "status";
+
+  // 时间块（中性占位：非日程非待办时仅留档）
+  let tb: { mode: "explicit" | "future" | "default"; start: Date; end: Date; durationMin: number };
+  if (future && due) {
+    tb = { mode: "future", start: due, end: due, durationMin: ext.schedule.durationMin ?? 30 };
+  } else if (range) {
+    tb = {
+      mode: "explicit",
+      start: range.start,
+      end: range.end,
+      durationMin: ext.schedule.durationMin ?? Math.round((range.end.getTime() - range.start.getTime()) / 60_000),
+    };
+  } else {
+    tb = { mode: "default", start: new Date(now.getTime() - 30 * 60_000), end: now, durationMin: 30 };
+  }
+  // 进行中：AI 区间横跨当下（已开始未结束）→ 落日程块之外再生成收尾待办
+  const ongoing = !future && scheduleApplicable && tb.mode === "explicit" && tb.start <= now && now < tb.end;
+
+  const dietItems = ext.diet.items.filter((it) => it.name?.trim());
+  const knownKcal = dietItems.reduce((s, it) => s + (it.kcal ?? 0), 0);
+  const moodLabel = (ext.mood.label ?? "").trim() || null;
+
+  return ParseResult.parse({
+    activity: ext.schedule.activity,
+    // 上游瘦身契约允许 40 字，超 30 会让 zod 抛错且无法降级 → 此处截断；
+    // 纯花销/心情句模型给 title=null（宽容化后合法），兜底话术文本（与规则路径 makeTitle 同口径），
+    // 否则 undefined 会让 ParseResult 校验抛错、整句被误判为 LLM 失败而降级（2026-10-03 实测踩坑）
+    title: Array.from(ext.schedule.title?.trim() ?? "").slice(0, 30).join("") || Array.from(text).slice(0, 30).join(""),
+    time: {
+      mode: tb.mode,
+      start: tb.start.toISOString(),
+      end: tb.end.toISOString(),
+      durationMin: Math.max(1, tb.durationMin),
+      confidence: engine === "llm" ? 0.9 : 0.85,
+    },
+    intent,
+    ongoing,
+    scheduleApplicable,
+    scheduleConfidence: ext.schedule.confidence,
+    todoConfidence: ext.todo.confidence,
+    financeConfidence: ext.finance.confidence,
+    mood: { label: moodLabel, score: ext.mood.score ?? null, confidence: ext.mood.confidence },
+    diet: {
+      applicable: ext.diet.applicable && dietItems.length > 0,
+      meal: ext.diet.meal,
+      items: dietItems,
+      totalKcal: ext.diet.totalKcal ?? (knownKcal > 0 ? knownKcal : null),
+      confidence: ext.diet.confidence,
+    },
+    finance: {
+      hasAmount: ext.finance.hasAmount,
+      // 输出层形状归一：无金额时方向落 "out"（v2 允许 AI 给 null；语义仍以 hasAmount 为准）
+      direction: ext.finance.direction ?? "out",
+      amountCents: ext.finance.amountCents != null ? Math.abs(ext.finance.amountCents) : null,
+      category: ext.finance.category ?? null,
+      counterparty: ext.finance.counterparty ?? null,
+      // 话术带日期的花销 → 发生日（REQ-009 FR-E6）：确定性日期词优先（模型相对日期推算不可靠），
+      // 解析不出才信模型输出；落库侧另有 时间口径兜底与未来日期防线
+      occurredDate: deterministicOccurredDate(text, now) ?? ext.finance.occurredDate ?? null,
+    },
+    people: ext.people,
+    ambiguity: ext.ambiguity ?? null,
+    engine,
+    fallbackReason: null,
+  });
+}
+
+// ---------- 规则路径（原 v1 管线，灾难兜底时使用） ----------
+
+/** 活动默认时长（分钟）：无显式时长时的估计锚（规则路径与日程救回共用） */
+const DEFAULT_ACTIVITY_MIN: Record<string, number> = { sleep: 480, fitness: 60, social: 60, chores: 60, work: 60, study: 60, fun: 30, commute: 30, other: 30 };
+
+function rulesPipeline(
+  text: string,
+  now: Date,
+  opts: ParseOptions,
+  fallbackReason: string,
+): ParseResultT {
+  const ext = ruleExtract(text, opts.contactNames, now);
+  const defaults = { ...DEFAULT_ACTIVITY_MIN, ...opts.defaults };
+  // ruleExtract 的 durationMin 已是 parseDuration(text)，无需重复计算；
+  // ≥1 下限钳制与 mapAiResult（Math.max(1,…)）同口径——defaults 表被调用方配 0 时不再撞 durationMin>0 契约抛 ZodError
+  const durationMin = Math.max(1, ext.schedule.durationMin ?? defaults[ext.schedule.activity as keyof typeof defaults] ?? 30);
+  const people = ext.people.filter((p) => p.name && !/^(省略|无|没有|null|none)$/i.test(p.name.trim()));
+  const future = ext.todo.applicable || detectFuture(text) !== null;
+  const tb = inferTimeBlock(text, now, durationMin, ext.schedule.periodHint ?? undefined, future);
+  const ongoing = !future && (tb.mode === "explicit" || tb.mode === "relative") && tb.start <= now && now < tb.end;
+  // v1 同款弱锚点防御：无显式时间信号的 applicable 多为误报（饮食/感想），否决；
+  // 显式区间横跨当下（ongoing）是最强"具体的事"信号，救回
+  const hasExplicitTime =
+    parseClockRange(text, ext.schedule.periodHint ?? null) !== null ||
+    /\d{1,2}\s*[点时]/.test(text) ||
+    detectPeriod(text) !== null ||
+    detectFuture(text) !== null ||
+    parseDuration(text) !== null ||
+    /刚(刚)?|完(了|成)/.test(text);
+  const scheduleApplicable = !future && (ext.schedule.applicable || ongoing) && hasExplicitTime;
+  const intent: ParseResultT["intent"] = future ? "todo" : scheduleApplicable ? "schedule" : "status";
+  const moodLabel = (ext.mood.label ?? "").trim() || null;
+  const moodScore = moodLabel ? (ext.mood.score ?? ruleMood(moodLabel)?.score ?? 0) : null;
+  const dietItems = ext.diet.items.filter((it) => it.name?.trim());
+
+  return ParseResult.parse({
+    activity: ext.schedule.activity,
+    title: Array.from(ext.schedule.title?.trim() ?? "").slice(0, 30).join("") || makeTitle(text),
+    time: {
+      mode: tb.mode,
+      start: tb.start.toISOString(),
+      end: tb.end.toISOString(),
+      durationMin: tb.durationMin,
+      confidence: 0.4,
+    },
+    intent,
+    ongoing,
+    scheduleApplicable,
+    scheduleConfidence: ext.schedule.confidence,
+    todoConfidence: ext.todo.confidence,
+    financeConfidence: ext.finance.confidence ?? 0.8,
+    mood: { label: moodLabel, score: moodScore, confidence: ext.mood.confidence ?? 0.7 },
+    diet: {
+      applicable: ext.diet.applicable && dietItems.length > 0,
+      meal: ext.diet.meal,
+      items: dietItems,
+      totalKcal: ext.diet.totalKcal ?? null,
+      confidence: ext.diet.confidence,
+    },
+    finance: {
+      // 0 分双保险（schema FinanceDraft.amountCents>0 refine 同口径）：金额 ≤0/缺失即按无金额，不再产 0 分流水
+      hasAmount: ext.finance.hasAmount && (ext.finance.amountCents ?? 0) > 0,
+      direction: ext.finance.direction ?? "out",
+      amountCents: ext.finance.amountCents != null ? Math.abs(ext.finance.amountCents) : null,
+      category: ext.finance.category ?? null,
+      counterparty: ext.finance.counterparty ?? null,
+      occurredDate: ext.finance.occurredDate ?? null,
+    },
+    people,
+    ambiguity: ext.ambiguity ?? null,
+    engine: "rules",
+    fallbackReason,
+  });
+}
+
+// ---------- 主入口 ----------
+
+/** 兜底之兜底：规则路径也抛错时（ParseResult 校验失败等）给出中性空结果——打卡入口永不向调用方抛异常 */
+function emptyParseResult(text: string, now: Date, fallbackReason: string): ParseResultT {
+  return ParseResult.parse({
+    activity: "other",
+    title: Array.from(text).slice(0, 30).join(""),
+    time: {
+      mode: "default",
+      start: new Date(now.getTime() - 30 * 60_000).toISOString(),
+      end: now.toISOString(),
+      durationMin: 30,
+      confidence: 0.4,
+    },
+    intent: "status",
+    scheduleApplicable: false,
+    scheduleConfidence: 0.4,
+    todoConfidence: 0.4,
+    financeConfidence: 0.4,
+    mood: { label: null, score: null, confidence: 0.4 },
+    diet: { applicable: false, meal: "未知", items: [], totalKcal: null, confidence: 0.4 },
+    finance: { hasAmount: false },
+    people: [],
+    engine: "rules",
+    fallbackReason,
+  });
+}
+
+/** 规则兜底统一入口：rulesPipeline 自身失败（如 ParseResult 校验抛 ZodError）也不逃逸 parseInput */
+function runRulesSafely(text: string, now: Date, opts: ParseOptions, reason: string): ParseResultT {
+  try {
+    return rulesPipeline(text, now, opts, reason);
+  } catch (e) {
+    console.warn(`[ai] 规则兜底也失败（${String(e).slice(0, 120)}），返回空结果：`, String(e).slice(0, 200));
+    return emptyParseResult(text, now, reason);
+  }
+}
+
+export async function parseInput(text: string, opts: ParseOptions = {}): Promise<ParseResultT> {
+  // 拷贝后再清秒：原地 setSeconds 会突变调用方传入的 opts.now（埋雷）
+  const now = new Date((opts.now ?? new Date()).getTime());
+  now.setSeconds(0, 0); // 时间对齐到整分钟：时间轴记录到分即可
+  const domain = opts.domain && (DOMAIN_MODES as readonly string[]).includes(opts.domain) ? opts.domain : undefined;
+
+  const canLlm = !opts.forceRules && hasApiKey() && !isQuotaTripped();
+  if (!canLlm) {
+    const reason = opts.forceRules
+      ? "force-rules"
+      : isQuotaTripped()
+        ? "quota-breaker（额度熔断中）"
+        : "no-api-key";
+    // 规则分支同样纳入兜底：ParseResult.parse 抛 ZodError 曾直接逃逸 parseInput（打卡入口不可失败的底线）
+    return runRulesSafely(text, now, opts, reason);
+  }
+
+  try {
+    const { ext, engine } = await aiExtract(text, domain, now, opts.onUsage, opts.contactNames, opts.systemPrompt, opts.userPrompt);
+    return mapAiResult(ext, text, now, engine);
+  } catch (e) {
+    // 灾难降级：GLM 不可用（网络/超时/额度/鉴权）或重问后输出仍不合格 → 规则引擎接管，打卡入口永不失败
+    const reason = e instanceof GlmError ? e.kind : String(e).slice(0, 120);
+    console.warn(`[ai] LLM 失败（${reason}），规则兜底：`, String(e).slice(0, 200));
+    return runRulesSafely(text, now, opts, reason);
+  }
+}

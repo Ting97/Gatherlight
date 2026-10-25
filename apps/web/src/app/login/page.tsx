@@ -1,0 +1,326 @@
+"use client";
+
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Check, Eye, EyeOff, X } from "lucide-react";
+import { api, ApiClientError } from "@/shared/api";
+import { toast } from "@/shared/ui/toast";
+
+export default function LoginPage() {
+  const [mode, setMode] = useState<"password" | "sms">("password"); // 登录方式：密码/验证码
+  const [isRegister, setIsRegister] = useState(false);
+  const [account, setAccount] = useState(""); // 手机号或邮箱（含 @ 自动识别）
+  const [password, setPassword] = useState("");
+  const [smsCode, setSmsCode] = useState("");
+  const [invite, setInvite] = useState("");
+  const [nickname, setNickname] = useState(""); // 注册必填
+  const [password2, setPassword2] = useState(""); // 注册：确认密码
+  const [showPwd, setShowPwd] = useState(false); // 明文切换
+  const [countdown, setCountdown] = useState(0);
+  // 验证码请求飞行中锁：与 countdown 分开（countdown 成功后才启动），飞行中也要禁用按钮防连发
+  const [sending, setSending] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    // 已登录直接回首页（未登录 401 → api 抛错，忽略即停留本页）
+    api("/api/auth/me")
+      .then(() => {
+        location.href = "/";
+      })
+      .catch(() => {});
+  }, []);
+
+  // 卸载标记：sendCode 的响应在卸载后才到达时，不能再创建倒计时 interval——
+  // 卸载清理 effect 已跑过，晚建的 interval 每秒空转永不停止（十四轮 P3）
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    // 卸载时清理倒计时 interval，避免离开页面后空跑最长 60s
+    return () => {
+      aliveRef.current = false;
+      if (timer.current) clearInterval(timer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (countdown <= 0 && timer.current) {
+      clearInterval(timer.current);
+      timer.current = null;
+    }
+  }, [countdown]);
+
+  function startCountdown() {
+    if (timer.current) clearInterval(timer.current); // 防御：上一轮未清先清，避免双 interval
+    setCountdown(60);
+    timer.current = setInterval(() => setCountdown((c) => c - 1), 1000);
+  }
+
+  async function sendCode() {
+    if (sending) return; // 请求飞行中忽略再次点击，防重复发送
+    const isEmail = account.includes("@");
+    if (isEmail ? !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(account) : !/^1[3-9]\d{9}$/.test(account)) {
+      toast(isEmail ? "请先填写正确的邮箱地址" : "请先填写正确的手机号", "err");
+      return;
+    }
+    setSending(true);
+    try {
+      const body = isEmail ? { email: account, purpose: "login" } : { phone: account, purpose: "login" };
+      await api(isEmail ? "/api/auth/email/send" : "/api/auth/sms/send", "POST", body);
+      if (!aliveRef.current) return; // 卸载后到达：不弹提示也不建倒计时
+      toast("验证码已发送，5 分钟内有效");
+      startCountdown();
+    } catch (e) {
+      if (!aliveRef.current) return;
+      const text = e instanceof Error ? e.message : String(e);
+      // 通道未开通：注册场景下邀请码即凭证，可不填验证码
+      if (isRegister && e instanceof ApiClientError && e.status === 503) {
+        toast(`${text}（当前注册凭邀请码即可，验证码可留空）`, "err");
+      } else {
+        toast(text, "err");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function submit() {
+    if (busy) return;
+    if (!account.trim()) {
+      // 账号必填：空账号直接登录会被服务端 422 拒绝，这里先行拦截给出可读提示
+      toast("请先填写手机号 / 邮箱", "err");
+      return;
+    }
+    if (isRegister && password.length < 8) {
+      // 长度/一致性属表单校验（二十轮）：服务端 422 兜底但往返慢，toast 收口提交反馈
+      toast("密码至少 8 位", "err");
+      return;
+    }
+    if (isRegister && password !== password2) {
+      // 密码一致性属表单校验：字段旁已有 ✓/✗ 即时指示，这里 toast 收口提交反馈
+      toast("两次输入的密码不一致", "err");
+      return;
+    }
+    setBusy(true);
+    try {
+      if (isRegister) {
+        await api("/api/auth/register", "POST",
+          account.includes("@")
+            ? { email: account, password, emailCode: smsCode || undefined, inviteCode: invite, nickname: nickname.trim() || undefined }
+            : { phone: account, password, smsCode: smsCode || undefined, inviteCode: invite, nickname: nickname.trim() || undefined },
+        );
+      } else if (mode === "password") {
+        await api("/api/auth/login", "POST",
+          account.includes("@") ? { email: account, password } : { phone: account, password },
+        );
+      } else {
+        await api("/api/auth/login", "POST",
+          account.includes("@") ? { email: account, emailCode: smsCode } : { phone: account, smsCode },
+        );
+      }
+      location.href = "/";
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "err");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const inputCls =
+    "input-glow w-full rounded-xl border border-line-soft bg-surface/60 px-4 py-2.5 text-sm outline-none placeholder:text-ink-faint";
+
+  // 表单无 form 包裹的裸输入行：Enter 直接提交（与底部按钮同口径，走 submit 的校验与 busy 门）；
+  // 中文输入法组词中的 Enter（isComposing）不触发
+  const onEnterSubmit = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+  };
+
+  return (
+    <main className="flex min-h-screen items-center justify-center px-5 text-ink">
+      <div className="w-full max-w-sm">
+        <div className="mb-6 text-center">
+          {/* 品牌 logo：一束光落入承光弧（拾起光阴） */}
+          <svg viewBox="0 0 240 240" className="mx-auto mb-2 h-20 w-20 drop-shadow-[0_10px_30px_rgba(241,198,107,.25)]" aria-hidden>
+            <defs>
+              <radialGradient id="lg-bg" cx="30%" cy="18%" r="120%">
+                <stop offset="0%" stopColor="#1a2554" /><stop offset="45%" stopColor="#0d1740" /><stop offset="100%" stopColor="#05081a" />
+              </radialGradient>
+              <linearGradient id="lg-beam" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#fff7e0" /><stop offset="45%" stopColor="#f1c66b" /><stop offset="100%" stopColor="#e8a33d" />
+              </linearGradient>
+              <linearGradient id="lg-bowl" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#38bdf8" /><stop offset="100%" stopColor="#f1c66b" />
+              </linearGradient>
+            </defs>
+            <rect width="240" height="240" rx="56" fill="url(#lg-bg)" />
+            <path d="M186 44 C 150 60, 108 84, 96 132" fill="none" stroke="url(#lg-beam)" strokeWidth="10" strokeLinecap="round" />
+            <circle cx="186" cy="44" r="9" fill="#fff7e0" />
+            <circle cx="150" cy="72" r="3.2" fill="#f1c66b" opacity=".9" />
+            <circle cx="122" cy="96" r="2.6" fill="#f1c66b" opacity=".7" />
+            <path d="M56 138 A 62 62 0 0 0 184 138" fill="none" stroke="url(#lg-bowl)" strokeWidth="10" strokeLinecap="round" />
+            <circle cx="120" cy="150" r="12" fill="#f1c66b" />
+            <circle cx="120" cy="150" r="5" fill="#fff7e0" />
+          </svg>
+          <h1 className="text-gradient text-3xl font-bold">拾光</h1>
+          <p className="mt-1 text-xs text-ink-dim">拾起光阴，记录今日 · {isRegister ? "凭邀请码注册" : "登录后继续"}</p>
+        </div>
+
+        <div className="glass rounded-2xl p-5">
+          {/* 登录方式切换（仅登录态） */}
+          {!isRegister && (
+            <div className="mb-4 flex rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs">
+              <button
+                onClick={() => setMode("password")}
+                className={`flex-1 rounded-full px-3 py-1.5 transition-all ${
+                  mode === "password"
+                    ? "bg-gradient-to-r from-sky-500 to-indigo-500 font-medium text-white"
+                    : "text-ink-mute hover:text-ink"
+                }`}
+              >
+                密码登录
+              </button>
+              <button
+                onClick={() => setMode("sms")}
+                className={`flex-1 rounded-full px-3 py-1.5 transition-all ${
+                  mode === "sms"
+                    ? "bg-gradient-to-r from-sky-500 to-indigo-500 font-medium text-white"
+                    : "text-ink-mute hover:text-ink"
+                }`}
+              >
+                验证码登录
+              </button>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <input
+              value={account}
+              onChange={(e) => setAccount(e.target.value.trim())}
+              onKeyDown={onEnterSubmit}
+              placeholder="手机号 / 邮箱"
+              className={inputCls}
+            />
+
+            {isRegister || mode === "sms" ? (
+              <div className="flex gap-2">
+                <input
+                  value={smsCode}
+                  onChange={(e) => setSmsCode(e.target.value)}
+                  onKeyDown={onEnterSubmit}
+                  maxLength={6}
+                  inputMode="numeric"
+                  placeholder={isRegister ? "邮箱/短信验证码（未开通可留空）" : "6 位验证码"}
+                  className={`${inputCls} flex-1`}
+                />
+                <button
+                  onClick={sendCode}
+                  disabled={countdown > 0 || sending}
+                  className="shrink-0 rounded-xl border border-line-soft bg-elevated/70 px-3 text-xs text-accent transition hover:border-sky-500/50 disabled:opacity-40"
+                >
+                  {sending ? "发送中…" : countdown > 0 ? `${countdown}s` : "发送验证码"}
+                </button>
+              </div>
+            ) : (
+              <div className="relative">
+                <input
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  onKeyDown={onEnterSubmit}
+                  type={showPwd ? "text" : "password"}
+                  placeholder="密码"
+                  className={`${inputCls} pr-11`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd((v) => !v)}
+                  title={showPwd ? "隐藏密码" : "查看明文"}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
+                >
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            )}
+
+            {isRegister && (
+              <>
+                <input
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  onKeyDown={onEnterSubmit}
+                  maxLength={20}
+                  placeholder="昵称（必填）"
+                  className={inputCls}
+                />
+                <div className="relative">
+                  <input
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={onEnterSubmit}
+                    type={showPwd ? "text" : "password"}
+                    placeholder="设置密码（至少 8 位）"
+                    className={`${inputCls} pr-11`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd((v) => !v)}
+                    title={showPwd ? "隐藏密码" : "查看明文"}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
+                  >
+                    {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                <div className="relative">
+                  <input
+                    value={password2}
+                    onChange={(e) => setPassword2(e.target.value)}
+                    onKeyDown={onEnterSubmit}
+                    type={showPwd ? "text" : "password"}
+                    placeholder="确认密码"
+                    className={`${inputCls} pr-11`}
+                  />
+                  {password2 && (
+                    <span className={`absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5 text-xs ${password2 === password ? "text-success" : "text-danger"}`}>
+                      {password2 === password ? (
+                        <>
+                          <Check size={12} aria-hidden /> 一致
+                        </>
+                      ) : (
+                        <>
+                          <X size={12} aria-hidden /> 不一致
+                        </>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <input
+                  value={invite}
+                  onChange={(e) => setInvite(e.target.value.toUpperCase())}
+                  onKeyDown={onEnterSubmit}
+                  placeholder="邀请码"
+                  className={`${inputCls} uppercase`}
+                />
+              </>
+            )}
+
+            <button onClick={submit} disabled={busy} className="btn-primary w-full rounded-xl py-2.5 text-sm font-medium">
+              {busy ? "处理中…" : isRegister ? "注册并登录" : "登录"}
+            </button>
+          </div>
+
+          <p className="mt-4 text-center text-micro text-ink-dim">
+            {isRegister ? "已有账号？" : "没有账号？"}
+            <button
+              onClick={() => {
+                setIsRegister(!isRegister);
+              }}
+              className="ml-1 text-accent hover:underline"
+            >
+              {isRegister ? "去登录" : "凭邀请码注册"}
+            </button>
+          </p>
+        </div>
+
+        <p className="mt-6 text-center text-badge text-ink-faint">个人经营系统 · 钱 · 时间 · 人</p>
+      </div>
+    </main>
+  );
+}

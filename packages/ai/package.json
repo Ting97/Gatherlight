@@ -1,0 +1,25 @@
+{
+  "name": "@shiguangri/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "test": "tsx --test test/*.test.ts",
+    "poc": "tsx src/run-poc.ts",
+    "poc:live": "ZHIPUAI_LIVE=1 tsx --env-file-if-exists=../../.env src/run-poc.ts",
+    "poc:jev": "tsx --env-file-if-exists=../../.env src/run-jev-poc.ts",
+    "poc:jev:live": "ZHIPUAI_LIVE=1 tsx --env-file-if-exists=../../.env src/run-jev-poc.ts --glm-live"
+  },
+  "dependencies": {
+    "@ai-sdk/openai-compatible": "^0.2.16",
+    "@ai-sdk/provider": "^1.1.3",
+    "ai": "^4.3.19",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.0"
+  }
+}

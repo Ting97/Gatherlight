@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# secrets — 任何密钥入库即事故
+.env
+.env.*
+
+# build outputs
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# misc
+.DS_Store
+*.log
