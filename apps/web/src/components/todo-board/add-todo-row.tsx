@@ -2,6 +2,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { Star, Sun } from "lucide-react";
+import { t } from "@/i18n";
 import type { Activity, Space } from "@/lib/types";
 import type { Draft, View } from "./types";
 
@@ -46,7 +47,7 @@ export function AddTodoRow({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) onAdd();
           }}
-          placeholder="添加 todo，回车保存"
+          placeholder={t("添加 todo，回车保存")}
           maxLength={200}
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
         />
@@ -55,28 +56,28 @@ export function AddTodoRow({
           disabled={!draft.title.trim() || adding}
           className="btn-primary shrink-0 rounded-lg px-4 py-1.5 text-xs font-medium disabled:opacity-50"
         >
-          {adding ? "保存中…" : "添加"}
+          {adding ? t("保存中…") : t("添加")}
         </button>
       </div>
       {draftOpen && (
         <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-line-soft pt-2.5 text-xs">
           <button
             onClick={() => setDraft({ ...draft, important: !draft.important })}
-            title="重要标记"
+            title={t("重要标记")}
             className={`rounded-full px-3 py-1.5 transition ${
               draft.important ? "bg-amber-500/20 text-warn" : "border border-line-soft text-ink-mute hover:text-ink"
             }`}
           >
-            <Star size={14} className="inline align-[-2px]" /> 重要
+            <Star size={14} className="inline align-[-2px]" /> {t("重要")}
           </button>
           <button
             onClick={() => setDraft({ ...draft, today: !draft.today })}
-            title="今日标记（跨零点自动失效，每天重新规划）"
+            title={t("今日标记（跨零点自动失效，每天重新规划）")}
             className={`rounded-full px-3 py-1.5 transition ${
               draft.today || view === "today" ? "bg-sky-500/20 text-accent" : "border border-line-soft text-ink-mute hover:text-ink"
             }`}
           >
-            <Sun size={14} className="inline align-[-2px]" /> 今日
+            <Sun size={14} className="inline align-[-2px]" /> {t("今日")}
           </button>
           <input
             type="datetime-local"
@@ -99,10 +100,10 @@ export function AddTodoRow({
             <select
               value={draft.spaceId}
               onChange={(e) => setDraft({ ...draft, spaceId: e.target.value })}
-              title="关联目标空间"
+              title={t("关联目标空间")}
               className="rounded border border-line-strong bg-surface px-2 py-1.5 outline-none focus:border-sky-500"
             >
-              <option value="">不关联空间</option>
+              <option value="">{t("不关联空间")}</option>
               {spaces.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.icon} {s.name}

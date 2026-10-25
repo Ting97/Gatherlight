@@ -8,6 +8,7 @@
  */
 import { createPortal } from "react-dom";
 import { Pencil, Plus, Repeat, RotateCcw, Sparkles, Star, Sun, Target, Trash2 } from "lucide-react";
+import { t as tr, tpl } from "@/i18n";
 import { Dismissable } from "../dismissable";
 import { MenuItem, type TodoMenuActions, type TodoMenuInfo } from "./menu-item";
 
@@ -49,62 +50,62 @@ export function TodoRowMenu({
         {isChild ? (
           <>
             {actions.openNote && (
-              <MenuItem closeMenu={close} icon={<Pencil size={14} />} label="编辑标题 / 描述" onClick={() => actions.openNote!(t)} />
+              <MenuItem closeMenu={close} icon={<Pencil size={14} />} label={tr("编辑标题 / 描述")} onClick={() => actions.openNote!(t)} />
             )}
             {actions.patch && t.repeat_daily !== undefined && !isDone(t) && (
               <MenuItem
                 closeMenu={close}
                 icon={<Repeat size={14} className="text-success" />}
-                label={t.repeat_daily ? "关闭每日重复" : "每日重复（次日 6 点恢复）"}
+                label={t.repeat_daily ? tr("关闭每日重复") : tr("每日重复（次日 6 点恢复）")}
                 active={!!t.repeat_daily}
-                extra={t.repeat_done_count ? `已完成 ×${t.repeat_done_count}` : undefined}
-                onClick={() => actions.patch!(t.id, { repeatDaily: !t.repeat_daily }, t.repeat_daily ? "已关闭每日重复" : "🔁 已设为每日重复")}
+                extra={t.repeat_done_count ? tpl("已完成 ×{n}", { n: t.repeat_done_count }) : undefined}
+                onClick={() => actions.patch!(t.id, { repeatDaily: !t.repeat_daily }, t.repeat_daily ? tr("已关闭每日重复") : tr("🔁 已设为每日重复"))}
               />
             )}
             {actions.decompose && !isDone(t) && (
               <MenuItem
                 closeMenu={close}
                 icon={<Sparkles size={14} />}
-                label="AI 细化为更小行动"
-                hint="插入到该行动之后"
+                label={tr("AI 细化为更小行动")}
+                hint={tr("插入到该行动之后")}
                 disabled={decomposing}
                 busy={decomposing}
                 onClick={() => actions.decompose!(t, true)}
               />
             )}
             {actions.remove && (
-              <MenuItem closeMenu={close} icon={<Trash2 size={14} />} label="删除行动" danger onClick={() => actions.remove!(t, true)} />
+              <MenuItem closeMenu={close} icon={<Trash2 size={14} />} label={tr("删除行动")} danger onClick={() => actions.remove!(t, true)} />
             )}
           </>
         ) : (
           <>
             {actions.startEdit && (
-              <MenuItem closeMenu={close} icon={<Pencil size={14} />} label="编辑标题与时间" onClick={() => actions.startEdit!(t)} />
+              <MenuItem closeMenu={close} icon={<Pencil size={14} />} label={tr("编辑标题与时间")} onClick={() => actions.startEdit!(t)} />
             )}
             {actions.patch && t.is_important !== undefined && !isDone(t) && (
               <MenuItem
                 closeMenu={close}
                 icon={<Star size={14} />}
-                label={t.is_important ? "取消重要标记" : "标记为重要"}
+                label={t.is_important ? tr("取消重要标记") : tr("标记为重要")}
                 active={!!t.is_important}
-                onClick={() => actions.patch!(t.id, { important: !t.is_important }, t.is_important ? "已取消重要" : "⭐ 已标记为重要")}
+                onClick={() => actions.patch!(t.id, { important: !t.is_important }, t.is_important ? tr("已取消重要") : tr("⭐ 已标记为重要"))}
               />
             )}
             {actions.patch && t.today_tag_date !== undefined && !isDone(t) && (
               <MenuItem
                 closeMenu={close}
                 icon={<Sun size={14} />}
-                label={t.today_tag_date ? "移出今日" : "标记为今日"}
-                hint="今日标记跨零点自动失效"
+                label={t.today_tag_date ? tr("移出今日") : tr("标记为今日")}
+                hint={tr("今日标记跨零点自动失效")}
                 active={!!t.today_tag_date}
-                onClick={() => actions.patch!(t.id, { today: !t.today_tag_date }, t.today_tag_date ? "已移出今日" : "☀️ 已加入今日")}
+                onClick={() => actions.patch!(t.id, { today: !t.today_tag_date }, t.today_tag_date ? tr("已移出今日") : tr("☀️ 已加入今日"))}
               />
             )}
             {actions.pickSpace && (
-              <MenuItem closeMenu={close} icon={<Target size={14} />} label="关联空间" onClick={() => actions.pickSpace!(t)} />
+              <MenuItem closeMenu={close} icon={<Target size={14} />} label={tr("关联空间")} onClick={() => actions.pickSpace!(t)} />
             )}
             {actions.addAction && !isDone(t) && t.kind !== "action" && (
-              <MenuItem closeMenu={close} icon={<Plus size={14} />} label="添加行动" onClick={() => actions.addAction!(t)} />
+              <MenuItem closeMenu={close} icon={<Plus size={14} />} label={tr("添加行动")} onClick={() => actions.addAction!(t)} />
             )}
             {actions.decompose &&
               !isDone(t) &&
@@ -112,7 +113,7 @@ export function TodoRowMenu({
                 <MenuItem
                   closeMenu={close}
                   icon={<Sparkles size={14} />}
-                  label="AI 拆解为可执行的行动"
+                  label={tr("AI 拆解为可执行的行动")}
                   disabled={decomposing}
                   busy={decomposing}
                   onClick={() => actions.decompose!(t, false)}
@@ -120,12 +121,12 @@ export function TodoRowMenu({
               ) : (
                 /* 已有未完成行动：显式二选一（替代原 confirm「确定=重生成/取消=追加」的双语义） */
                 <>
-                  <p className="px-2.5 pt-1.5 text-badge text-ink-faint">已有 {actions.pendingCount!(t)} 个未完成行动：</p>
+                  <p className="px-2.5 pt-1.5 text-badge text-ink-faint">{tpl("已有 {n} 个未完成行动：", { n: actions.pendingCount!(t) })}</p>
                   <MenuItem
                     closeMenu={close}
                     icon={<Sparkles size={14} />}
-                    label="重新生成"
-                    hint="清空未完成行动后重拆（已完成保留）"
+                    label={tr("重新生成")}
+                    hint={tr("清空未完成行动后重拆（已完成保留）")}
                     disabled={decomposing}
                     busy={decomposing}
                     onClick={() => actions.decompose!(t, false, "replace")}
@@ -133,18 +134,18 @@ export function TodoRowMenu({
                   <MenuItem
                     closeMenu={close}
                     icon={<Plus size={14} />}
-                    label="追加到末尾"
-                    hint="保留现有行动，新行动接在后面"
+                    label={tr("追加到末尾")}
+                    hint={tr("保留现有行动，新行动接在后面")}
                     disabled={decomposing}
                     onClick={() => actions.decompose!(t, false, "append")}
                   />
                 </>
               ))}
             {actions.patch && isDone(t) && (
-              <MenuItem closeMenu={close} icon={<RotateCcw size={14} />} label="恢复为未完成" onClick={() => actions.patch!(t.id, { undone: true }, `↩️ 「${t.title}」已恢复`)} />
+              <MenuItem closeMenu={close} icon={<RotateCcw size={14} />} label={tr("恢复为未完成")} onClick={() => actions.patch!(t.id, { undone: true }, tpl("↩️ 「{title}」已恢复", { title: t.title }))} />
             )}
             {actions.remove && (
-              <MenuItem closeMenu={close} icon={<Trash2 size={14} />} label="删除 todo" hint="其下行动一并删除" danger onClick={() => actions.remove!(t, false)} />
+              <MenuItem closeMenu={close} icon={<Trash2 size={14} />} label={tr("删除 todo")} hint={tr("其下行动一并删除")} danger onClick={() => actions.remove!(t, false)} />
             )}
           </>
         )}

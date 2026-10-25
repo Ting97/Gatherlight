@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { useDismiss } from "@/components/dismissable";
 import { useBodyScrollLock } from "@/components/ui/use-body-scroll-lock";
 import { X } from "lucide-react";
+import { t } from "@/i18n";
 
 const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -97,7 +98,7 @@ export function Modal({
           <button
             onClick={onClose}
             disabled={busy}
-            aria-label="关闭"
+            aria-label={t("关闭")}
             className="press rounded-md p-1.5 text-ink-dim hover:text-ink disabled:opacity-40"
           >
             <X size={15} aria-hidden />

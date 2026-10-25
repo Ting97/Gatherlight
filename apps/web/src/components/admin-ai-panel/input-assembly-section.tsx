@@ -2,6 +2,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { FilterChip, TagChip } from "@/components/tag-chip";
+import { t, tpl } from "@/i18n";
 import type { DatasetSpec } from "@/components/admin-data-panel/types";
 import UserDataSection from "./user-data-section";
 import type { PromptItem, UserDataEntry } from "./types";
@@ -78,15 +79,15 @@ export default function InputAssemblySection({
   return (
     <section className="glass mb-3 rounded-2xl p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <FilterChip label="② 输入装配（user）" active variant="pill" onClick={() => {}} />
-        {tplDirty && <TagChip label="模板已覆盖" tone="emerald" size="sm" />}
-        {cfgDirty && <TagChip label="配置已调整" tone="emerald" size="sm" />}
+        <FilterChip label={t("② 输入装配（user）")} active variant="pill" onClick={() => {}} />
+        {tplDirty && <TagChip label={t("模板已覆盖")} tone="emerald" size="sm" />}
+        {cfgDirty && <TagChip label={t("配置已调整")} tone="emerald" size="sm" />}
       </div>
 
       {/* user 模板编辑 */}
       <p className="mb-1 flex flex-wrap items-center gap-1.5 text-micro text-ink-dim">
-        <span className="font-medium text-ink-soft">user 模板</span>
-        <span>合法占位符：</span>
+        <span className="font-medium text-ink-soft">{t("user 模板")}</span>
+        <span>{t("合法占位符：")}</span>
         {sel.registry.placeholders.map((p) => {
           const missing = tplMissing.includes(p);
           return (
@@ -96,7 +97,7 @@ export default function InputAssemblySection({
               className={`rounded px-1.5 py-0.5 font-mono text-badge transition ${
                 missing ? "bg-rose-500/15 text-danger hover:bg-rose-500/25" : "bg-sky-500/10 text-accent hover:bg-sky-500/20"
               }`}
-              title={missing ? "缺失中——点击追加到模板末尾" : "已包含"}
+              title={missing ? t("缺失中——点击追加到模板末尾") : t("已包含")}
             >
               {`{${p}}`}
             </button>
@@ -107,7 +108,7 @@ export default function InputAssemblySection({
             onClick={onResetTpl}
             className="rounded px-1.5 py-0.5 text-badge text-ink-mute hover:bg-soft hover:text-accent"
           >
-            还原默认
+            {t("还原默认")}
           </button>
         )}
       </p>
@@ -123,13 +124,14 @@ export default function InputAssemblySection({
       />
       {(tplMissing.length > 0 || tplUnknown.length > 0) && (
         <p className="mt-1 text-micro text-danger">
-          占位符校验：{tplMissing.length ? `缺失 ${tplMissing.map((x) => `{${x}}`).join("、")}（点上方红色占位符一键补齐）` : ""}
-          {tplUnknown.length ? ` 未知 ${tplUnknown.map((x) => `{${x}}`).join("、")}` : ""}
+          {t("占位符校验：")}
+          {tplMissing.length ? tpl("缺失 {list}（点上方红色占位符一键补齐）", { list: tplMissing.map((x) => `{${x}}`).join("、") }) : ""}
+          {tplUnknown.length ? tpl(" 未知 {list}", { list: tplUnknown.map((x) => `{${x}}`).join("、") }) : ""}
         </p>
       )}
 
       {/* 注入开关 */}
-      <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">注入项</p>
+      <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">{t("注入项")}</p>
       <ul className="space-y-1">
         {sel.registry.injects.map((i) => {
           const on = injectDraft[i.key] ?? i.default;
@@ -144,14 +146,14 @@ export default function InputAssemblySection({
                   setInjectDraft((d) => ({ ...d, [i.key]: e.target.checked }));
                   setDirty(true);
                 }}
-                title={locked ? "必需注入项，不可关闭" : on ? "点击关闭（线上装配即不含该块）" : "点击开启"}
+                title={locked ? t("必需注入项，不可关闭") : on ? t("点击关闭（线上装配即不含该块）") : t("点击开启")}
                 className="mt-0.5 h-3.5 w-3.5 accent-sky-500"
               />
               <span className="min-w-0 flex-1">
                 <span className={`text-xs font-medium ${locked ? "text-ink-dim" : on ? "text-ink" : "text-ink-faint"}`}>
                   {i.label}
-                  {locked && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-micro text-warn">必需</span>}
-                  {!on && !locked && <span className="ml-1.5 text-micro text-ink-faint">已关闭</span>}
+                  {locked && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-micro text-warn">{t("必需")}</span>}
+                  {!on && !locked && <span className="ml-1.5 text-micro text-ink-faint">{t("已关闭")}</span>}
                 </span>
                 <span className="block truncate text-badge text-ink-faint" title={i.desc}>{i.desc}</span>
               </span>
@@ -164,7 +166,7 @@ export default function InputAssemblySection({
       {/* 参数 */}
       {sel.registry.caps.length > 0 && (
         <>
-          <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">参数（0 = 不设限；保存即在线上生效，明细类上限在 SQL 查询层生效）</p>
+          <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">{t("参数（0 = 不设限；保存即在线上生效，明细类上限在 SQL 查询层生效）")}</p>
           <div className="flex flex-wrap gap-2">
             {sel.registry.caps.map((c) => (
               <label key={c.key} className="flex items-center gap-1.5 rounded-lg border border-line-soft bg-bg/30 px-2.5 py-1.5 text-micro text-ink-dim">
@@ -189,12 +191,12 @@ export default function InputAssemblySection({
       )}
 
       {/* 装配预览 */}
-      <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">装配预览（不调 LLM、零 token；按上方当前配置与你的真实数据装配）</p>
+      <p className="mb-1 mt-3 text-micro font-medium text-ink-soft">{t("装配预览（不调 LLM、零 token；按上方当前配置与你的真实数据装配）")}</p>
       <div className="flex flex-wrap items-center gap-1.5">
         <input
           value={previewSample}
           onChange={(e) => setPreviewSample(e.target.value)}
-          placeholder="样例话术（可空=取你最近一条真实数据）"
+          placeholder={t("样例话术（可空=取你最近一条真实数据）")}
           maxLength={500}
           className="min-w-40 flex-1 rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-sky-500"
         />
@@ -212,7 +214,7 @@ export default function InputAssemblySection({
           disabled={previewing}
           className="whitespace-nowrap rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-sky-500/20 disabled:opacity-50"
         >
-          {previewing ? "装配中…" : "🔍 装配预览"}
+          {previewing ? t("装配中…") : t("🔍 装配预览")}
         </button>
       </div>
       {previewText !== null && (

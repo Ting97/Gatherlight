@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { Sparkles } from "lucide-react";
 import { FilterChip, TagChip } from "@/components/tag-chip";
+import { t } from "@/i18n";
 import type { PromptItem } from "./types";
 
 interface Props {
@@ -46,7 +47,7 @@ export default function SystemPromptSection({
           onClick={() => setShowCompare((v) => !v)}
           className="rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1 text-micro text-ink-soft transition hover:border-sky-500/50"
         >
-          {showCompare ? "收起对比" : "对比默认值"}
+          {showCompare ? t("收起对比") : t("对比默认值")}
         </button>
       </div>
 
@@ -55,7 +56,7 @@ export default function SystemPromptSection({
         <input
           value={optHint}
           onChange={(e) => setOptHint(e.target.value)}
-          placeholder="优化意图（可空，如：更严格约束日期）"
+          placeholder={t("优化意图（可空，如：更严格约束日期）")}
           maxLength={200}
           className="min-w-40 flex-1 rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-violet-500"
         />
@@ -64,7 +65,7 @@ export default function SystemPromptSection({
           disabled={optimizing}
           className="flex items-center gap-1 whitespace-nowrap rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-ai transition hover:bg-purple-500/20 disabled:opacity-50"
         >
-          <Sparkles size={12} aria-hidden /> {optimizing ? "优化中…" : "AI 优化"}
+          <Sparkles size={12} aria-hidden /> {optimizing ? t("优化中…") : t("AI 优化")}
         </button>
       </div>
 
@@ -72,26 +73,26 @@ export default function SystemPromptSection({
       {suggestion !== null && (
         <div className="mb-3 rounded-xl border border-purple-500/30 bg-purple-500/[0.06] p-3">
           <p className="mb-2 flex items-center gap-2 text-xs font-medium text-ai">
-            <TagChip icon={<Sparkles size={12} />} label="AI 优化建议" tone="violet" size="sm" />
-            <span className="font-normal text-ink-dim">采纳后仅填入编辑器，检查无误再手动保存</span>
+            <TagChip icon={<Sparkles size={12} />} label={t("AI 优化建议")} tone="violet" size="sm" />
+            <span className="font-normal text-ink-dim">{t("采纳后仅填入编辑器，检查无误再手动保存")}</span>
             <span className="flex-1" />
             <button
               onClick={onAdopt}
               className="rounded-lg bg-violet-600 px-3 py-1 text-micro font-medium text-white hover:bg-violet-500"
             >
-              采纳
+              {t("采纳")}
             </button>
             <button onClick={onDismissSuggestion} className="rounded-lg px-2.5 py-1 text-micro text-ink-mute hover:bg-soft">
-              放弃
+              {t("放弃")}
             </button>
           </p>
           <div className="grid gap-2 md:grid-cols-2">
             <div>
-              <p className="mb-1 text-badge text-ink-faint">当前（编辑器）</p>
+              <p className="mb-1 text-badge text-ink-faint">{t("当前（编辑器）")}</p>
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-bg/60 p-2 text-badge leading-relaxed text-ink-soft">{draft}</pre>
             </div>
             <div>
-              <p className="mb-1 text-badge text-ink-faint">AI 建议</p>
+              <p className="mb-1 text-badge text-ink-faint">{t("AI 建议")}</p>
               <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-lg bg-bg/60 p-2 text-badge leading-relaxed text-ink">{suggestion}</pre>
             </div>
           </div>
@@ -116,7 +117,9 @@ export default function SystemPromptSection({
           </pre>
         )}
       </div>
-      <p className="mt-1.5 text-badge text-ink-faint">{draft.length}/50000 · 关闭下方「启用此覆盖」或点「恢复代码默认」= 整 key 回退代码默认</p>
+      <p className="mt-1.5 text-badge text-ink-faint">
+        {draft.length}/50000 · {t("关闭下方「启用此覆盖」或点「恢复代码默认」= 整 key 回退代码默认")}
+      </p>
     </section>
   );
 }

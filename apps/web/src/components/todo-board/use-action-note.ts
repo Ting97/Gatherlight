@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { TodoRow } from "@/lib/types";
+import { t } from "@/i18n";
 import { toast } from "@/shared/ui/toast";
 import { isoToLocalInput, localInputToIso } from "../todo-bits";
 
@@ -43,14 +44,14 @@ export function useActionNote({ patchTodo }: ActionNoteCtx) {
       noteText !== (c.note ?? "") ||
       noteDue !== isoToLocalInput(c.due_at) ||
       noteRepeat !== c.repeat_daily;
-    if (dirty) toast("已取消，未保存", "info");
+    if (dirty) toast(t("已取消，未保存"), "info");
     setNoteOpenId(null);
   }
 
   async function saveNote() {
     if (noteSaving) return; // 重入锁：保存进行中按 Enter（绕过按钮 disabled）会双发 PATCH（use-todo-edit 同款）
     if (!noteOpenId || !noteTitle.trim()) {
-      toast("标题不能为空", "err");
+      toast(t("标题不能为空"), "err");
       return;
     }
     setNoteSaving(true);
@@ -63,13 +64,13 @@ export function useActionNote({ patchTodo }: ActionNoteCtx) {
           dueAt: localInputToIso(noteDue),
           repeatDaily: noteRepeat,
         },
-        "💾 行动已保存",
+        t("💾 行动已保存"),
       );
       // 失败时不关闭面板，保留用户正在编辑的内容
       if (ok) setNoteOpenId(null);
     } catch {
       // 兜底：任何异常只提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      toast("网络异常，请稍后重试", "err");
+      toast(t("网络异常，请稍后重试"), "err");
     } finally {
       setNoteSaving(false);
     }

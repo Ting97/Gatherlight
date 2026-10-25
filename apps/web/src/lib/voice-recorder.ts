@@ -6,6 +6,7 @@
  * handlers 需传稳定引用（创建时捕获一次，后续不更新）。
  */
 import { apiForm } from "@/shared/api";
+import { t, tpl } from "@/i18n";
 
 /** requesting = getUserMedia 权限申请中（同步占位，防止弹窗期间二次 begin() 重入泄漏麦克风流） */
 export type VoiceRecorderState = "idle" | "requesting" | "recording" | "transcribing";
@@ -94,7 +95,7 @@ export function createVoiceRecorder(h: VoiceRecorderHandlers) {
         // 按下期间已松开：拆流不录，按太短提示
         s.getTracks().forEach((t) => t.stop());
         setState("idle"); // 回滚占位态
-        note("按住说话，松开后自动识别");
+        note(t("按住说话，松开后自动识别"));
         return;
       }
       stream = s;
@@ -132,7 +133,7 @@ export function createVoiceRecorder(h: VoiceRecorderHandlers) {
       stream?.getTracks().forEach((t) => t.stop());
       stream = null;
       setState("idle");
-      if (!dead) h.onError("无法访问麦克风，请检查浏览器权限");
+      if (!dead) h.onError(t("无法访问麦克风，请检查浏览器权限"));
     }
   }
 
@@ -179,7 +180,7 @@ export function createVoiceRecorder(h: VoiceRecorderHandlers) {
       rec.onstop = null;
       rec.stop();
     }
-    note("录音已取消");
+    note(t("录音已取消"));
   }
 
   async function finish() {
@@ -197,17 +198,17 @@ export function createVoiceRecorder(h: VoiceRecorderHandlers) {
     if (blob.size < 2000 || heldMs < MIN_HOLD_MS) {
       // 过短/静音视为误触（<2KB 基本是静音帧）：中性提示而非错误
       backToIdle();
-      note("没听到内容，请按住说话再松开");
+      note(t("没听到内容，请按住说话再松开"));
       return;
     }
-    if (wasAuto) note(`已录满 ${VOICE_MAX_SECONDS} 秒，自动结束并识别`);
+    if (wasAuto) note(tpl("已录满 {n} 秒，自动结束并识别", { n: VOICE_MAX_SECONDS }));
     try {
       // GLM-ASR 不收 webm/opus：统一解码重采样为 16kHz 单声道 WAV 上传
       const wav = await blobToWav16k(blob);
       const form = new FormData();
       form.append("file", wav, "voice.wav");
       const j = await apiForm<{ text?: string }>("/api/asr", form);
-      if (!j.text) throw new Error("没有听清内容，请再试一次");
+      if (!j.text) throw new Error(t("没有听清内容，请再试一次"));
       backToIdle();
       if (!dead) {
         h.onAudio?.(wav, Math.max(1, Math.round(heldMs / 1000)));

@@ -88,7 +88,7 @@ export function TodoRows({ m, activities, run, del, delArmed }: TodoRowsProps) {
                 }
                 className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"
               >
-                保存
+                {t("保存")}
               </button>
             </span>
           </div>

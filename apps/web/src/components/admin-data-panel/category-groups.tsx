@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { TagChip } from "@/components/tag-chip";
+import { t, tpl } from "@/i18n";
 import type { CategoryGroup } from "./types";
 
 /**
@@ -28,7 +29,7 @@ export default function CategoryGroups({ groups }: { groups: CategoryGroup[] }) 
           <li key={g.domain} className="rounded-xl border border-line-soft bg-bg/30">
             <button
               onClick={() => toggle(g.domain)}
-              title={on ? "点击折叠" : "点击展开"}
+              title={on ? t("点击折叠") : t("点击展开")}
               className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left"
             >
               <span className={`text-ink-faint transition-transform ${on ? "rotate-90" : ""}`}><ChevronRight size={12} /></span>
@@ -37,14 +38,14 @@ export default function CategoryGroups({ groups }: { groups: CategoryGroup[] }) 
               <span className="min-w-0 flex-1 truncate text-badge text-ink-faint" title={g.items.source}>
                 {g.items.source}
               </span>
-              <span className="shrink-0 tabular-nums text-badge text-ink-faint">{g.items.values.length} 项</span>
+              <span className="shrink-0 tabular-nums text-badge text-ink-faint">{tpl("{n} 项", { n: g.items.values.length })}</span>
             </button>
             {on && (
               <div className="flex flex-wrap gap-1 px-3 pb-2.5">
                 {g.items.values.map((v, i) => (
                   <TagChip key={`${v}-${i}`} label={v} tone="sky" size="sm" />
                 ))}
-                {g.items.values.length === 0 && <span className="text-badge text-ink-faint">（暂无数据）</span>}
+                {g.items.values.length === 0 && <span className="text-badge text-ink-faint">{t("（暂无数据）")}</span>}
               </div>
             )}
           </li>

@@ -1,8 +1,12 @@
 "use client";
 
 import type { Activity, DayStat } from "@/lib/types";
-import { zhDuration } from "@/lib/date";
+import { activityLabel, durationLabel, weekName } from "@shiguangri/shared/i18n-enum";
+import { t, tpl, getLang } from "@/i18n";
 import { bjToday } from "@/lib/date"; // 北京口径今天（本地 todayStr 在海外设备会差一天）
+
+/** 英文月名（ZH 走 tpl 原文数字，EN 传月名变量；纯静态表，渲染期取值） */
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 interface Props {
   month: string; // YYYY-MM-01
@@ -36,12 +40,15 @@ export default function MonthView({ month, stats, activities, onPickDay }: Props
   }
   const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   const today = bjToday();
+  const lang = getLang();
+  // 表头周几：ZH 取「周X」尾字（原单字表头），EN 用 Mon/Tue…（渲染期随语言取）
+  const weekHeads = Array.from({ length: 7 }, (_, i) => weekName(i, lang).slice(lang === "en" ? 0 : 1));
 
   return (
     <div>
       <div className="grid grid-cols-7 gap-1">
-        {["一", "二", "三", "四", "五", "六", "日"].map((w) => (
-          <div key={w} className="pb-1 text-center text-micro text-ink-dim">
+        {weekHeads.map((w, i) => (
+          <div key={i} className="pb-1 text-center text-micro text-ink-dim">
             {w}
           </div>
         ))}
@@ -66,12 +73,12 @@ export default function MonthView({ month, stats, activities, onPickDay }: Props
                 <>
                   <MiniDonut byActivity={s!.byActivity} actMap={actMap} size={30} />
                   <span className="block truncate text-micro tabular-nums text-ink-dim">
-                    {zhDuration(s!.totalMin)}
+                    {durationLabel(s!.totalMin, lang)}
                   </span>
                 </>
               ) : (
                 /* 未来日期没有"未记录"义务，仅过去/今天温和提示 */
-                !isFuture && <span className="text-micro text-ink-faint">未记录</span>
+                !isFuture && <span className="text-micro text-ink-faint">{t("未记录")}</span>
               )}
             </button>
           );
@@ -82,8 +89,8 @@ export default function MonthView({ month, stats, activities, onPickDay }: Props
       {grand > 0 && (
         <div className="mt-4 rounded-lg border border-line-soft bg-bg/40 p-4">
           <p className="mb-2 text-xs text-ink-mute">
-            {m} 月共记录 <span className="font-semibold text-ink">{zhDuration(grand)}</span>
-            <span className="ml-2 text-ink-dim">· {recordedDays} 天有记录 · 日均 {zhDuration(Math.round(grand / recordedDays))}</span>
+            {tpl("{m} 月共记录", { m: lang === "en" ? MONTHS_EN[m - 1] : m })} <span className="font-semibold text-ink">{durationLabel(grand, lang)}</span>
+            <span className="ml-2 text-ink-dim">{tpl("· {n} 天有记录 · 日均 {avg}", { n: recordedDays, avg: durationLabel(Math.round(grand / recordedDays), lang) })}</span>
           </p>
           <div className="flex h-3 w-full overflow-hidden rounded-full">
             {sorted.map(([id, min]) => (
@@ -96,8 +103,8 @@ export default function MonthView({ month, stats, activities, onPickDay }: Props
               return (
                 <span key={id} className="flex items-center gap-1.5 text-micro text-ink-mute">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a?.color }} />
-                  {a?.icon} {a?.name}
-                  <span className="tabular-nums text-ink-dim">{zhDuration(min)} · {Math.round((min / grand) * 100)}%</span>
+                  {a?.icon} {a ? activityLabel(a.name, lang) : ""}
+                  <span className="tabular-nums text-ink-dim">{durationLabel(min, lang)} · {Math.round((min / grand) * 100)}%</span>
                 </span>
               );
             })}

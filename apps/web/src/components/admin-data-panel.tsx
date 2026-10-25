@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { FolderOpen, Search, Tags } from "lucide-react";
 import { api, ApiClientError } from "@/shared/api";
 import { TagChip } from "@/components/tag-chip";
+import { t, tpl } from "@/i18n";
 import CategoryGroups from "./admin-data-panel/category-groups";
 import CatalogTable from "./admin-data-panel/catalog-table";
 import TrialQuery from "./admin-data-panel/trial-query";
@@ -30,8 +31,8 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
       .catch((e) => {
         if (e instanceof ApiClientError && e.status === 403) setForbidden(true);
         else {
-          setGroupsErr(e instanceof Error ? e.message : "类别清单加载失败");
-          notify("类别清单加载失败", false);
+          setGroupsErr(e instanceof Error ? e.message : t("类别清单加载失败"));
+          notify(t("类别清单加载失败"), false);
         }
       });
   }
@@ -43,8 +44,8 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
       .catch((e) => {
         if (e instanceof ApiClientError && e.status === 403) setForbidden(true);
         else {
-          setCatalogErr(e instanceof Error ? e.message : "数据目录加载失败");
-          notify("数据目录加载失败", false);
+          setCatalogErr(e instanceof Error ? e.message : t("数据目录加载失败"));
+          notify(t("数据目录加载失败"), false);
         }
       });
   }
@@ -59,8 +60,8 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
     return (
       <div className="glass rounded-2xl p-10 text-center">
         <p className="text-3xl">🔒</p>
-        <p className="mt-2 text-sm font-bold">仅管理员</p>
-        <p className="mt-1 text-xs text-ink-dim">数据面（类别清单 / 数据目录 / 在线试查）仅超级管理员可见</p>
+        <p className="mt-2 text-sm font-bold">{t("仅管理员")}</p>
+        <p className="mt-1 text-xs text-ink-dim">{t("数据面（类别清单 / 数据目录 / 在线试查）仅超级管理员可见")}</p>
       </div>
     );
   }
@@ -70,20 +71,20 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
       {/* 区块 1：类别清单 */}
       <section className="glass rounded-2xl p-5">
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
-          <TagChip icon={<Tags size={12} />} label="类别清单" tone="sky" />
-          <span className="text-badge font-normal text-ink-faint">AI 识别可用类别全域（活动分类 / 目标空间为 DB 实时，其余为共享包枚举）</span>
+          <TagChip icon={<Tags size={12} />} label={t("类别清单")} tone="sky" />
+          <span className="text-badge font-normal text-ink-faint">{t("AI 识别可用类别全域（活动分类 / 目标空间为 DB 实时，其余为共享包枚举）")}</span>
         </h2>
         <div className="mt-3">
           {!groups ? (
             groupsErr ? (
               <div className="py-2 text-center">
-                <p className="text-xs text-danger">加载失败：{groupsErr}</p>
+                <p className="text-xs text-danger">{tpl("加载失败：{err}", { err: groupsErr })}</p>
                 <button onClick={loadGroups} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-                  重试
+                  {t("重试")}
                 </button>
               </div>
             ) : (
-              <p className="text-xs text-ink-dim">加载中…</p>
+              <p className="text-xs text-ink-dim">{t("加载中…")}</p>
             )
           ) : (
             <CategoryGroups groups={groups} />
@@ -94,20 +95,20 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
       {/* 区块 2：数据目录 */}
       <section className="glass rounded-2xl p-5">
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
-          <TagChip icon={<FolderOpen size={12} />} label="数据目录" tone="violet" />
-          <span className="text-badge font-normal text-ink-faint">个性化注入 / 注入项可引用的全部数据集注册表（列白名单 + 分区）</span>
+          <TagChip icon={<FolderOpen size={12} />} label={t("数据目录")} tone="violet" />
+          <span className="text-badge font-normal text-ink-faint">{t("个性化注入 / 注入项可引用的全部数据集注册表（列白名单 + 分区）")}</span>
         </h2>
         <div className="mt-3">
           {!catalog ? (
             catalogErr ? (
               <div className="py-2 text-center">
-                <p className="text-xs text-danger">加载失败：{catalogErr}</p>
+                <p className="text-xs text-danger">{tpl("加载失败：{err}", { err: catalogErr })}</p>
                 <button onClick={loadCatalog} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-                  重试
+                  {t("重试")}
                 </button>
               </div>
             ) : (
-              <p className="text-xs text-ink-dim">加载中…</p>
+              <p className="text-xs text-ink-dim">{t("加载中…")}</p>
             )
           ) : (
             <CatalogTable catalog={catalog} />
@@ -118,20 +119,20 @@ export default function AdminDataPanel({ notify }: { notify: (text: string, ok?:
       {/* 区块 3：在线试查 */}
       <section className="glass rounded-2xl p-5">
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
-          <TagChip icon={<Search size={12} />} label="在线试查" tone="emerald" />
-          <span className="text-badge font-normal text-ink-faint">只读白名单查询（强制时间窗 ≤92 天；仅行为型 / AI 衍生可查）</span>
+          <TagChip icon={<Search size={12} />} label={t("在线试查")} tone="emerald" />
+          <span className="text-badge font-normal text-ink-faint">{t("只读白名单查询（强制时间窗 ≤92 天；仅行为型 / AI 衍生可查）")}</span>
         </h2>
         <div className="mt-3">
           {!catalog ? (
             catalogErr ? (
               <div className="py-2 text-center">
-                <p className="text-xs text-danger">加载失败：{catalogErr}</p>
+                <p className="text-xs text-danger">{tpl("加载失败：{err}", { err: catalogErr })}</p>
                 <button onClick={loadCatalog} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-                  重试
+                  {t("重试")}
                 </button>
               </div>
             ) : (
-              <p className="text-xs text-ink-dim">加载中…</p>
+              <p className="text-xs text-ink-dim">{t("加载中…")}</p>
             )
           ) : (
             <TrialQuery catalog={catalog} />

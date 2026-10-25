@@ -2,6 +2,7 @@
 
 import type { MouseEvent } from "react";
 import { ChevronDown, Ellipsis } from "lucide-react";
+import { t as tr, tpl } from "@/i18n";
 import type { Activity, Space, TodoItem, TodoRow } from "@/lib/types";
 import { Dismissable } from "../dismissable";
 import { TodoCircle, childProgress, dueTag } from "../todo-bits";
@@ -68,7 +69,7 @@ export function TodoCard({
               type="datetime-local"
               value={edit.editDue}
               onChange={(e) => edit.setEditDue(e.target.value)}
-              title="截止时间（可清空）"
+              title={tr("截止时间（可清空）")}
               className="rounded border border-line-strong bg-surface px-2 py-1 text-sm tabular-nums outline-none focus:border-sky-500"
             />
             <select
@@ -85,10 +86,10 @@ export function TodoCard({
           </div>
           <div className="mt-2 flex justify-end gap-2">
             <button onClick={() => edit.setEditingId(null)} className="rounded px-3 py-1 text-xs text-ink-mute hover:bg-soft">
-              取消
+              {tr("取消")}
             </button>
             <button onClick={edit.saveEdit} disabled={edit.editSaving} className="rounded bg-sky-600 px-3 py-1 text-xs font-medium hover:bg-sky-500 disabled:opacity-50">
-              {edit.editSaving ? "保存中…" : "保存"}
+              {edit.editSaving ? tr("保存中…") : tr("保存")}
             </button>
           </div>
         </Dismissable>
@@ -101,14 +102,14 @@ export function TodoCard({
               className={`min-w-0 flex-1 truncate text-left text-sm transition ${done ? "text-ink-dim line-through" : ""}`}
               title={t.title}
             >
-              {t.kind === "action" && <span className="mr-1.5 inline-flex shrink-0 items-center rounded-lg bg-slate-500/15 px-1.5 py-0.5 align-middle text-badge font-medium text-ink-dim" title="独立行动（不属于任何 todo）">行动</span>}
+              {t.kind === "action" && <span className="mr-1.5 inline-flex shrink-0 items-center rounded-lg bg-slate-500/15 px-1.5 py-0.5 align-middle text-badge font-medium text-ink-dim" title={tr("独立行动（不属于任何 todo）")}>{tr("行动")}</span>}
                 {t.title}
               </button>
-            {t.activity_name && <span className="hidden shrink-0 text-micro text-ink-faint sm:inline">{t.icon} {t.activity_name}</span>}
-            {t.space_id && (() => {
+              {t.activity_name && <span className="hidden shrink-0 text-micro text-ink-faint sm:inline">{t.icon} {t.activity_name}</span>}
+              {t.space_id && (() => {
               const sp = spaces.find((x) => x.id === t.space_id);
               return sp ? (
-                <span className="hidden shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-badge font-medium sm:inline-flex" style={{ backgroundColor: `${sp.color}26`, color: sp.color }} title={`空间：${sp.name}`}>
+                <span className="hidden shrink-0 items-center gap-0.5 rounded-lg px-1.5 py-0.5 text-badge font-medium sm:inline-flex" style={{ backgroundColor: `${sp.color}26`, color: sp.color }} title={tpl("空间：{name}", { name: sp.name })}>
                   {sp.icon} {sp.name}
                 </span>
               ) : null;
@@ -117,7 +118,7 @@ export function TodoCard({
               <button
                 onClick={() => onToggleExpand(t.id)}
                 className="shrink-0 rounded-full bg-elevated px-2 py-0.5 text-micro tabular-nums text-ink-dim transition hover:text-accent"
-                title="行动进度"
+                title={tr("行动进度")}
               >
                 {prog.n}/{prog.m}
               </button>
@@ -125,7 +126,7 @@ export function TodoCard({
             {tag && <span className={`shrink-0 text-xs ${tag.cls}`}>{tag.text}</span>}
             <button
               onClick={(e) => onOpenMenu(e, t, false)}
-              title="更多操作"
+              title={tr("更多操作")}
               className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 text-sm leading-none text-ink-dim transition hover:text-ink group-hover:block"
             >
               <Ellipsis size={14} className="inline align-[-2px]" />
@@ -133,7 +134,7 @@ export function TodoCard({
             {(t.children.length > 0) && (
                 <button
                 onClick={() => onToggleExpand(t.id)}
-                title={open ? "收起行动" : "展开行动"}
+                title={open ? tr("收起行动") : tr("展开行动")}
                 className={`tap-lg shrink-0 text-badge text-ink-mute transition-transform duration-200 ${open ? "rotate-180" : ""}`}
               >
                 <ChevronDown size={12} />

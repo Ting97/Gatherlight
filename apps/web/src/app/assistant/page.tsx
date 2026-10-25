@@ -2,15 +2,16 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import AssistantChat, { SCOPE_META, type ChatScope } from "./chat-core";
+import AssistantChat, { SCOPE_META_EN, type ChatScope } from "./chat-core";
 import { useSession } from "@/shared/session";
 import ModuleLocked from "@/components/module-locked";
+import { t } from "@/i18n";
 
 /** 拾光助手整页（REQ-015；REQ-019 分域：?scope= 进域管家，白名单外回退全局；
  *  REQ-028：ai 关 → 未开通页；scope 域模块关 → 该域不可用回退全局）。 */
 function AssistantPageInner() {
   const raw = useSearchParams().get("scope") ?? "global";
-  const listed = (Object.keys(SCOPE_META) as ChatScope[]).includes(raw as ChatScope) ? (raw as ChatScope) : "global";
+  const listed = (Object.keys(SCOPE_META_EN) as ChatScope[]).includes(raw as ChatScope) ? (raw as ChatScope) : "global";
   const { user } = useSession();
 
   if (user && !user.modules.includes("ai")) {
@@ -18,10 +19,10 @@ function AssistantPageInner() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title="拾光助手"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启，或联系管理员。"
+            title={t("拾光助手")}
+            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel="返回首页"
+            backLabel={t("返回首页")}
           />
         </div>
       </main>

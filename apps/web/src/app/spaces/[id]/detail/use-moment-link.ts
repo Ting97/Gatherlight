@@ -4,6 +4,7 @@ import { useRef, useState, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { FeedMoment } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
+import { t } from "@/i18n";
 import type { Msg } from "./types";
 
 /** C1 关联动态浮层（自 detail.tsx 拆出）：浏览未归属动态并关联到本空间 */
@@ -42,7 +43,7 @@ export function useMomentLink(opts: { id: string; load: () => Promise<void>; set
     } catch (e) {
       if (seq !== seqRef.current) return;
       // 原 !r.ok 分支的固定提示；网络异常也收口为用户可见提示（裸 throw 会触发整页强刷丢状态）
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "加载失败，请稍后再试" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== t("操作失败") ? e.message : t("加载失败，请稍后再试") });
     } finally {
       if (seq === seqRef.current) setMomentLoading(false);
     }
@@ -77,16 +78,16 @@ export function useMomentLink(opts: { id: string; load: () => Promise<void>; set
       await api<any>(`/api/feed/${momentId}`, "PATCH", { spaceId: id });
     } catch (e) {
       if (e instanceof ApiClientError) {
-        setMsg({ ok: false, text: e.message === "操作失败" ? "关联失败" : e.message });
+        setMsg({ ok: false, text: e.message === t("操作失败") ? t("关联失败") : e.message });
         return;
       }
       // 网络异常收口（裸 throw → unhandled rejection → ChunkErrorReloader 整页刷新）
-      setMsg({ ok: false, text: "网络异常，请稍后重试" });
+      setMsg({ ok: false, text: t("网络异常，请稍后重试") });
       return;
     }
     setMomentItems((list) => list.filter((m) => m.id !== momentId));
     setMomentTotal((n) => Math.max(0, n - 1));
-    setMsg({ ok: true, text: "🌱 动态已关联到本空间" });
+    setMsg({ ok: true, text: t("🌱 动态已关联到本空间") });
     await load();
   }
 

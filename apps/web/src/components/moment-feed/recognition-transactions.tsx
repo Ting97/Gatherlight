@@ -47,8 +47,8 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
               onChange={(e) => setEditTx({ ...editTx, direction: e.target.value })}
               className="rounded border border-line-strong bg-surface px-1.5 py-1 text-xs outline-none focus:border-sky-500"
             >
-              <option value="out">支出</option>
-              <option value="in">收入</option>
+              <option value="out">{t("支出")}</option>
+              <option value="in">{t("收入")}</option>
             </select>
             <input
               type="number"
@@ -57,7 +57,7 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
               value={editTx.amount}
               onChange={(e) => setEditTx({ ...editTx, amount: e.target.value })}
               className="w-24 rounded border border-line-strong bg-surface px-2 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
-              placeholder="金额(元)"
+              placeholder={t("金额(元)")}
             />
             <select
               value={editTx.category}
@@ -72,15 +72,15 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
               value={editTx.counterparty}
               onChange={(e) => setEditTx({ ...editTx, counterparty: e.target.value })}
               className="w-24 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
-              placeholder="对方(可空)"
+              placeholder={t("对方(可空)")}
             />
             <span className="flex gap-1">
-              <button onClick={() => setEditTx(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">取消</button>
+              <button onClick={() => setEditTx(null)} className="rounded px-2 py-1 text-micro text-ink-mute hover:bg-soft">{t("取消")}</button>
               <button
                 onClick={() =>
                   run(async () => {
                     const cents = yuanToCents(editTx.amount);
-                    if (cents == null || cents <= 0) throw new Error("金额必须大于 0");
+                    if (cents == null || cents <= 0) throw new Error(t("金额必须大于 0"));
                     await api(`/api/transactions/${x.id}`, "PATCH", {
                       direction: editTx.direction,
                       amountCents: cents,
@@ -111,7 +111,7 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
                       id: x.id,
                       direction: x.direction,
                       amount: centsToYuanInput(x.amountCents),
-                      category: TX_CATEGORIES.includes(x.category) ? x.category : "其他",
+                      category: TX_CATEGORIES.includes(x.category) ? x.category : TX_CATEGORIES[TX_CATEGORIES.length - 1],
                       counterparty: x.counterparty ?? "",
                     }),
                   onDelete: () => del(`tx:${x.id}`, () => api(`/api/transactions/${x.id}`, "DELETE")),
@@ -135,7 +135,7 @@ export function TxRows({ m, run, del, delArmed }: TxRowsProps) {
                   id: x.id,
                   direction: x.direction,
                   amount: centsToYuanInput(x.amountCents),
-                  category: TX_CATEGORIES.includes(x.category) ? x.category : "其他",
+                  category: TX_CATEGORIES.includes(x.category) ? x.category : TX_CATEGORIES[TX_CATEGORIES.length - 1],
                   counterparty: x.counterparty ?? "",
                 })
               }

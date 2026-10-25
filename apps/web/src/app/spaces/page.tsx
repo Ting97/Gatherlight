@@ -19,6 +19,7 @@ import ModuleLocked from "@/components/module-locked";
 import { toast } from "@/shared/ui/toast";
 import Skeleton from "@/components/skeleton";
 import { t, tpl } from "@/i18n";
+import { spaceName, spaceDesc } from "@/lib/space-i18n";
 
 /**
  * 目标空间列表（REQ-001 R3）：宏大目标（≥1 年）容器。
@@ -129,7 +130,7 @@ export default function SpacesPage() {
       await api<any>(editingId ? `/api/spaces/${editingId}` : "/api/spaces", editingId ? "PATCH" : "POST", body);
     } catch (e) {
       if (e instanceof ApiClientError) {
-        toast(e.message === "操作失败" ? t("保存失败") : e.message, "err");
+        toast(e.message === t("操作失败") ? t("保存失败") : e.message, "err");
         return;
       }
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
@@ -151,7 +152,7 @@ export default function SpacesPage() {
       toast(e instanceof Error ? e.message : String(e), "err");
       return;
     }
-    toast(status === "archived" ? `「${s.name}」已归档` : `「${s.name}」已恢复`);
+    toast(status === "archived" ? tpl("「{name}」已归档", { name: s.name }) : tpl("「{name}」已恢复", { name: s.name }));
     load();
   }
 
@@ -165,7 +166,7 @@ export default function SpacesPage() {
       toast(e instanceof Error ? e.message : String(e), "err");
       return;
     }
-    toast(`「${s.name}」已删除`);
+    toast(tpl("「{name}」已删除", { name: s.name }));
     load();
   }
 
@@ -209,19 +210,19 @@ export default function SpacesPage() {
             {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("目标")}</span>
           </h1>
           <p className="mt-2 text-xs text-ink-dim">
-            创建一个空间，专属于这个目标的 TODO·行动与感悟 —— 相关动态自动归属，见证每天的靠近
+            {t("创建一个空间，专属于这个目标的 TODO·行动与感悟 —— 相关动态自动归属，见证每天的靠近")}
           </p>
           <button onClick={openNew} className="btn-primary mt-3 rounded-xl px-4 py-2 text-sm font-medium">
-            ＋ 新建空间
+            {t("＋ 新建空间")}
           </button>
         </header>
 
         {spaces === null ? (
           loadErr ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-danger">加载失败：{loadErr}</p>
+              <p className="text-sm text-danger">{t("加载失败：")}{loadErr}</p>
               <button onClick={() => void load()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : (
@@ -233,7 +234,7 @@ export default function SpacesPage() {
             <p className="mt-3 text-sm font-medium">{t("还没有目标空间")}</p>
             <p className="mt-1 text-xs text-ink-dim">{t("为一个大目标（考研上岸 / 副业过万 / 完成全马…）建一个空间，把它的 TODO·行动、感悟和动态都聚在专属容器里")}</p>
             <button onClick={openNew} className="btn-primary mt-4 rounded-xl px-5 py-2 text-sm font-medium">
-              创建第一个空间
+              {t("创建第一个空间")}
             </button>
           </div>
         ) : (
@@ -257,14 +258,14 @@ export default function SpacesPage() {
                     <div className="min-w-0 flex-1">
                       <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} className="block min-w-0 flex-1">
               <InlineRename
-                value={s.name}
+                value={spaceName(s)}
                 disabled={s.kind === "sport"}
                 onSave={async (name) => {
                   try {
                     await api<any>(`/api/spaces/${s.id}`, "PATCH", { name });
                   } catch (e) {
                     if (e instanceof ApiClientError) {
-                      toast(e.message === "操作失败" ? t("重命名失败") : e.message, "err");
+                      toast(e.message === t("操作失败") ? t("重命名失败") : e.message, "err");
                       return false;
                     }
                     // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
@@ -282,8 +283,8 @@ export default function SpacesPage() {
               <span className="ml-1.5 shrink-0 rounded-full bg-sky-500/15 px-1.5 py-0.5 text-[10px] font-medium text-sky-600 dark:text-sky-400">{t("内置")}</span>
             ) : null}
                       <p className="mt-0.5 text-micro text-ink-dim">
-                        {s.todo_total ?? 0} todo · {s.entry_count ?? 0} 动态 · 感悟 {s.reflection_count ?? 0}
-                        {days ? ` · 第 ${days} 天` : ""}
+                        {s.todo_total ?? 0} todo · {s.entry_count ?? 0} {t("动态")} · {t("感悟")} {s.reflection_count ?? 0}
+                        {days ? ` · ${tpl("第 {n} 天", { n: days })}` : ""}
                         {s.target_date && (
                           <span className="whitespace-nowrap">
                             {" · "}
@@ -313,14 +314,16 @@ export default function SpacesPage() {
                       <Ellipsis size={14} />
                     </button>
                   </div>
-                  {s.description && <p className="mt-2 line-clamp-2 text-xs text-ink-mute">{s.description}</p>}
+                  {spaceDesc(s) && <p className="mt-2 line-clamp-2 text-xs text-ink-mute">{spaceDesc(s)}</p>}
                   {/* 阶段摘要（REQ-019 FR-B1）：有阶段用阶段口径；无阶段回退 todo 进度避免空卡片 */}
                   {(s.active_milestones ?? 0) + (s.done_milestones ?? 0) > 0 ? (
                     <div className="mt-3 flex items-center gap-1.5 text-xs text-ink-mute">
                       <Flag size={12} style={{ color: s.color }} aria-hidden />
                       <span className="tabular-nums">
-                        进行中 {s.active_milestones ?? 0}
-                        {(s.done_milestones ?? 0) > 0 ? ` · 已达成 ${s.done_milestones}` : ""}
+                        {t("进行中")} {s.active_milestones ?? 0}
+                        {(s.done_milestones ?? 0) > 0
+                          ? tpl(" · 已达成 {n}", { n: s.done_milestones ?? 0 })
+                          : ""}
                       </span>
                     </div>
                   ) : (
@@ -347,15 +350,15 @@ export default function SpacesPage() {
         {archived.length > 0 && (
           <details className="mt-6" open={showArchived}>
             <summary className="cursor-pointer text-xs text-ink-dim" onClick={(e) => { e.preventDefault(); setShowArchived((v) => !v); }}>
-              归档空间（{archived.length}）
+              {tpl("归档空间（{n}）", { n: archived.length })}
             </summary>
             <ul className="mt-2 space-y-1.5">
               {archived.map((s) => (
                 <li key={s.id} className="flex items-center gap-2 rounded-xl border border-line-soft bg-bg/40 px-3 py-2 text-xs">
                   <span>{s.icon}</span>
-                  <span className="min-w-0 flex-1 truncate text-ink-mute">{s.name}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-mute">{spaceName(s)}</span>
                   <button onClick={() => setStatus(s, "active")} className="rounded-lg px-2 py-1 text-ink-soft hover:bg-soft hover:text-accent">
-                    恢复
+                    {t("恢复")}
                   </button>
                   <button
                     onClick={() => remove(s)}
@@ -446,7 +449,7 @@ export default function SpacesPage() {
               </div>
               <div className="mt-3 flex gap-2">
                 <label className="flex flex-1 flex-col text-micro text-ink-faint">
-                  开始日期
+                  {t("开始日期")}
                   <input
                     type="date"
                     value={editing.startedAt}
@@ -455,7 +458,7 @@ export default function SpacesPage() {
                   />
                 </label>
                 <label className="flex flex-1 flex-col text-micro text-ink-faint">
-                  目标日期
+                  {t("目标日期")}
                   <input
                     type="date"
                     value={editing.targetDate}
@@ -466,7 +469,7 @@ export default function SpacesPage() {
               </div>
               <div className="mt-4 flex justify-end gap-2">
                 <button type="button" onClick={() => setEditing(null)} className="rounded-xl px-4 py-2 text-xs text-ink-mute hover:bg-soft">
-                  取消
+                  {t("取消")}
                 </button>
                 <button
                   type="submit"
@@ -492,7 +495,7 @@ export default function SpacesPage() {
               style={cardMenuPos ? { top: cardMenuPos.top, left: cardMenuPos.left } : undefined}
             >
               <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-soft sm:hidden" />
-              <p className="mb-1.5 truncate px-1.5 text-micro font-medium text-ink-dim">{cardMenu.name}</p>
+              <p className="mb-1.5 truncate px-1.5 text-micro font-medium text-ink-dim">{spaceName(cardMenu)}</p>
               <div className="space-y-0.5">
                 <button
                   onClick={() => { const s = cardMenu; setCardMenu(null); openEdit(s); }}
@@ -521,7 +524,7 @@ export default function SpacesPage() {
                     className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-danger transition hover:bg-rose-500/10 ${armDelete.armedId === cardMenu.id ? "bg-rose-500/10 font-medium" : ""}`}
                   >
                     <span className="flex w-5 shrink-0 justify-center"><Trash2 size={14} /></span>
-                    <span className="min-w-0 flex-1">{armDelete.armedId === cardMenu.id ? "确认删除？（3 秒内再点）" : "删除空间"}</span>
+                    <span className="min-w-0 flex-1">{armDelete.armedId === cardMenu.id ? t("确认删除？（3 秒内再点）") : t("删除空间")}</span>
                   </button>
                 )}
               </div>
@@ -530,7 +533,7 @@ export default function SpacesPage() {
           )}
 
         <footer className="mt-10 text-center">
-          <TagChip icon={<Target size={12} />} label="拾光 · 目标空间" tone="violet" size="sm" />
+          <TagChip icon={<Target size={12} />} label={t("拾光 · 目标空间")} tone="violet" size="sm" />
         </footer>
       </div>
       {/* 目标管家（REQ-019 FR-C4）：本域助手，只见目标域会话与工具 */}

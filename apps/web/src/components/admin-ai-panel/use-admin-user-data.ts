@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { api } from "@/shared/api";
+import { t } from "@/i18n";
 import type { CatalogPayload, DatasetSpec } from "@/components/admin-data-panel/types";
 import type { PromptItem, UserDataEntry } from "./types";
 
@@ -28,7 +29,7 @@ export function useAdminUserData(notify: (text: string, ok?: boolean) => void, s
     setCatalogLoading(true);
     api<CatalogPayload>("/api/admin/data/catalog")
       .then((j) => setCatalogDatasets(j.datasets))
-      .catch((e) => notify(e instanceof Error ? e.message : "数据目录加载失败", false))
+      .catch((e) => notify(e instanceof Error ? e.message : t("数据目录加载失败"), false))
       .finally(() => setCatalogLoading(false));
   }, [catalogDatasets, catalogLoading, notify]);
 

@@ -8,6 +8,8 @@ import type { Account, Tx } from "./kit";
 import { api, toLocalInput, fromLocalInput } from "./kit";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import { useImeSubmit } from "@/lib/use-ime-submit";
+import { t, getLang } from "@/i18n";
+import { txCatLabel } from "@shiguangri/shared/i18n-enum";
 
 export function TxForm({
   initial,
@@ -26,7 +28,7 @@ export function TxForm({
 }) {
   const [direction, setDirection] = useState<"out" | "in">(initial?.direction ?? "out");
   const [amount, setAmount] = useState(initial ? centsToYuanInput(initial.amount_cents) : "");
-  const [category, setCategory] = useState(initial?.category ?? "餐饮");
+  const [category, setCategory] = useState(initial?.category ?? TX_CATEGORIES[0]);
   // 编辑态：无账户老流水保持「不挂账户」（??accounts[0] 会把它静默挂上第一账户，保存即改史）；
   // 新建态才默认选第一账户
   const [accountId, setAccountId] = useState<string>(initial ? (initial.account_id ?? "") : (accounts[0]?.id ?? ""));
@@ -48,12 +50,12 @@ export function TxForm({
     const cents = yuanToCents(amount);
     if (cents == null || cents <= 0) {
       // 区分非法/超限：yuanToCents 对 >¥100 万返回 null，笼统「需大于 0」会误导
-      setErr(cents == null && amount.replace(/[¥￥,\s]/g, "").match(/^\d+(\.\d+)?$/) ? "单笔金额不能超过 ¥100 万" : "金额需大于 0");
+      setErr(cents == null && amount.replace(/[¥￥,\s]/g, "").match(/^\d+(\.\d+)?$/) ? t("单笔金额不能超过 ¥100 万") : t("金额需大于 0"));
       return;
     }
     // 时间被清空禁止提交：补记历史流水时误清空会按「现在」入账（记错发生时间且无提示）
     if (!date) {
-      setErr("请填写发生时间");
+      setErr(t("请填写发生时间"));
       return;
     }
     setBusy(true);
@@ -99,7 +101,7 @@ export function TxForm({
                 : "bg-elevated text-ink-mute hover:bg-soft"
             }`}
           >
-            {d === "out" ? "支出" : "收入"}
+            {d === "out" ? t("支出") : t("收入")}
           </button>
         ))}
       </div>
@@ -112,7 +114,7 @@ export function TxForm({
           step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
-          placeholder="金额"
+          placeholder={t("金额")}
           className="w-28 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500"
         />
         <select
@@ -121,7 +123,7 @@ export function TxForm({
           className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none focus:border-sky-500"
         >
           {TX_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
+            <option key={c} value={c}>{txCatLabel(c, getLang())}</option>
           ))}
         </select>
       </div>
@@ -130,10 +132,10 @@ export function TxForm({
           <select
             value={accountId}
             onChange={(e) => setAccountId(e.target.value)}
-            title="挂到哪个账户（只作标签，不改变账户余额）"
+            title={t("挂到哪个账户（只作标签，不改变账户余额）")}
             className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none focus:border-sky-500"
           >
-            <option value="">不挂账户</option>
+            <option value="">{t("不挂账户")}</option>
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.icon} {a.name}
@@ -154,28 +156,28 @@ export function TxForm({
         <input
           value={counterparty}
           onChange={(e) => setCounterparty(e.target.value)}
-          placeholder="对方（可空）"
-          title="和谁有关 —— 填了会关联到 TA 的人情账（如：老王）"
+          placeholder={t("对方（可空）")}
+          title={t("和谁有关 —— 填了会关联到 TA 的人情账（如：老王）")}
           className="w-24 shrink-0 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
         />
         <input
           value={note ?? ""}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="备注（可空）"
+          placeholder={t("备注（可空）")}
           className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
         />
       </div>
       {err && <p className="text-micro text-danger">{err}</p>}
       <div className="flex justify-end gap-2 pt-1">
         <button type="button" onClick={onCancel} className="rounded-lg px-4 py-1.5 text-xs text-ink-mute hover:bg-soft">
-          取消
+          {t("取消")}
         </button>
         <button
           type="submit"
           disabled={busy || !amount || Number(amount) <= 0}
           className="btn-primary rounded-lg px-5 py-1.5 text-xs font-medium disabled:opacity-40"
         >
-          {busy ? "保存中…" : initial ? "保存" : "记入"}
+          {busy ? t("保存中…") : initial ? t("保存") : t("记入")}
         </button>
       </div>
     </form>
@@ -207,7 +209,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
       await api(`/api/accounts/${a.id}`, "PATCH", { name: draft });
       await onChanged();
     } catch (err) {
-      setRowErr((e) => ({ ...e, [a.id]: err instanceof Error ? err.message : "改名失败" }));
+      setRowErr((e) => ({ ...e, [a.id]: err instanceof Error ? err.message : t("改名失败") }));
     }
   }
 
@@ -219,7 +221,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIconPick(iconPick === a.id ? null : a.id)}
-                title="点击更换图标"
+                title={t("点击更换图标")}
                 className="shrink-0 rounded px-0.5 text-lg transition hover:bg-soft"
               >
                 {a.icon}
@@ -232,7 +234,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
                   if (e.key === "Enter" && !e.nativeEvent.isComposing) void saveName(a);
                 }}
                 maxLength={20}
-                title="点击编辑账户名，回车或移开焦点保存"
+                title={t("点击编辑账户名，回车或移开焦点保存")}
                 className="min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none transition focus:border-sky-500 focus:bg-surface"
               />
               <input
@@ -240,7 +242,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
                 step="0.01"
                 key={`${a.id}:${a.openingBalanceCents}`}
                 defaultValue={centsToYuanInput(a.openingBalanceCents)}
-                title="期初余额（元，改后账户余额=新期初+流水）"
+                title={t("期初余额（元，改后账户余额=新期初+流水）")}
                 onBlur={async (e) => {
                   // 清空=放弃修改意图（二十轮 P3）：非受控 defaultValue 清空后失焦报
                   // 「金额格式不正确」是误报——恢复显示原值即可，不改库
@@ -252,7 +254,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
                   const v = yuanToCents(e.target.value);
                   if (v == null) {
                     // 非法输入就地提示（原 parseFloat NaN 版静默忽略，会让人以为已保存）
-                    setRowErr((prev) => ({ ...prev, [a.id]: "金额格式不正确" }));
+                    setRowErr((prev) => ({ ...prev, [a.id]: t("金额格式不正确") }));
                     return;
                   }
                   if (v !== a.openingBalanceCents) {
@@ -260,26 +262,26 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
                       await api(`/api/accounts/${a.id}`, "PATCH", { openingBalanceCents: v });
                       await onChanged();
                     } catch (ce) {
-                      setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : "保存失败" }));
+                      setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : t("保存失败") }));
                     }
                   }
                 }}
                 className="w-24 rounded border border-line bg-surface px-2 py-1 text-right text-xs tabular-nums outline-none focus:border-sky-500"
               />
               <button
-                title="归档账户（历史流水保留，3 秒内再点确认）"
+                title={t("归档账户（历史流水保留，3 秒内再点确认）")}
                 onClick={async () => {
                   if (!armArchive.arm(a.id)) return;
                   try {
                     await api(`/api/accounts/${a.id}`, "DELETE");
                     await onChanged();
                   } catch (ce) {
-                    setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : "归档失败" }));
+                        setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : t("归档失败") }));
                   }
                 }}
                 className={`row-actions-hidden hidden group-hover:block ${armArchive.armedId === a.id ? "text-[10px] font-medium leading-none text-danger" : "text-ink-dim hover:text-danger"}`}
               >
-                {armArchive.armedId === a.id ? "确认归档?" : <Archive size={12} />}
+                {armArchive.armedId === a.id ? t("确认归档?") : <Archive size={12} />}
               </button>
             </div>
             {rowErr[a.id] && <p className="mt-1 text-micro text-danger">{rowErr[a.id]}</p>}
@@ -296,7 +298,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
                           await api(`/api/accounts/${a.id}`, "PATCH", { icon: i });
                           await onChanged();
                         } catch (ce) {
-                          setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : "更换图标失败" }));
+                          setRowErr((prev) => ({ ...prev, [a.id]: ce instanceof Error ? ce.message : t("更换图标失败") }));
                         }
                       }}
                       className={`h-8 w-8 rounded-lg text-lg transition hover:bg-soft ${i === a.icon ? "bg-sky-500/15 ring-1 ring-sky-500" : ""}`}
@@ -319,7 +321,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="新账户名（如：招行储蓄卡）"
+          placeholder={t("新账户名（如：招行储蓄卡）")}
           className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
         />
         <input
@@ -327,8 +329,8 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
           onChange={(e) => setOpening(e.target.value)}
           type="number"
           step="0.01"
-          placeholder="当前余额"
-          title="当前余额（元），可留空"
+          placeholder={t("当前余额")}
+          title={t("当前余额（元），可留空")}
           className="w-24 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-right text-xs tabular-nums outline-none focus:border-sky-500"
         />
         <button
@@ -340,7 +342,7 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
               // 期初余额允许留空/为 0（原语义）；非法输入就地提示，不再静默按 0 入账
               const cents = opening ? yuanToCents(opening) : 0;
               if (cents == null) {
-                setAddErr("金额格式不正确");
+                setAddErr(t("金额格式不正确"));
                 return;
               }
               await api("/api/accounts", "POST", { name: name.trim(), icon, openingBalanceCents: cents });
@@ -348,14 +350,14 @@ export function AccountManager({ accounts, onChanged }: { accounts: Account[]; o
               setOpening("");
               await onChanged();
             } catch (ce) {
-              setAddErr(ce instanceof Error ? ce.message : "添加失败");
+              setAddErr(ce instanceof Error ? ce.message : t("添加失败"));
             } finally {
               setBusy(false);
             }
           }}
           className="btn-primary rounded-lg px-4 py-1.5 text-xs font-medium disabled:opacity-40"
         >
-          添加
+          {t("添加")}
         </button>
       </div>
       {addErr && <p className="text-micro text-danger">{addErr}</p>}

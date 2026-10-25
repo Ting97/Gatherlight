@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { t, tpl } from "@/i18n";
 import { ChevronLeft, ChevronRight, ImageOff, X } from "lucide-react";
 import { useBodyScrollLock } from "@/components/ui/use-body-scroll-lock";
 import type { FeedImage } from "@/lib/types";
@@ -18,12 +19,12 @@ export function ImageGrid({ images, onOpen }: { images: FeedImage[]; onOpen?: (i
     <button
       key={img.id}
       onClick={() => !failed.has(img.id) && onOpen?.(i)}
-      aria-label={`查看第 ${i + 1} 张图片`}
+      aria-label={tpl("查看第 {n} 张图片", { n: i + 1 })}
       className={`group relative overflow-hidden rounded-xl bg-elevated ${cls}`}
     >
       {failed.has(img.id) ? (
         <span className="flex h-full w-full items-center justify-center gap-1 text-badge text-ink-faint">
-          <ImageOff size={12} aria-hidden /> 加载失败
+          <ImageOff size={12} aria-hidden /> {t("加载失败")}
         </span>
       ) : (
         <img
@@ -166,14 +167,14 @@ export function ImageLightbox({
           <button
             onClick={(e) => { e.stopPropagation(); go(-1); }}
             className="tap-lg press absolute left-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-4 text-white backdrop-blur transition hover:bg-white/20"
-            aria-label="上一张"
+            aria-label={t("上一张")}
           >
             <ChevronLeft size={18} />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); go(1); }}
             className="tap-lg press absolute right-2 top-1/2 -translate-y-1/2 rounded-full bg-white/10 px-3 py-4 text-white backdrop-blur transition hover:bg-white/20"
-            aria-label="下一张"
+            aria-label={t("下一张")}
           >
             <ChevronRight size={18} />
           </button>
@@ -185,7 +186,7 @@ export function ImageLightbox({
       <button
         onClick={onClose}
         className="tap-lg absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/20"
-        aria-label="关闭"
+        aria-label={t("关闭")}
       >
         <X size={16} />
       </button>

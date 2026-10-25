@@ -63,8 +63,11 @@ interface ProposalItem {
   createdAt: string;
 }
 
-/** 等待期状态文案轮换（约 2.4s 一轮，覆盖典型 GLM+查询耗时节奏） */
-const THINKING_STEPS_ZH = ["正在理解你的问题…", "正在查询你的数据…", "正在整理回答…"];
+/** 等待期状态文案轮换（约 2.4s 一轮，覆盖典型 GLM+查询耗时节奏）。
+ *  中文侧经 t()（key 即原文）：必须渲染期求值——模块顶层求值会冻结在默认语言 en */
+function thinkingStepsZh(): string[] {
+  return [t("正在理解你的问题…"), t("正在查询你的数据…"), t("正在整理回答…")];
+}
 const THINKING_STEPS_EN = ["Understanding your question…", "Querying your data…", "Composing the answer…"];
 
 /** 健身计划确认卡：模块/日期/动作明细（整数口径换算展示）+ 依据 + 保存/放弃 */
@@ -92,7 +95,7 @@ function ProposalCard({
       <div className="w-[92%] rounded-2xl rounded-bl-md border border-sky-500/40 bg-surface p-3.5 shadow-sm">
         <div className="mb-2 flex items-center gap-2">
           <span className="rounded-full bg-sky-500/15 px-2 py-0.5 text-micro font-medium text-sky-600 dark:text-sky-400">
-            🏋️ 计划确认卡
+            {t("🏋️ 计划确认卡")}
           </span>
           <span className="text-micro text-ink-faint">
             {item.payload.moduleCode === "run" ? t("跑步") : t("力量")} · {item.payload.planDate}
@@ -125,12 +128,12 @@ function ProposalCard({
         {xunjiEnabled ? (
           <label className="mt-2.5 flex items-center gap-1.5 text-micro text-ink-mute">
             <input type="checkbox" checked={syncXunji} onChange={(e) => setSyncXunji(e.target.checked)} className="accent-sky-500" />
-            同时写入训记 App（训练时在训记里打勾记录实练）
+            {t("同时写入训记 App（训练时在训记里打勾记录实练）")}
           </label>
         ) : null}
         <div className="mt-3 flex justify-end gap-2">
           <button className="btn-ghost px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => onResolve("dismiss")}>
-            放弃
+            {t("放弃")}
           </button>
           <button className="btn-primary px-4 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => onResolve("accept", { syncXunji })}>
             {busy ? t("处理中…") : t("保存计划并联动今日行动")}
@@ -144,65 +147,77 @@ function ProposalCard({
 /** 分域助手元数据（REQ-019 FR-C）：标题/引导语/快捷问句随域切换 */
 export type ChatScope = "global" | "goal" | "time" | "people" | "finance" | "fitness";
 
-export const SCOPE_META: Record<ChatScope, { title: string; tagline: string; dockLabel: string; greeting: string; quick: string[]; placeholder: string; placeholderShort: string }> = {
+export interface ScopeMeta {
+  title: string;
+  tagline: string;
+  dockLabel: string;
+  greeting: string;
+  quick: string[];
+  placeholder: string;
+  placeholderShort: string;
+}
+
+/** 分域中文文案（t() 包裹，key 即原文）：函数体在渲染期求值——
+ *  模块顶层 const 求值时 currentLang 尚为默认 en，会把英文冻结进中文视图 */
+export const scopeMetaZh = (): Record<ChatScope, ScopeMeta> => ({
   global: {
-    title: "拾光助手",
-    tagline: "懂你数据的私人经营助手",
-    dockLabel: "拾光助手",
-    greeting: "问我任何关于你的时间、金钱、人际与目标的问题",
-    quick: ["这周花了多少钱？花在哪了？", "最近在忙什么？时间都去哪了", "有什么该联系的人了吗", "今天我要做哪些行动", "点评昨天训练，明天力量怎么排"],
-    placeholder: "问问你的数据，如「上个月人情往来花了多少」",
-    placeholderShort: "问问你的数据",
+    title: t("拾光助手"),
+    tagline: t("懂你数据的私人经营助手"),
+    dockLabel: t("拾光助手"),
+    greeting: t("问我任何关于你的时间、金钱、人际与目标的问题"),
+    quick: [t("这周花了多少钱？花在哪了？"), t("最近在忙什么？时间都去哪了"), t("有什么该联系的人了吗"), t("今天我要做哪些行动"), t("点评昨天训练，明天力量怎么排")],
+    placeholder: t("问问你的数据，如「上个月人情往来花了多少」"),
+    placeholderShort: t("问问你的数据"),
   },
   goal: {
-    title: "目标管家",
-    tagline: "目标空间 · 阶段 · 行动进度",
-    dockLabel: "目标管家",
-    greeting: "问我你的目标空间、阶段目标与行动进度",
-    quick: ["哪个空间快到期了？", "考研上岸的行动进度怎么样", "帮我盘点各空间的阶段目标", "今天有哪些待办没完成"],
-    placeholder: "如「考研空间最近进度如何」（Ctrl+Enter 发送）",
-    placeholderShort: "如「考研空间最近进度如何」",
+    title: t("目标管家"),
+    tagline: t("目标空间 · 阶段 · 行动进度"),
+    dockLabel: t("目标管家"),
+    greeting: t("问我你的目标空间、阶段目标与行动进度"),
+    quick: [t("哪个空间快到期了？"), t("考研上岸的行动进度怎么样"), t("帮我盘点各空间的阶段目标"), t("今天有哪些待办没完成")],
+    placeholder: t("如「考研空间最近进度如何」（Ctrl+Enter 发送）"),
+    placeholderShort: t("如「考研空间最近进度如何」"),
   },
   time: {
-    title: "日程管家",
-    tagline: "时间块 · 排程 · 复盘",
-    dockLabel: "日程管家",
-    greeting: "问我你的日程安排与时间去向",
-    quick: ["今天还剩什么事？", "这周时间都花在哪了", "周六有空吗", "最近睡眠怎么样"],
-    placeholder: "如「这周时间花哪了」（Ctrl+Enter 发送）",
-    placeholderShort: "如「这周时间花哪了」",
+    title: t("日程管家"),
+    tagline: t("时间块 · 排程 · 复盘"),
+    dockLabel: t("日程管家"),
+    greeting: t("问我你的日程安排与时间去向"),
+    quick: [t("今天还剩什么事？"), t("这周时间都花在哪了"), t("周六有空吗"), t("最近睡眠怎么样")],
+    placeholder: t("如「这周时间花哪了」（Ctrl+Enter 发送）"),
+    placeholderShort: t("如「这周时间花哪了」"),
   },
   people: {
-    title: "人际管家",
-    tagline: "联系人 · 往来 · 重要日期",
-    dockLabel: "人际管家",
-    greeting: "问我你的联系人、往来记录与重要日期",
-    quick: ["有什么该联系的人了吗", "最近和谁互动最多", "快到生日的联系人有哪些", "多久没联系老板了"],
-    placeholder: "如「最近该联系谁」（Ctrl+Enter 发送）",
-    placeholderShort: "如「最近该联系谁」",
+    title: t("人际管家"),
+    tagline: t("联系人 · 往来 · 重要日期"),
+    dockLabel: t("人际管家"),
+    greeting: t("问我你的联系人、往来记录与重要日期"),
+    quick: [t("有什么该联系的人了吗"), t("最近和谁互动最多"), t("快到生日的联系人有哪些"), t("多久没联系老板了")],
+    placeholder: t("如「最近该联系谁」（Ctrl+Enter 发送）"),
+    placeholderShort: t("如「最近该联系谁」"),
   },
   finance: {
-    title: "财务管家",
-    tagline: "收支 · 预算 · 复盘",
-    dockLabel: "财务管家",
-    greeting: "问我你的收支、预算与复盘",
-    quick: ["这个月花了多少？", "哪类支出涨得最快", "预算还剩多少", "这个月收支情况如何"],
-    placeholder: "如「这个月餐饮花了多少」（Ctrl+Enter 发送）",
-    placeholderShort: "如「这个月餐饮花了多少」",
+    title: t("财务管家"),
+    tagline: t("收支 · 预算 · 复盘"),
+    dockLabel: t("财务管家"),
+    greeting: t("问我你的收支、预算与复盘"),
+    quick: [t("这个月花了多少？"), t("哪类支出涨得最快"), t("预算还剩多少"), t("这个月收支情况如何")],
+    placeholder: t("如「这个月餐饮花了多少」（Ctrl+Enter 发送）"),
+    placeholderShort: t("如「这个月餐饮花了多少」"),
   },
   fitness: {
-    title: "运动教练",
-    tagline: "计划 · 打卡 · 身体指标 · 训记",
-    dockLabel: "运动教练",
-    greeting: "问我训练安排、执行点评与身体数据",
-    quick: ["点评昨天的训练", "明天力量怎么排", "我的体重/腰围趋势", "训记里今天练了什么"],
-    placeholder: "如「明天练什么」（Ctrl+Enter 发送）",
-    placeholderShort: "如「明天练什么」",
+    title: t("运动教练"),
+    tagline: t("计划 · 打卡 · 身体指标 · 训记"),
+    dockLabel: t("运动教练"),
+    greeting: t("问我训练安排、执行点评与身体数据"),
+    quick: [t("点评昨天的训练"), t("明天力量怎么排"), t("我的体重/腰围趋势"), t("训记里今天练了什么")],
+    placeholder: t("如「明天练什么」（Ctrl+Enter 发送）"),
+    placeholderShort: t("如「明天练什么」"),
   },
-};
+});
 
 
-export const SCOPE_META_EN: Record<ChatScope, typeof SCOPE_META[ChatScope]> = {
+export const SCOPE_META_EN: Record<ChatScope, ScopeMeta> = {
   global: {
     title: "Shiguang Assistant",
     tagline: "A private assistant that knows your data",
@@ -272,8 +287,8 @@ export default function AssistantChat({
 }) {
   const isDock = variant === "dock";
   const { lang } = useLang();
-  const THINKING_STEPS = lang === "en" ? THINKING_STEPS_EN : THINKING_STEPS_ZH;
-  const meta = (lang === "en" ? SCOPE_META_EN : SCOPE_META)[scope];
+  const THINKING_STEPS = lang === "en" ? THINKING_STEPS_EN : thinkingStepsZh();
+  const meta = (lang === "en" ? SCOPE_META_EN : scopeMetaZh())[scope];
   const [conversations, setConversations] = useState<ConvItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MsgItem[]>([]);
@@ -483,7 +498,7 @@ export default function AssistantChat({
   const quotaText = quota
     ? quota.limit === null
       ? t("Pro · 不限次数")
-      : `今日 ${quota.usedToday}/${quota.limit} 次`
+      : tpl("今日 {used}/{limit} 次", { used: quota.usedToday, limit: quota.limit })
     : "";
 
   /** A.5 确认卡处置：accept 先保存业务数据（fitness 域 API）成功后再回执；dismiss 直接放弃 */
@@ -547,7 +562,7 @@ export default function AssistantChat({
                 }}
                 className="flex w-full items-center gap-2 border-b border-line-soft px-3.5 py-2.5 text-xs font-medium text-accent"
               >
-                <Plus size={14} aria-hidden /> 新对话
+                <Plus size={14} aria-hidden /> {t("新对话")}
               </button>
               {conversations.map((c) => (
                 <div key={c.id} className={`group flex items-center gap-1 px-1.5 ${c.id === activeId ? "bg-wash" : ""}`}>
@@ -585,7 +600,7 @@ export default function AssistantChat({
             onClick={newConversation}
             className="mb-2 flex w-full items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 px-3 py-2 text-xs font-medium text-white shadow-md shadow-sky-500/25 transition hover:opacity-90"
           >
-            <Plus size={14} aria-hidden /> 新对话
+            <Plus size={14} aria-hidden /> {t("新对话")}
           </button>
           <div className="space-y-1">
             {conversations.map((c) => (
@@ -710,7 +725,7 @@ export default function AssistantChat({
                             <span
                               key={i}
                               className="rounded-full bg-violet-500/10 px-2 py-0.5 text-micro text-ai"
-                              title={`工具 ${tc.name}`}
+                              title={tpl("工具 {name}", { name: tc.name })}
                             >
                               {t("已查询：")}{tc.label ? t(tc.label) : tc.name}
                             </span>

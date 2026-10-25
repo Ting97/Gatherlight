@@ -1,8 +1,10 @@
 "use client";
 
 import type { Activity, Block } from "@/lib/types";
-import { bjToday, zhDuration, zhDate, weekName } from "@/lib/date";
+import { bjToday } from "@/lib/date";
 import { bjDateKey } from "@/lib/bj-time"; // 北京口径：localDateKey/todayStr 按宿主时区，海外设备与日视图日界不一致
+import { activityLabel, durationLabel, weekName } from "@shiguangri/shared/i18n-enum";
+import { t, tpl, getLang } from "@/i18n";
 
 interface Props {
   /** 本周 7 天（周一起） */
@@ -23,6 +25,10 @@ const clampMin = (b: Block, fromMs: number, spanMin: number) => {
 
 /** 周视图：7 列缩略时间条 + 各类合计 */
 export default function WeekView({ days, blocks, activities, onPickDay }: Props) {
+  const lang = getLang();
+  // 列头周几（shared weekName 双语）+ 短日期（ZH「10/21」与原 zhDate 替换口径一致，EN 同式）
+  const dowIdx = (d: string) => (new Date(`${d}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const shortDate = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const dayStarts = new Map(days.map((d) => [d, Date.parse(`${d}T00:00:00+08:00`)])); // 北京零点基点（本地零点在海外设备把当天块算偏 8 小时）
 
   const byDay = new Map<string, Block[]>();
@@ -59,7 +65,7 @@ export default function WeekView({ days, blocks, activities, onPickDay }: Props)
           return (
             <button key={d} onClick={() => onPickDay(d)} className="group text-left">
               <div className={`mb-1 rounded px-1 py-0.5 text-center text-badge ${isToday ? "bg-sky-600 font-bold" : "bg-elevated/80 text-ink-mute"}`}>
-                {weekName(d)} {zhDate(d).replace("月", "/").replace("日", "")}
+                {weekName(dowIdx(d), lang)} {shortDate(d)}
               </div>
               <div className="relative h-[432px] overflow-hidden rounded border border-line-soft bg-bg/40 group-hover:border-sky-600/50">
                 {Array.from({ length: 25 }, (_, h) => (
@@ -69,12 +75,14 @@ export default function WeekView({ days, blocks, activities, onPickDay }: Props)
                   // 起止都钳到当天 0~1440（跨天块只显示落在当天的部分）
                   const s = Math.max(Math.min((new Date(b.start_at).getTime() - (dayStarts.get(d) ?? 0)) / 60_000, 1440), 0);
                   const e = Math.max(Math.min((new Date(b.end_at).getTime() - (dayStarts.get(d) ?? 0)) / 60_000, 1440), 0);
+                  // 整块跨天（24h 全覆盖且原始更长）时 tooltip 追加整块时长
+                  const wholeDay = s === 0 && e === 1440 && b.duration_min > 1440;
                   // tooltip 用当天钳制后的分钟数：整块 duration_min 与列内显示的交集段口径不一致
                   //（跨周块提示 8h、列里只有 1h，像算错了）
                   return (
                     <div
                       key={b.id}
-                      title={`${b.icon} ${b.title} · ${zhDuration(Math.round(e - s))}${s === 0 && e === 1440 && b.duration_min > 1440 ? `（整块 ${zhDuration(b.duration_min)}）` : ""}`}
+                      title={`${b.icon} ${b.title} · ${durationLabel(Math.round(e - s), lang)}${wholeDay ? tpl("（整块 {dur}）", { dur: durationLabel(b.duration_min, lang) }) : ""}`}
                       className="absolute inset-x-0.5 overflow-hidden rounded"
                       style={{
                         top: `${s * PX_PER_MIN}px`,
@@ -87,7 +95,7 @@ export default function WeekView({ days, blocks, activities, onPickDay }: Props)
                 })}
               </div>
               <p className="mt-1 text-center text-badge tabular-nums text-ink-dim">
-                {total > 0 ? zhDuration(total) : "—"}
+                {total > 0 ? durationLabel(total, lang) : "—"}
               </p>
             </button>
           );
@@ -100,11 +108,11 @@ export default function WeekView({ days, blocks, activities, onPickDay }: Props)
       {grand > 0 && (
         <div className="mt-4">
           <p className="mb-1.5 text-xs text-ink-mute">
-            本周共记录 <span className="font-semibold text-ink">{zhDuration(grand)}</span>
+            {t("本周共记录")} <span className="font-semibold text-ink">{durationLabel(grand, lang)}</span>
           </p>
           <div className="flex h-3 w-full overflow-hidden rounded-full">
             {sorted.map(([id, min]) => (
-              <div key={id} style={{ width: `${(min / grand) * 100}%`, backgroundColor: actMap.get(id)?.color ?? "#64748b" }} title={`${actMap.get(id)?.name} ${zhDuration(min)}`} />
+              <div key={id} style={{ width: `${(min / grand) * 100}%`, backgroundColor: actMap.get(id)?.color ?? "#64748b" }} title={`${activityLabel(actMap.get(id)?.name ?? "", lang)} ${durationLabel(min, lang)}`} />
             ))}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
@@ -113,7 +121,7 @@ export default function WeekView({ days, blocks, activities, onPickDay }: Props)
               return (
                 <span key={id} className="flex items-center gap-1.5 text-micro text-ink-mute">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a?.color }} />
-                  {a?.icon} {a?.name} <span className="tabular-nums text-ink-dim">{zhDuration(min)}</span>
+                  {a?.icon} {a ? activityLabel(a.name, lang) : ""} <span className="tabular-nums text-ink-dim">{durationLabel(min, lang)}</span>
                 </span>
               );
             })}

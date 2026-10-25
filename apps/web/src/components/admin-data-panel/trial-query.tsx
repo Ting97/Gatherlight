@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { api } from "@/shared/api";
+import { t as tr, tpl } from "@/i18n"; // 局部变量 t（fmtBjDay/cell 内）遮蔽默认名，此处用 tr
 import type { CatalogPayload, DatasetSpec, TrialResult } from "./types";
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -56,7 +57,7 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
       const r = await api<TrialResult>(`/api/admin/data/${ds.key}?${q.toString()}`);
       if (seq === seqRef.current) setResult(r);
     } catch (e) {
-      if (seq === seqRef.current) setErr(e instanceof Error ? e.message : "查询失败");
+      if (seq === seqRef.current) setErr(e instanceof Error ? e.message : tr("查询失败"));
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
@@ -78,7 +79,7 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
         >
           {catalog.datasets.map((d) => (
             <option key={d.key} value={d.key} disabled={d.partition === "category"}>
-              {d.name}（{d.key}）{d.partition === "category" ? " · 类别型不可试查" : ""}
+              {d.name}（{d.key}）{d.partition === "category" ? tr(" · 类别型不可试查") : ""}
             </option>
           ))}
         </select>
@@ -93,7 +94,7 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
           <input
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            placeholder={`类别 ${ds.categoryCol}（可空）`}
+            placeholder={tpl("类别 {col}（可空）", { col: ds.categoryCol })}
             maxLength={50}
             className="w-40 rounded-lg border border-line-soft bg-surface/60 px-2.5 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-sky-500"
           />
@@ -114,7 +115,7 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
           disabled={loading || !ds}
           className="rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-medium text-accent transition hover:bg-sky-500/20 disabled:opacity-50"
         >
-          {loading ? "查询中…" : "🔍 试查"}
+          {loading ? tr("查询中…") : tr("🔍 试查")}
         </button>
       </div>
 
@@ -125,10 +126,10 @@ export default function TrialQuery({ catalog }: { catalog: CatalogPayload }) {
       {result && (
         <div className="mt-2">
           <p className="mb-1 text-badge text-ink-faint">
-            共 <span className="tabular-nums text-ink-mute">{result.total}</span> 条，展示前 {result.items.length} 条
+            {tr("共")} <span className="tabular-nums text-ink-mute">{result.total}</span> {tpl("条，展示前 {n} 条", { n: result.items.length })}
           </p>
           {result.items.length === 0 ? (
-            <p className="text-micro text-ink-faint">该条件下暂无数据</p>
+            <p className="text-micro text-ink-faint">{tr("该条件下暂无数据")}</p>
           ) : (
             <div className="max-h-96 overflow-auto rounded-xl border border-line-soft">
               <table className="w-full min-w-[560px] border-collapse text-left text-badge">

@@ -17,8 +17,8 @@ import { yuan } from "@/lib/finance";
 import { GROUP_TONE } from "@/lib/group-tone";
 import { bjDayIdx } from "@/lib/bj-time"; // 实现单源 @shiguangri/shared（UTC+8 推算，禁本地 getter）
 import AssistantDock from "@/components/assistant-dock";
-import { t, getLang } from "@/i18n";
-import { contactGroupLabel } from "@shiguangri/shared/i18n-enum";
+import { t, tpl, getLang } from "@/i18n";
+import { contactGroupLabel, dateLabel } from "@shiguangri/shared/i18n-enum";
 
 interface Contact {
   id: string;
@@ -41,19 +41,19 @@ interface Contact {
   gift_net_cents: number;
 }
 
-/** 相对时间：刚刚/N分钟前/N小时前/昨天/M月D日（北京时间口径） */
+/** 相对时间：刚刚/N分钟前/N小时前/昨天/M月D日（北京时间口径；M月D日 走 shared dateLabel 双语） */
 function relTime(iso: string): string {
-  const t = Date.parse(iso);
-  const diffMs = Date.now() - t;
+  const ts = Date.parse(iso);
+  const diffMs = Date.now() - ts;
   const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return getLang() === "en" ? "just now" : "刚刚";
-  if (min < 60) return `${min}分钟前`;
+  if (min < 1) return t("刚刚");
+  if (min < 60) return tpl("{n}分钟前", { n: min });
   const h = Math.floor(min / 60);
-  if (h < 24) return `${h}小时前`;
-  const days = bjDayIdx(Date.now()) - bjDayIdx(t);
-  if (days === 1) return getLang() === "en" ? "yesterday" : "昨天";
-  const d = new Date(t + 8 * 3600_000);
-  return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  if (h < 24) return tpl("{n}小时前", { n: h });
+  const days = bjDayIdx(Date.now()) - bjDayIdx(ts);
+  if (days === 1) return t("昨天");
+  const d = new Date(ts + 8 * 3600_000);
+  return dateLabel(0, d.getUTCMonth() + 1, d.getUTCDate(), getLang());
 }
 
 /** 列表/图谱视图切换图标（lucide 线性图标） */
@@ -89,10 +89,11 @@ export default function ContactsPage() {
   const groupChips = useMemo(() => {
     const counts = new Map<string, number>();
     for (const c of contacts ?? []) counts.set(c.group_tag, (counts.get(c.group_tag) ?? 0) + 1);
-    return ["全部", ...CONTACT_GROUPS.filter((g) => counts.get(g))].map((g) => ({
-      name: g,
-      count: g === "全部" ? (contacts?.length ?? 0) : (counts.get(g) ?? 0),
-    }));
+    // name=null 代表「全部」聚合 chip（中文哨兵值不进比较逻辑，展示层 t("全部")）
+    return [
+      { name: null as string | null, count: contacts?.length ?? 0 },
+      ...CONTACT_GROUPS.filter((g) => counts.get(g)).map((g) => ({ name: g, count: counts.get(g) ?? 0 })),
+    ];
   }, [contacts]);
 
   const filtered = useMemo(() => {
@@ -132,7 +133,7 @@ export default function ContactsPage() {
             {t("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{t("人际")}</span>
           </h1>
           <p className="mt-2 text-xs text-ink-dim">
-            动态里提到的人都在这里 —— 分组档案、生日提醒、往来时间线
+            {t("动态里提到的人都在这里 —— 分组档案、生日提醒、往来时间线")}
           </p>
           {/* 列表 | 图谱 视图切换 */}
           <div className="mt-4 inline-flex rounded-full border border-line-soft bg-surface/70 p-1 text-xs">
@@ -156,16 +157,16 @@ export default function ContactsPage() {
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-1.5">
             {groupChips.map((g) => {
-              const isAll = g.name === "全部";
-              const selected = isAll ? groups.size === 0 : groups.has(g.name);
+              const isAll = g.name === null;
+              const selected = isAll ? groups.size === 0 : groups.has(g.name!);
               return (
                 <FilterChip
-                  key={g.name}
+                  key={g.name ?? "__all__"}
                   variant="filter"
                   active={selected}
                   title={isAll ? t("显示全部分组") : t("点击加入/移出筛选（可多选）")}
-                  icon={isAll ? undefined : <span className="text-xs leading-none">{GROUP_EMOJI[g.name] ?? "👤"}</span>}
-                  label={isAll ? t("全部") : contactGroupLabel(g.name, getLang())}
+                  icon={isAll ? undefined : <span className="text-xs leading-none">{GROUP_EMOJI[g.name!] ?? "👤"}</span>}
+                  label={isAll ? t("全部") : contactGroupLabel(g.name!, getLang())}
                   count={g.count}
                   onClick={() => {
                     if (isAll) {
@@ -174,8 +175,8 @@ export default function ContactsPage() {
                     }
                     setGroups((prev) => {
                       const next = new Set(prev);
-                      if (next.has(g.name)) next.delete(g.name);
-                      else next.add(g.name);
+                      if (next.has(g.name!)) next.delete(g.name!);
+                      else next.add(g.name!);
                       return next;
                     });
                   }}
@@ -191,7 +192,7 @@ export default function ContactsPage() {
               className="w-36 rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs outline-none placeholder:text-ink-faint focus:border-sky-500"
             />
             <button onClick={() => setEditing("new")} className="btn-primary whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium">
-              ＋ 建档
+              ＋ {t("建档")}
             </button>
           </div>
         </div>
@@ -201,9 +202,9 @@ export default function ContactsPage() {
           <div
             className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-danger"
           >
-            加载失败：{loadErr}
+            {t("加载失败：")}{loadErr}
             <button onClick={() => void load()} className="ml-2 underline underline-offset-2">
-              重试
+              {t("重试")}
             </button>
           </div>
         )}
@@ -211,9 +212,9 @@ export default function ContactsPage() {
         {contacts === null ? (
           loadErr ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-danger">加载失败：{loadErr}</p>
+              <p className="text-sm text-danger">{t("加载失败：")}{loadErr}</p>
               <button onClick={() => void load()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : (
@@ -225,7 +226,7 @@ export default function ContactsPage() {
             <ContactGraph contacts={filtered} onOpen={(id) => router.push(`/contacts/${id}`)} />
             {contacts.length === 0 && (
               <p className="empty-state py-6">
-                还没有联系人 —— 动态里说「和老王吃饭」，TA 会自动出现在这里
+                {t("还没有联系人 —— 动态里说「和老王吃饭」，TA 会自动出现在这里")}
               </p>
             )}
             {contacts.length > 0 && filtered.length === 0 && (
@@ -234,16 +235,16 @@ export default function ContactsPage() {
           </>
         ) : contacts.length === 0 ? (
           <p className="empty-state py-10">
-            还没有联系人 —— 动态里说「和老王吃饭」，TA 会自动出现在这里
+            {t("还没有联系人 —— 动态里说「和老王吃饭」，TA 会自动出现在这里")}
           </p>
         ) : filtered.length === 0 ? (
           <p className="empty-state py-10">
-            没有匹配的联系人
+            {t("没有匹配的联系人")}
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {filtered.map((c) => {
-              const bd = birthdayLabel(c);
+              const bd = birthdayLabel(c, new Date(), getLang());
               return (
                 <Link
                   key={c.id}
@@ -262,11 +263,11 @@ export default function ContactsPage() {
                         {c.alias && <span className="truncate text-xs font-normal text-ink-dim">（{c.alias}）</span>}
                       </p>
                       <p className="mt-0.5 flex items-center gap-2 text-micro text-ink-dim">
-                        <TagChip label={c.group_tag} tone={GROUP_TONE[c.group_tag] ?? "sky"} size="sm" />
+                        <TagChip label={contactGroupLabel(c.group_tag, getLang())} tone={GROUP_TONE[c.group_tag] ?? "sky"} size="sm" />
                         {bd?.countdown && <span className="text-ai">{bd.countdown}</span>}
                       </p>
                     </div>
-                    <span className="shrink-0 text-micro tabular-nums text-ink-dim">{c.interaction_count} 次</span>
+                    <span className="shrink-0 text-micro tabular-nums text-ink-dim">{tpl("{n} 次", { n: c.interaction_count })}</span>
                   </div>
                   <p className="mt-2.5 truncate text-xs text-ink-mute">
                     {c.last_at ? (
@@ -281,7 +282,7 @@ export default function ContactsPage() {
                     <p className="mt-1 text-micro tabular-nums text-ink-dim">
                       {/* 金额展示统一走共享 yuan()（整数运算）；负数（净送出）必须带 - 号，
                           绝对值裸显会被误读成净收入（009 轮三端体验发现） */}
-                      人情往来 {Number(c.gift_net_cents) > 0 ? "+" : "-"}¥
+                      {t("人情往来")} {Number(c.gift_net_cents) > 0 ? "+" : "-"}¥
                       {yuan(Math.abs(Number(c.gift_net_cents)))}
                     </p>
                   )}

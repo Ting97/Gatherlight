@@ -4,6 +4,8 @@
 import { bjToday } from "@/lib/date";
 import { yuan } from "@/lib/finance";
 import { bjDayIdx, isoToBjInput, bjInputToIso } from "@/lib/bj-time";
+import { t as tr, tpl, getLang } from "@/i18n";
+import { dateLabel } from "@shiguangri/shared/i18n-enum";
 
 export interface Account {
   id: string;
@@ -44,10 +46,10 @@ export const zhDay = (iso: string) => {
   const t = Date.parse(iso);
   const diff = bjDayIdx(Date.now()) - bjDayIdx(t);
   const d = new Date(t + 8 * 3600_000);
-  const label = diff === 0 ? "今天" : diff === 1 ? "昨天" : `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  const label = diff === 0 ? tr("今天") : diff === 1 ? tr("昨天") : dateLabel(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), getLang());
   return `${label} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
 };
-export const monthTitle = (m: string) => `${Number(m.slice(0, 4))}年${Number(m.slice(5, 7))}月`;
+export const monthTitle = (m: string) => tpl("{y}年{m}月", { y: Number(m.slice(0, 4)), m: Number(m.slice(5, 7)) });
 /** 负数放负号在前：-¥260（直接拼接会出现 ¥-260） */
 export const fmtMoney = (cents: number) => (cents < 0 ? `-¥${yuan(-cents)}` : `¥${yuan(cents)}`);
 export function shiftMonth(m: string, delta: number): string {

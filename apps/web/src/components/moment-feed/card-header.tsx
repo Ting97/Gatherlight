@@ -8,7 +8,9 @@ import { Ellipsis, Mic, PencilLine, Trash2, TriangleAlert } from "lucide-react";
 import type { FeedMoment } from "@/lib/types";
 import { TagChip } from "../tag-chip";
 import { Dismissable } from "../dismissable";
+import { t, tpl } from "@/i18n";
 import type { IntentTag, MenuPos } from "./types";
+import { spaceName } from "@/lib/space-i18n";
 
 interface CardHeaderProps {
   m: FeedMoment;
@@ -57,21 +59,21 @@ export function CardHeader({
           <span
             className="inline-flex max-w-full items-center gap-1 rounded-lg px-1.5 py-0.5 text-badge font-medium"
             style={{ backgroundColor: `${m.space.color}26`, color: m.space.color }}
-            title={`目标空间：${m.space.name}`}
+            title={tpl("目标空间：{name}", { name: spaceName(m.space) })}
           >
             <span className="shrink-0 text-micro leading-none">{m.space.icon}</span>
-            <span className="min-w-0 truncate">{m.space.name}</span>
+            <span className="min-w-0 truncate">{spaceName(m.space)}</span>
           </span>
         </Link>
       )}
-      {m.source === "voice" && <TagChip icon={<Mic size={12} />} label="语音" tone="slate" size="sm" title="语音输入" />}
+      {m.source === "voice" && <TagChip icon={<Mic size={12} />} label={t("语音")} tone="slate" size="sm" title={t("语音输入")} />}
       {(Object.values(m.recognitions ?? {}) as { engine?: string | null }[]).some((v) => v.engine === "rules") && (
         <TagChip
           icon={<TriangleAlert size={12} />}
-          label="离线识别"
+          label={t("离线识别")}
           tone="amber"
           size="sm"
-          title="AI 暂不可用（额度/网络），本次由离线规则识别，点击原文可重识别"
+          title={t("AI 暂不可用（额度/网络），本次由离线规则识别，点击原文可重识别")}
         />
       )}
       <span className="flex-1" />
@@ -82,10 +84,10 @@ export function CardHeader({
             disabled={deleting}
             className="rounded bg-rose-600/80 px-2 py-0.5 text-badge text-white hover:bg-rose-500 disabled:opacity-50"
           >
-            {deleting ? "删除中…" : "确认删除"}
+            {deleting ? t("删除中…") : t("确认删除")}
           </button>
           <button onClick={() => setConfirming(false)} className="px-1 text-badge text-ink-mute hover:text-ink">
-            取消
+            {t("取消")}
           </button>
         </span>
       ) : (
@@ -100,7 +102,7 @@ export function CardHeader({
                 setActionsOpen((v) => !v);
                 setMenuOpen(false);
               }}
-              title="更多操作"
+              title={t("更多操作")}
               className="row-actions-hidden hidden rounded px-1.5 leading-none text-ink-dim transition hover:text-ink group-hover:block"
             >
               <Ellipsis size={14} />
@@ -119,13 +121,13 @@ export function CardHeader({
                     onClick={() => { setActionsOpen(false); setEditRaw(m.raw_text); setMenuOpen(false); }}
                     className="flex w-full items-center gap-2 px-3 py-2 text-xs text-ink transition hover:bg-wash"
                   >
-                    <PencilLine size={14} /> 编辑
+                    <PencilLine size={14} /> {t("编辑")}
                   </button>
                   <button
                     onClick={() => { setActionsOpen(false); setConfirming(true); }}
                     className="flex w-full items-center gap-2 border-t border-line-soft px-3 py-2 text-xs text-danger transition hover:bg-wash"
                   >
-                    <Trash2 size={14} /> 删除
+                    <Trash2 size={14} /> {t("删除")}
                   </button>
                 </Dismissable>,
                 document.body,

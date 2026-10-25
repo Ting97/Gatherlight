@@ -1,6 +1,7 @@
 "use client";
 
 import type { TodoRow } from "@/lib/types";
+import { t, tpl } from "@/i18n";
 import { Dismissable } from "../dismissable";
 import type { ActionNote } from "./use-action-note";
 import { Repeat } from "lucide-react";
@@ -10,6 +11,9 @@ import { Repeat } from "lucide-react";
  * N3：点空白/Esc 取消，有改动轻提示（dirty 判定复刻在 hook 的 closeNote）。
  */
 export function ActionNotePanel({ c, note }: { c: TodoRow; note: ActionNote }) {
+  // 🔁 每日重复徽标的「· 已完成 ×N」后缀（比较与 tpl 分行写：同一行「> 0 ? 中文」形态会干扰 i18n 审计的中扫描）
+  const hasDoneCount = note.noteDoneCount > 0;
+  const doneSuffix = note.noteRepeat && hasDoneCount ? tpl(" · 已完成 ×{n}", { n: note.noteDoneCount }) : "";
   return (
     <Dismissable
       onClose={() => note.closeNote(c)}
@@ -30,14 +34,14 @@ export function ActionNotePanel({ c, note }: { c: TodoRow; note: ActionNote }) {
           }
         }}
         className="w-full rounded border border-line-strong bg-surface px-2 py-1 text-body outline-none focus:border-sky-500"
-        placeholder="标题"
+        placeholder={t("标题")}
       />
       <textarea
         value={note.noteText}
         onChange={(e) => note.setNoteText(e.target.value.slice(0, 1000))}
         rows={4}
         maxLength={1000}
-        placeholder="详细内容（可选，记录细节/链接/备注，≤1000 字）"
+        placeholder={t("详细内容（可选，记录细节/链接/备注，≤1000 字）")}
         className="input-glow mt-2 w-full resize-none rounded border border-line-soft bg-surface/60 px-2.5 py-2 text-body leading-relaxed outline-none placeholder:text-ink-faint"
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
@@ -46,11 +50,11 @@ export function ActionNotePanel({ c, note }: { c: TodoRow; note: ActionNote }) {
           type="datetime-local"
           value={note.noteDue}
           onChange={(e) => note.setNoteDue(e.target.value)}
-          title="截止时间（可清空）"
+          title={t("截止时间（可清空）")}
           className="rounded border border-line-strong bg-surface px-2 py-1 text-xs tabular-nums outline-none focus:border-sky-500"
         />
         <label
-          title="每日重复：完成后次日 06:00 自动恢复未完成，并累积完成次数"
+          title={t("每日重复：完成后次日 06:00 自动恢复未完成，并累积完成次数")}
           className={`flex cursor-pointer items-center gap-1 rounded-full px-2 py-1 text-micro transition ${
             note.noteRepeat ? "bg-emerald-500/20 text-success" : "border border-line-soft text-ink-mute hover:text-ink"
           }`}
@@ -61,18 +65,18 @@ export function ActionNotePanel({ c, note }: { c: TodoRow; note: ActionNote }) {
             onChange={(e) => note.setNoteRepeat(e.target.checked)}
             className="h-3 w-3 accent-emerald-500"
           />
-          <Repeat size={12} className="inline align-[-1px]" /> 每日{note.noteRepeat && note.noteDoneCount > 0 ? ` · 已完成 ×${note.noteDoneCount}` : ""}
+          <Repeat size={12} className="inline align-[-1px]" /> {t("每日")}{doneSuffix}
         </label>
         <div className="ml-auto flex gap-2">
           <button onClick={() => note.setNoteOpenId(null)} className="rounded px-2.5 py-1 text-xs text-ink-mute hover:bg-soft">
-            取消
+            {t("取消")}
           </button>
           <button
             onClick={note.saveNote}
             disabled={note.noteSaving || !note.noteTitle.trim()}
             className="rounded bg-sky-600 px-3 py-1 text-xs font-medium hover:bg-sky-500 disabled:opacity-50"
           >
-            {note.noteSaving ? "保存中…" : "保存"}
+            {note.noteSaving ? t("保存中…") : t("保存")}
           </button>
         </div>
       </div>

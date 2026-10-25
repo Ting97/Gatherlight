@@ -6,6 +6,7 @@ import { api } from "@/shared/api";
 import InvitesPanel from "./invites-panel";
 import { TagChip } from "./tag-chip";
 import { MODULE_REGISTRY } from "@shiguangri/shared/modules";
+import { t, tpl } from "@/i18n";
 
 /**
  * /admin · 营销管理模块（REQ-001 R4 + REQ-028 FR-A5）：邀请管理（InvitesPanel 自包含）
@@ -89,14 +90,14 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
     if (mutatingRef.current) return; // 防连点重复提交
     if (overridesErr) {
       // 当前态未知（矩阵没加载出来）：显示的「跟随」不可信，禁止写入防误覆盖
-      notify("覆盖矩阵加载失败，请先重试加载", false);
+      notify(t("覆盖矩阵加载失败，请先重试加载"), false);
       return;
     }
     mutatingRef.current = true;
     try {
       await api("/api/admin/grants", "POST", { userId, module, ...patch });
     } catch {
-      notify("覆盖写入失败", false);
+      notify(t("覆盖写入失败"), false);
       loadOverrides();
       return;
     } finally {
@@ -113,7 +114,7 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
       userId,
       module,
       { force_state: next },
-      next === null ? "已恢复跟随全局" : next === "on" ? "✅ 已强制开启（仅该用户）" : "已强制关闭（仅该用户）",
+      next === null ? t("已恢复跟随全局") : next === "on" ? t("✅ 已强制开启（仅该用户）") : t("已强制关闭（仅该用户）"),
     );
   }
 
@@ -124,7 +125,7 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
       userId,
       module,
       { switch_visible: next },
-      next === null ? "可见性恢复跟随" : next ? "【我的】已展示该开关" : "【我的】已隐藏该开关",
+      next === null ? t("可见性恢复跟随") : next ? t("【我的】已展示该开关") : t("【我的】已隐藏该开关"),
     );
   }
 
@@ -134,12 +135,12 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
     try {
       await api("/api/billing/plan", "POST", { userId, plan, months: 12 });
     } catch {
-      notify("套餐变更失败", false);
+      notify(t("套餐变更失败"), false);
       return;
     } finally {
       mutatingRef.current = false;
     }
-    notify(plan === "pro" ? "已开通 Pro（1 年）" : "已取消 Pro");
+    notify(plan === "pro" ? t("已开通 Pro（1 年）") : t("已取消 Pro"));
     loadUsers();
   }
 
@@ -148,47 +149,47 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
       {/* 用户套餐 + 按用户模块覆盖矩阵 */}
       <section className="glass rounded-2xl p-5">
         <h2 className="text-sm font-semibold text-ink-soft">
-          <TagChip icon={<User size={12} />} label="用户套餐与模块覆盖" tone="sky" />
+          <TagChip icon={<User size={12} />} label={t("用户套餐与模块覆盖")} tone="sky" />
         </h2>
         <p className="mt-1.5 text-badge text-ink-faint">
-          主按钮三态循环：跟随全局 → 强制开 → 强制关（仅该用户）；眼睛按钮控制【我的 → 功能管理】里是否展示该开关项。全局开关在「模块」tab。
+          {t("主按钮三态循环：跟随全局 → 强制开 → 强制关（仅该用户）；眼睛按钮控制【我的 → 功能管理】里是否展示该开关项。全局开关在「模块」tab。")}
         </p>
         {overridesErr && (
           <div className="mt-2 flex items-center gap-2 text-xs">
-            <p className="text-danger">覆盖矩阵加载失败：{overridesErr}（写入已禁用）</p>
+            <p className="text-danger">{tpl("覆盖矩阵加载失败：{err}（写入已禁用）", { err: overridesErr })}</p>
             <button onClick={loadOverrides} className="btn-primary rounded-lg px-3 py-1 text-micro font-medium">
-              重试
+              {t("重试")}
             </button>
           </div>
         )}
         {usersErr ? (
           <div className="mt-2 text-xs">
-            <p className="text-danger">加载失败：{usersErr}</p>
+            <p className="text-danger">{tpl("加载失败：{err}", { err: usersErr })}</p>
             <button onClick={loadUsers} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-              重试
+              {t("重试")}
             </button>
           </div>
         ) : !users ? (
-          <p className="mt-2 text-xs text-ink-dim">加载中…</p>
+          <p className="mt-2 text-xs text-ink-dim">{t("加载中…")}</p>
         ) : (
           <div className="scrollbar-none mt-3 overflow-x-auto">
             <table className="w-full min-w-[720px] border-separate border-spacing-0 text-xs">
               <thead>
                 <tr>
-                  <th className="sticky left-0 z-10 bg-surface/95 px-2 py-1.5 text-left font-medium text-ink-dim backdrop-blur">用户</th>
+                  <th className="sticky left-0 z-10 bg-surface/95 px-2 py-1.5 text-left font-medium text-ink-dim backdrop-blur">{t("用户")}</th>
                   {MATRIX_MODULES.map((m) => (
                     <th key={m.key} title={`${m.name}（${m.key}）`} className="px-1 py-1.5 text-center font-medium text-ink-dim">
                       {m.name}
                     </th>
                   ))}
-                  <th className="px-2 py-1.5 text-left font-medium text-ink-dim">套餐</th>
+                  <th className="px-2 py-1.5 text-left font-medium text-ink-dim">{t("套餐")}</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
                   <tr key={u.id} className="border-t border-line-soft/60">
                     <td className="sticky left-0 z-10 max-w-[9rem] truncate bg-surface/95 px-2 py-1.5 backdrop-blur">
-                      <span className="text-ink">{u.nickname ?? "未命名"}</span>
+                      <span className="text-ink">{u.nickname ?? t("未命名")}</span>
                       <span className="ml-1 text-ink-faint">{u.email ?? ""}</span>
                     </td>
                     {MATRIX_MODULES.map((m) => {
@@ -201,10 +202,10 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
                             onClick={() => cycleForce(u.id, m.key, force)}
                             title={
                               force === null
-                                ? "跟随全局（点击强制开）"
+                                ? t("跟随全局（点击强制开）")
                                 : force === "on"
-                                  ? "已强制开（点击强制关）"
-                                  : "已强制关（点击恢复跟随）"
+                                  ? t("已强制开（点击强制关）")
+                                  : t("已强制关（点击恢复跟随）")
                             }
                             className={`tap-lg inline-flex h-6 w-6 items-center justify-center rounded-md transition ${
                               force === "on"
@@ -219,17 +220,17 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
                             ) : force === "off" ? (
                               <Lock size={11} aria-hidden />
                             ) : (
-                              <span className="text-micro">跟</span>
+                              <span className="text-micro">{t("跟")}</span>
                             )}
                           </button>
                           <button
                             onClick={() => cycleVisible(u.id, m.key, visible)}
                             title={
                               visible === null
-                                ? "开关可见性跟随全局（点击强制可见）"
+                                ? t("开关可见性跟随全局（点击强制可见）")
                                 : visible
-                                  ? "【我的】强制展示该开关（点击强制隐藏）"
-                                  : "【我的】强制隐藏该开关（点击恢复跟随）"
+                                  ? t("【我的】强制展示该开关（点击强制隐藏）")
+                                  : t("【我的】强制隐藏该开关（点击恢复跟随）")
                             }
                             className={`tap-lg ml-0.5 inline-flex h-6 w-6 items-center justify-center rounded-md transition ${
                               visible === true
@@ -246,21 +247,21 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
                     })}
                     <td className="whitespace-nowrap px-2 py-1.5">
                       <span className={u.plan === "pro" ? "font-medium text-amber-400" : "text-ink-mute"}>
-                        {u.plan === "pro" ? "Pro" : "免费"}·{u.used30d}次
+                        {u.plan === "pro" ? "Pro" : t("免费")}·{tpl("{n} 次", { n: u.used30d })}
                       </span>
                       {u.plan === "pro" ? (
                         <button
                           onClick={() => setPlan(u.id, "free")}
                           className="ml-2 rounded-lg border border-line-soft bg-surface/60 px-2 py-0.5 text-micro text-ink-soft transition hover:border-rose-500/50"
                         >
-                          取消Pro
+                          {t("取消Pro")}
                         </button>
                       ) : (
                         <button
                           onClick={() => setPlan(u.id, "pro")}
                           className="ml-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-micro font-medium text-warn transition hover:bg-amber-500/20"
                         >
-                          升级
+                          {t("升级")}
                         </button>
                       )}
                     </td>

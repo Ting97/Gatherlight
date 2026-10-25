@@ -5,6 +5,7 @@ import { Circle, Star } from "lucide-react";
 import { Dismissable } from "@/components/dismissable";
 import { dueTag } from "@/components/todo-bits";
 import type { TodoItem } from "@/lib/types";
+import { t as tr, tpl } from "@/i18n";
 import type { TodoActions } from "./use-todo-actions";
 
 /** 「关联已有 TODO/行动」浮层（自 detail.tsx 拆出；桌面居中 / 移动端底部弹层） */
@@ -27,14 +28,14 @@ export default function LinkPickerModal(opts: {
         return (
           <>
             <p className="mb-2 flex items-center justify-between px-0.5">
-              <span className="text-xs font-semibold text-ink">关联已有 TODO / 行动</span>
-              <span className="text-badge tabular-nums text-ink-faint">{linkItems.length} 条未关联</span>
+              <span className="text-xs font-semibold text-ink">{tr("关联已有 TODO / 行动")}</span>
+              <span className="text-badge tabular-nums text-ink-faint">{tpl("{n} 条未关联", { n: linkItems.length })}</span>
             </p>
             <input
               autoFocus
               value={linkQuery}
               onChange={(e) => setLinkQuery(e.target.value)}
-              placeholder="搜索标题…"
+              placeholder={tr("搜索标题…")}
               className="mb-2 w-full rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-sky-500"
             />
             <div className="max-h-[46dvh] space-y-0.5 overflow-y-auto sm:max-h-72">
@@ -50,7 +51,7 @@ export default function LinkPickerModal(opts: {
                     <span className="min-w-0 flex-1 truncate" title={t.title}>
                       {t.kind === "action" && (
                         <span className="mr-1 inline-flex items-center rounded bg-slate-500/15 px-1 py-0.5 align-middle text-badge text-ink-dim">
-                          行动
+                          {tr("行动")}
                         </span>
                       )}
                       {t.title}
@@ -62,8 +63,8 @@ export default function LinkPickerModal(opts: {
               {shown.length === 0 && (
                 <p className="px-2 py-6 text-center text-micro text-ink-faint">
                   {linkItems.length === 0
-                    ? "没有未关联的 TODO/行动 —— 顶层条目都已归属空间"
-                    : "没有匹配的 TODO/行动"}
+                    ? tr("没有未关联的 TODO/行动 —— 顶层条目都已归属空间")
+                    : tr("没有匹配的 TODO/行动")}
                 </p>
               )}
             </div>
@@ -71,7 +72,7 @@ export default function LinkPickerModal(opts: {
               onClick={() => setLinkOpen(false)}
               className="mt-2 w-full rounded-lg border border-line-soft py-1.5 text-micro text-ink-mute transition hover:bg-soft"
             >
-              关闭
+              {tr("关闭")}
             </button>
           </>
         );

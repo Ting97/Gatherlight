@@ -8,6 +8,7 @@ import { FilterChip } from "@/components/tag-chip";
 import type { Activity, FeedMoment, Space } from "@/lib/types";
 import { bjToday } from "@/lib/date";
 import { t, tpl } from "@/i18n";
+import { spaceName } from "@/lib/space-i18n";
 
 interface Props {
   moments: FeedMoment[];
@@ -73,9 +74,15 @@ export default function FeedSection({
           {" "}
           <span className="ml-1 text-xs font-normal text-ink-dim">
             {query
-              ? `找到 ${feedTotal} 条`
+              ? tpl("找到 {n} 条", { n: feedTotal })
               : feedTotal > 0
-                ? tpl("共 {total} 条{extra}", { total: feedTotal, extra: feedTotal > moments.length ? tpl(" · 已显示 {n} 条", { n: moments.length }) : t(" · 悬停卡片可修正识别") })
+                ? tpl("共 {total} 条{extra}", {
+                    total: feedTotal,
+                    extra:
+                      feedTotal > moments.length
+                        ? tpl(" · 已显示 {n} 条", { n: moments.length })
+                        : t(" · 悬停卡片可修正识别"),
+                  })
                 : ""}
           </span>
         </h2>
@@ -125,7 +132,7 @@ export default function FeedSection({
               variant="filter"
               active={spaceFilter === s.id}
               icon={<span className="text-xs leading-none">{s.icon}</span>}
-              label={s.name}
+              label={spaceName(s)}
               onClick={() => onSpaceChange(s.id)}
             />
           ))}

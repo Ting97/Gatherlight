@@ -10,7 +10,8 @@ import SubNav from "@/components/sub-nav";
 import AssistantDock from "@/components/assistant-dock";
 import { useSession } from "@/shared/session";
 import ModuleLocked from "@/components/module-locked";
-import { t } from "@/i18n";
+// useEffect 里有局部变量 t（URLSearchParams.get("tab")），i18n 的 t 按 AGENTS 约定别名导入避免遮蔽
+import { t as tr } from "@/i18n";
 
 /**
  * 日程模块：日历（时间统计四视图）+ TODO（待办管理）+ 分类（活动分类管理）。
@@ -18,11 +19,6 @@ import { t } from "@/i18n";
  */
 
 type Tab = "calendar" | "todo" | "categories";
-const TABS: [Tab, string][] = [
-  ["calendar", t("日历")],
-  ["todo", "todo"],
-  ["categories", t("分类")],
-];
 
 export default function SchedulePage() {
   const [tab, setTab] = useState<Tab>("calendar");
@@ -30,6 +26,12 @@ export default function SchedulePage() {
   const [mounted, setMounted] = useState<Record<Tab, boolean>>({ calendar: true, todo: false, categories: false });
   // ?date=YYYY-MM-DD 直达某天（动态流冲突提示「去调整」跳转用）；非法值回落今天
   const [initialDate, setInitialDate] = useState<string | undefined>();
+  // 子页 tab 标签在组件体内渲染期取词（模块顶层调 t() 会定格 import 时的语言）
+  const TABS: [Tab, string][] = [
+    ["calendar", tr("日历")],
+    ["todo", "todo"],
+    ["categories", tr("分类")],
+  ];
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -54,10 +56,10 @@ export default function SchedulePage() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8">
           <ModuleLocked
-            title={t("日程")}
-            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
+            title={tr("日程")}
+            desc={tr("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/"
-            backLabel={t("返回首页")}
+            backLabel={tr("返回首页")}
           />
         </div>
       </main>
@@ -71,12 +73,12 @@ export default function SchedulePage() {
         {/* 模块抬头：与动态/财务统一的居中 hero 样式；子页切换居中悬挂在副标题下（FR-4.3 公共 SubNav） */}
         <header className="mb-5 text-center">
           <h1 className="text-gradient text-3xl font-bold tracking-wide sm:text-4xl">
-            拾光<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">日程</span>
+            {tr("拾光")}<span className="ml-2 align-middle text-sm font-normal tracking-normal text-ink-dim">{tr("日程")}</span>
           </h1>
-          <p className="mt-2 text-xs text-ink-dim">时间去了哪、todo 推进如何 —— 日历 · 看板 · 分类</p>
+          <p className="mt-2 text-xs text-ink-dim">{tr("时间去了哪、todo 推进如何 —— 日历 · 看板 · 分类")}</p>
           <SubNav
             className="mt-3"
-            ariaLabel={t("日程子导航")}
+            ariaLabel={tr("日程子导航")}
             value={tab}
             onChange={(k) => setTab(k as Tab)}
             items={TABS.map(([v, label]) => ({
@@ -111,7 +113,7 @@ export default function SchedulePage() {
         )}
         <footer className="mt-10 text-center">
           <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">
-            拾光 · 日程
+            {tr("拾光 · 日程")}
           </span>
         </footer>
       </div>

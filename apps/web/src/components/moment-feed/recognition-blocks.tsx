@@ -9,7 +9,8 @@ import { useHoverCapable } from "./use-hover-capable";
 import { combineHM, combineHmEndCrossDay } from "@/lib/bj-time"; // 北京口径版：本地 setHours 在海外设备会偏 8 小时（与日程页同源）
 import { dayPrefix, zhClock } from "./kit";
 import type { DelFn, RunFn } from "./types";
-import { t } from "@/i18n";
+import { t, getLang } from "@/i18n";
+import { durationLabel, activityLabel } from "@shiguangri/shared/i18n-enum";
 
 /** 日程块行内编辑态 */
 interface EditBlockState {
@@ -89,7 +90,7 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
                 }
                 className="rounded bg-sky-600 px-2 py-1 text-micro font-medium hover:bg-sky-500"
               >
-                保存
+                {t("保存")}
               </button>
             </span>
           </div>
@@ -116,10 +117,10 @@ export function BlockRows({ m, activities, run, del, delArmed }: BlockRowsProps)
           >
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: b.color }} />
             <span className="truncate">
-              {b.icon} {b.activityName} · {b.title}
+              {b.icon} {activityLabel(b.activityName, getLang())} · {b.title}
             </span>
             <span className="shrink-0 tabular-nums text-ink-mute">
-              {dayPrefix(b.startAt)}{zhClock(b.startAt)}–{zhClock(b.endAt)} · {b.durationMin} 分钟
+              {dayPrefix(b.startAt)}{zhClock(b.startAt)}–{zhClock(b.endAt)} · {durationLabel(b.durationMin, getLang())}
             </span>
             <RowAction
               onEdit={() =>

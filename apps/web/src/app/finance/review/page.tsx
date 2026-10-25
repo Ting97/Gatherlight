@@ -11,7 +11,8 @@ import { addDays as sharedAddDays, bjToday as sharedBjToday, startOfWeek } from 
 import { fmtMoney } from "@/components/finance/kit";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
-import { t } from "@/i18n";
+import { t, tpl, getLang } from "@/i18n";
+import { txCatLabel } from "@shiguangri/shared/i18n-enum";
 
 /**
  * 收支复盘（REQ-003 3-F FR-C2.7；REQ-005 FR-4.4 更名）：日/周统计（纯 SQL）+ AI 收支周报（缓存/配额走复盘管线）。
@@ -208,7 +209,7 @@ export default function FinanceReviewPage() {
               onClick={() => setAnchor(bjToday())}
               className="rounded-lg px-2 py-1.5 text-micro text-ink-mute hover:text-accent"
             >
-              今
+              {t("今")}
             </button>
           </div>
         </div>
@@ -216,9 +217,9 @@ export default function FinanceReviewPage() {
         {!stats ? (
           statsErr ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-danger">加载失败：{statsErr}</p>
+              <p className="text-sm text-danger">{t("加载失败：")}{statsErr}</p>
               <button onClick={() => void loadStats()} className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs">
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : (
@@ -229,9 +230,9 @@ export default function FinanceReviewPage() {
             {/* 刷新失败横幅（保留旧统计口径）：数据可能滞后，给重试入口而不撤走可用数据 */}
             {statsErr && (
               <div className="mb-3 flex items-center justify-between rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-xs text-danger">
-                <span>刷新失败：{statsErr}（下方为最近成功的数据）</span>
+                <span>{t("刷新失败：")}{statsErr}{t("（下方为最近成功的数据）")}</span>
                 <button onClick={() => void loadStats()} className="shrink-0 underline underline-offset-2">
-                  重试
+                  {t("重试")}
                 </button>
               </div>
             )}
@@ -243,7 +244,7 @@ export default function FinanceReviewPage() {
                   <p className="mt-1 text-xl font-bold tabular-nums text-danger">{fmt(stats.totals.outCents)}</p>
                   {outMom != null && (
                     <p className={`mt-0.5 text-badge tabular-nums ${outMom > 0 ? "text-danger" : "text-success"}`}>
-                      环比 {outMom > 0 ? "+" : ""}{outMom}%
+                      {tpl("环比 {v}%", { v: (outMom > 0 ? "+" : "") + outMom })}
                     </p>
                   )}
                 </div>
@@ -252,7 +253,7 @@ export default function FinanceReviewPage() {
                   <p className="mt-1 text-xl font-bold tabular-nums text-success">{fmt(stats.totals.inCents)}</p>
                   {inMom != null && (
                     <p className={`mt-0.5 text-badge tabular-nums ${inMom > 0 ? "text-success" : "text-danger"}`}>
-                      环比 {inMom > 0 ? "+" : ""}{inMom}%
+                      {tpl("环比 {v}%", { v: (inMom > 0 ? "+" : "") + inMom })}
                     </p>
                   )}
                 </div>
@@ -260,7 +261,7 @@ export default function FinanceReviewPage() {
                   <p className="text-micro text-ink-dim">{t("笔数")}</p>
                   <p className="mt-1 text-xl font-bold tabular-nums text-ink">{stats.totals.count}</p>
                   <p className="mt-0.5 text-badge text-ink-faint">
-                    结余 <span className={stats.totals.inCents - stats.totals.outCents >= 0 ? "text-success" : "text-danger"}>{fmt(stats.totals.inCents - stats.totals.outCents)}</span>
+                    {t("结余 ")}<span className={stats.totals.inCents - stats.totals.outCents >= 0 ? "text-success" : "text-danger"}>{fmt(stats.totals.inCents - stats.totals.outCents)}</span>
                   </p>
                 </div>
               </div>
@@ -275,12 +276,12 @@ export default function FinanceReviewPage() {
                     <div key={d.date} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                       <div className="flex h-16 w-full items-end justify-center gap-0.5">
                         <div
-                          title={`支出 ${fmt(d.outCents)}`}
+                          title={tpl("支出 {v}", { v: fmt(d.outCents) })}
                           className="w-2.5 rounded-t bg-gradient-to-t from-rose-600/50 to-rose-400/80"
                           style={{ height: d.outCents > 0 ? Math.max(3, (d.outCents / maxDaily) * 64) : 2 }}
                         />
                         <div
-                          title={`收入 ${fmt(d.inCents)}`}
+                          title={tpl("收入 {v}", { v: fmt(d.inCents) })}
                           className="w-2.5 rounded-t bg-gradient-to-t from-emerald-600/50 to-emerald-400/80"
                           style={{ height: d.inCents > 0 ? Math.max(3, (d.inCents / maxDaily) * 64) : 2 }}
                         />
@@ -303,7 +304,7 @@ export default function FinanceReviewPage() {
                   {stats.byCategory.map((s) => (
                     <div
                       key={s.category}
-                      title={`${s.category} ${fmt(s.cents)}（${s.pct}%）`}
+                      title={`${txCatLabel(s.category, getLang())} ${fmt(s.cents)}（${s.pct}%）`}
                       style={{ width: `${s.pct}%`, backgroundColor: TX_COLORS[s.category] ?? "#64748b" }}
                     />
                   ))}
@@ -311,7 +312,7 @@ export default function FinanceReviewPage() {
                 <ul className="mt-3 space-y-1.5">
                   {stats.byCategory.map((s) => (
                     <li key={s.category} className="flex items-center gap-2 text-xs">
-                      <span className="w-16 shrink-0 truncate text-ink-mute">{s.category}</span>
+                      <span className="w-16 shrink-0 truncate text-ink-mute">{txCatLabel(s.category, getLang())}</span>
                       <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-elevated">
                         <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-indigo-400" style={{ width: `${s.pct}%` }} />
                       </div>
@@ -332,7 +333,7 @@ export default function FinanceReviewPage() {
                     {stats.byAccount.map((a) => (
                       <li key={a.name} className="flex items-center gap-2 text-xs">
                         <span>{a.icon}</span>
-                        <span className="min-w-0 flex-1 truncate text-ink-mute">{a.name}</span>
+                        <span className="min-w-0 flex-1 truncate text-ink-mute">{a.name === "未指定" ? t("未指定") : a.name}</span>
                         <span className="tabular-nums text-danger">{a.outCents > 0 ? `-${fmt(a.outCents)}` : ""}</span>
                         {a.inCents > 0 && <span className="tabular-nums text-success">+{fmt(a.inCents)}</span>}
                       </li>
@@ -347,7 +348,7 @@ export default function FinanceReviewPage() {
                     {stats.topCounterparties.map((p) => (
                       <li key={p.name} className="flex items-center gap-2 text-xs">
                         <span className="min-w-0 flex-1 truncate text-ink-mute">{p.name}</span>
-                        <span className="text-ink-faint">{p.count} 笔</span>
+                        <span className="text-ink-faint">{tpl("{n} 笔", { n: p.count })}</span>
                         <span className="tabular-nums text-danger">{fmt(p.outCents)}</span>
                       </li>
                     ))}
@@ -402,9 +403,9 @@ export default function FinanceReviewPage() {
             )}
 
 <footer className="mt-10 text-center">
-          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">拾光 · 收支复盘</span>
+          <span className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 px-2 py-0.5 text-[10px] text-ai">{t("拾光 · 收支复盘")}</span>
         </footer>
-            <p className="mt-2 text-center text-badge text-ink-faint">统计零 AI 消耗，周报走 AI 配额</p>
+            <p className="mt-2 text-center text-badge text-ink-faint">{t("统计零 AI 消耗，周报走 AI 配额")}</p>
           </>
         )}
       </div>

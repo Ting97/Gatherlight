@@ -4,6 +4,8 @@ import { useRef, useState } from "react";
 import { LayoutGrid } from "lucide-react";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t, tpl, getLang } from "@/i18n";
+import { moduleLabel } from "@shiguangri/shared/i18n-enum";
 import Switch from "./switch";
 import { TagChip } from "./tag-chip";
 import { useSession } from "@/shared/session";
@@ -30,7 +32,9 @@ export default function ModulePrefsSection() {
       // 返回体即新 me()：直接 setUser，导航/入口即时显隐（无需整页刷新）
       const j = await api<typeof me>("/api/auth/module-prefs", "PATCH", { module: key, enabled: next });
       setUser(j);
-      toast(next ? `✅ ${name}已开启` : `${name}已关闭（数据保留，随时可再开启）`);
+      // 模块名入库值为中文，展示层按当前语言映射（i18n-enum 约定，未映射名回退原文）
+      const label = moduleLabel(name, getLang());
+      toast(next ? tpl("✅ {name}已开启", { name: label }) : tpl("{name}已关闭（数据保留，随时可再开启）", { name: label }));
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
     } finally {
@@ -44,9 +48,9 @@ export default function ModulePrefsSection() {
     return (
       <section className="glass mb-5 rounded-2xl p-5">
         <h2 className="text-sm font-semibold text-ink-soft">
-          <TagChip icon={<LayoutGrid size={12} />} label="功能管理" tone="sky" />
+          <TagChip icon={<LayoutGrid size={12} />} label={t("功能管理")} tone="sky" />
         </h2>
-        <p className="mt-1.5 text-micro text-ink-dim">管理员账号全模块直通，无需自选开关。</p>
+        <p className="mt-1.5 text-micro text-ink-dim">{t("管理员账号全模块直通，无需自选开关。")}</p>
       </section>
     );
   }
@@ -54,9 +58,9 @@ export default function ModulePrefsSection() {
     return (
       <section className="glass mb-5 rounded-2xl p-5">
         <h2 className="text-sm font-semibold text-ink-soft">
-          <TagChip icon={<LayoutGrid size={12} />} label="功能管理" tone="sky" />
+          <TagChip icon={<LayoutGrid size={12} />} label={t("功能管理")} tone="sky" />
         </h2>
-        <p className="mt-1.5 text-micro text-ink-dim">当前没有可自行开关的模块。</p>
+        <p className="mt-1.5 text-micro text-ink-dim">{t("当前没有可自行开关的模块。")}</p>
       </section>
     );
   }
@@ -69,10 +73,10 @@ export default function ModulePrefsSection() {
   return (
     <section className="glass mb-5 rounded-2xl p-5">
       <h2 className="text-sm font-semibold text-ink-soft">
-        <TagChip icon={<LayoutGrid size={12} />} label="功能管理" tone="sky" />
+        <TagChip icon={<LayoutGrid size={12} />} label={t("功能管理")} tone="sky" />
       </h2>
       <p className="mt-1.5 text-micro text-ink-dim">
-        按需开关功能模块：关闭即隐藏入口（数据保留不删），重新开启即恢复。
+        {t("按需开关功能模块：关闭即隐藏入口（数据保留不删），重新开启即恢复。")}
       </p>
       <ul className="mt-3 space-y-1">
         {controllable.map((p) => {
@@ -85,16 +89,17 @@ export default function ModulePrefsSection() {
               }`}
               style={p.level === "submodule" ? { marginLeft: 24 } : undefined}
             >
-              <span className="min-w-0 flex-1 truncate font-medium text-ink">{p.name}</span>
+              <span className="min-w-0 flex-1 truncate font-medium text-ink">{moduleLabel(p.name, getLang())}</span>
               {!parentOn && p.parent && (
-                <span className="shrink-0 text-micro text-ink-faint">先开启上级模块</span>
+                <span className="shrink-0 text-micro text-ink-faint">{t("先开启上级模块")}</span>
               )}
               <Switch
                 checked={p.effective && parentOn}
                 disabled={busy || !parentOn}
                 onChange={(next) => toggle(p.key, p.name, next)}
-                // title 与 checked 同口径：父模块关闭时开关显示为关，tooltip 不得提示「点击关闭」
-                title={p.effective && parentOn ? "点击关闭" : "点击开启"}
+                // title 与 checked 同口径：父模块关闭时开关显示为关，tooltip 不得提示可关闭；
+                // 用「点击关闭模块」精确措辞——裸「点击关闭」与 toast 的关闭提示同 key 不同义
+                title={p.effective && parentOn ? t("点击关闭模块") : t("点击开启模块")}
               />
             </li>
           );

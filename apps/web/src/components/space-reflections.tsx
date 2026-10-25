@@ -5,6 +5,7 @@ import { NotebookPen, Pencil, Trash2 } from "lucide-react";
 import { api, ApiClientError } from "@/shared/api";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import MarkdownView from "@/components/markdown-view";
+import { t, tpl } from "@/i18n";
 
 /** 列表条目：预览 300 字 + 字数（GET 列表不回全文，FR-N2.4） */
 export interface ReflectionItem {
@@ -57,7 +58,7 @@ export default function SpaceReflections({
         setItems((prev) => (offset === 0 ? (j.items as ReflectionItem[]) : [...(prev ?? []), ...(j.items as ReflectionItem[])]));
       } catch (e) {
         if (seq !== loadSeqRef.current) return;
-        const text = `感悟加载失败：${e instanceof Error ? e.message : e}`;
+        const text = tpl("感悟加载失败：{msg}", { msg: e instanceof Error ? e.message : String(e) });
         setLoadErr(text);
         notify({ ok: false, text });
       }
@@ -85,7 +86,7 @@ export default function SpaceReflections({
       const j = await api<any>(`/api/spaces/${spaceId}/reflections/${it.id}`, "GET");
       setExpanded((s) => ({ ...s, [it.id]: j.reflection.content }));
     } catch (e) {
-      notify({ ok: false, text: `全文加载失败：${e instanceof Error ? e.message : e}` });
+      notify({ ok: false, text: tpl("全文加载失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }) });
     }
   }
 
@@ -93,15 +94,15 @@ export default function SpaceReflections({
     if (!armDelete.arm(it.id)) return; // 两步确认（全站规范）：首点进入待确认态，3 秒内再点执行
     try {
       await api<any>(`/api/spaces/${spaceId}/reflections/${it.id}`, "DELETE");
-      notify({ ok: true, text: "🗑 感悟已删除" });
+      notify({ ok: true, text: t("🗑 感悟已删除") });
       onChanged();
       await load(0);
     } catch (e) {
       // 服务端 4xx/5xx 用固定文案；网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
       if (e instanceof ApiClientError) {
-        notify({ ok: false, text: "删除失败" });
+        notify({ ok: false, text: t("删除失败") });
       } else {
-        notify({ ok: false, text: "网络异常，请稍后重试" });
+        notify({ ok: false, text: t("网络异常，请稍后重试") });
       }
     }
   }
@@ -109,7 +110,7 @@ export default function SpaceReflections({
   // 北京时间口径：UTC getter + 8h（本地 getter 在非中国时区设备会错 8 小时）
   const fmtDay = (iso: string) => {
     const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
-    return `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+    return tpl("{y}年{m}月{d}日", { y: d.getUTCFullYear(), m: d.getUTCMonth() + 1, d: d.getUTCDate() });
   };
   const fmtTime = (iso: string) => {
     const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
@@ -120,8 +121,8 @@ export default function SpaceReflections({
     <section className="glass rounded-2xl p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-soft">
-          <NotebookPen size={15} className="text-accent" aria-hidden /> 感悟
-          <span className="text-xs font-normal text-ink-dim">{total} 篇</span>
+          <NotebookPen size={15} className="text-accent" aria-hidden /> {t("感悟")}
+          <span className="text-xs font-normal text-ink-dim">{tpl("{n} 篇", { n: total })}</span>
         </h2>
       </div>
 
@@ -133,15 +134,15 @@ export default function SpaceReflections({
               onClick={() => void load(0)}
               className="mt-2 rounded-lg border border-line-soft px-3 py-1.5 text-ink-mute transition hover:text-accent"
             >
-              重试
+              {t("重试")}
             </button>
           </div>
         ) : (
-          <p className="py-4 text-center text-xs text-ink-dim">加载中…</p>
+          <p className="py-4 text-center text-xs text-ink-dim">{t("加载中…")}</p>
         )
       ) : items.length === 0 ? (
         <p className="py-4 text-center text-xs text-ink-dim">
-          还没有感悟 —— 阶段心得、踩坑复盘、自我对话，写给未来某个时刻的自己
+          {t("还没有感悟 —— 阶段心得、踩坑复盘、自我对话，写给未来某个时刻的自己")}
         </p>
       ) : (
         <>
@@ -154,42 +155,42 @@ export default function SpaceReflections({
                   <div className="flex items-center justify-between">
                     <p className="text-badge text-ink-faint">
                       {day} {fmtTime(it.created_at)}
-                      {it.edited && <span className="ml-1.5">· 已编辑</span>}
+                      {it.edited && <span className="ml-1.5">· {t("已编辑")}</span>}
                     </p>
                     <span className="flex items-center gap-1">
                       <button
                         onClick={() => onEdit(it.id)}
-                        title="编辑（打开时拉取全文）"
+                        title={t("编辑（打开时拉取全文）")}
                         className="row-actions-hidden hidden rounded px-1.5 py-0.5 text-ink-mute hover:text-accent group-hover:block"
                       >
                         <Pencil size={12} />
                       </button>
                       <button
                         onClick={() => void remove(it)}
-                        title={armDelete.armedId === it.id ? "3 秒内再点确认删除" : "删除"}
+                        title={armDelete.armedId === it.id ? t("3 秒内再点确认删除") : t("删除")}
                         className={`row-actions-hidden hidden rounded px-1.5 py-0.5 group-hover:block ${armDelete.armedId === it.id ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:text-danger"}`}
                       >
-                        {armDelete.armedId === it.id ? <span className="text-[10px] font-medium leading-none">确认删除?</span> : <Trash2 size={12} />}
+                        {armDelete.armedId === it.id ? <span className="text-[10px] font-medium leading-none">{t("确认删除?")}</span> : <Trash2 size={12} />}
                       </button>
                     </span>
                   </div>
                   {full !== undefined ? (
                     // 展开态：markdown 渲染（点击收起）
-                    <div onClick={() => void toggleExpand(it)} title="点击收起" className="cursor-pointer">
+                    <div onClick={() => void toggleExpand(it)} title={t("点击收起")} className="cursor-pointer">
                       <MarkdownView value={full} />
                     </div>
                   ) : (
                     // 折叠态：纯文本 preview（后端截 300 字会切碎 markdown 语法，保持原样 + line-clamp）
                     <p
                       onClick={() => void toggleExpand(it)}
-                      title="点击展开全文"
+                      title={t("点击展开全文")}
                       className="mt-1 line-clamp-4 cursor-pointer whitespace-pre-wrap text-xs leading-relaxed text-ink-soft"
                     >
                       {it.preview}
                     </p>
                   )}
                   {/* 「已编辑」只在时间行展示一次，这里不再重复缀字数行尾 */}
-                  <p className="mt-1 text-right text-badge text-ink-faint">{it.chars} 字</p>
+                  <p className="mt-1 text-right text-badge text-ink-faint">{tpl("{n} 字", { n: it.chars })}</p>
                 </li>
               );
             })}
@@ -205,7 +206,7 @@ export default function SpaceReflections({
               }}
               className="mt-3 w-full rounded-xl border border-line-soft py-2 text-xs text-ink-mute transition hover:text-accent disabled:opacity-50"
             >
-              {loadingMore ? "加载中…" : `加载更多（${total - items.length} 篇）`}
+              {loadingMore ? t("加载中…") : tpl("加载更多（{n} 篇）", { n: total - items.length })}
             </button>
           )}
         </>

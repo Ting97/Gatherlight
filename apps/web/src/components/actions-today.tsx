@@ -12,6 +12,7 @@ import SpacePicker from "./space-picker";
 import { api, ApiClientError } from "@/shared/api";
 import { ArrowRight, Check, ChevronDown, ChevronUp, Ellipsis, FileText, Repeat, RotateCcw } from "lucide-react";
 import { t, tpl } from "@/i18n";
+import { spaceName } from "@/lib/space-i18n";
 
 /**
  * 首页「今日行动清单」（REQ-001 R3 + REQ-002 N6）：
@@ -41,7 +42,7 @@ function ActionRow({
             style={{ backgroundColor: `${space.color}22`, color: space.color }}
             title={tpl("已关联空间「{name}」", { name: space.name })}
           >
-            {space.icon} {space.name}
+            {space.icon} {spaceName(space)}
           </span>
         )}
         {!a.parent_title && (
@@ -134,7 +135,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
     try {
       await api("/api/todos", "POST", { title: t, kind: "action", today: true });
       setNewTitle("");
-      notify({ ok: true, text: `⚡ 已添加行动「${t}」` });
+      notify({ ok: true, text: tpl("⚡ 已添加行动「{title}」", { title: t }) });
       await load();
     } catch (e) {
       notify({ ok: false, text: e instanceof Error ? e.message : String(e) });
@@ -150,7 +151,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
     try {
       await api(`/api/todos/${a.id}`, "PATCH", done ? { undone: true } : { done: true });
       if (a.repeat_daily && !done) {
-        notify({ ok: true, text: `🎉 完成「${a.title}」，已坚持 ×${a.repeat_done_count + 1}` });
+        notify({ ok: true, text: tpl("🎉 完成「{title}」，已坚持 ×{n}", { title: a.title, n: a.repeat_done_count + 1 }) });
       }
       await load();
     } catch (e) {
@@ -216,7 +217,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
     setDecomposingId(a.id);
     try {
       const j = await api<{ actions?: unknown[] }>(`/api/todos/${a.id}/decompose`, "POST", mode ? { mode } : {});
-      notify({ ok: true, text: `✨ AI 拆出 ${j.actions?.length ?? 0} 个行动` });
+      notify({ ok: true, text: tpl("✨ AI 拆出 {n} 个行动", { n: j.actions?.length ?? 0 }) });
       await load();
     } catch (e) {
       const status = e instanceof ApiClientError ? e.status : 0;
@@ -224,7 +225,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
         ok: false,
         text:
           status === 409
-            ? `「${a.title}」已有未完成的行动，请从菜单选择「重新生成」或「追加」`
+            ? tpl("「{title}」已有未完成的行动，请从菜单选择「重新生成」或「追加」", { title: a.title })
             : e instanceof Error
               ? e.message
               : String(e),
@@ -238,8 +239,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
   async function menuRemove(a: { id: string; title: string }, isChild: boolean) {
     const ok = await confirmDialog({
       title: isChild ? t("删除行动") : t("删除 todo"),
-      message: isChild ? `「${a.title}」` : `「${a.title}」
-其下行动将一并删除。`,
+      message: isChild ? `「${a.title}」` : `「${a.title}」\n${t("其下行动将一并删除。")}`,
       confirmText: t("删除"),
     });
     if (!ok) return;
@@ -356,10 +356,10 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
       >
         <h2 className="flex items-center gap-2 text-sm font-semibold text-ink-soft">
           <TodoLogo size={17} />
-          <span>今日行动</span>
+          <span>{t("今日行动")}</span>
           {(actions?.length ?? 0) > 0 && (
             <span className="whitespace-nowrap text-xs font-normal text-ink-dim">
-              {done.length}/{actions!.length} 完成
+              {done.length}/{actions!.length} {t("完成")}
             </span>
           )}
         </h2>
@@ -369,7 +369,7 @@ export default function ActionsToday({ notify }: { notify: (e: { ok: boolean; te
             onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-0.5 rounded-lg px-2.5 py-1 text-xs font-medium text-accent transition hover:bg-sky-500/10"
           >
-            规划 <ArrowRight size={12} aria-hidden />
+            {t("规划")} <ArrowRight size={12} aria-hidden />
           </a>
           {collapsed ? <ChevronDown size={14} className="text-ink-mute" /> : <ChevronUp size={14} className="text-ink-mute" />}
         </span>

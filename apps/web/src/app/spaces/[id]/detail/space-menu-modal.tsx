@@ -3,8 +3,10 @@
 import { createPortal } from "react-dom";
 import { Archive, Trash2, Upload } from "lucide-react";
 import { Dismissable } from "@/components/dismissable";
+import { t } from "@/i18n";
 import type { Space } from "@/lib/types";
 import type { Pos } from "./types";
+import { spaceName } from "@/lib/space-i18n";
 
 /** 空间操作菜单（自 detail.tsx 拆出；⋯ 收纳归档/删除；桌面锚定浮层 / 移动端底部弹层）。
  *  onClose 由 detail.tsx 提供（记录关闭时刻，供「⋯」再点关闭仲裁） */
@@ -23,7 +25,7 @@ export default function SpaceMenuModal(opts: {
       style={pos ? { top: pos.top, left: pos.left } : undefined}
     >
       <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-soft sm:hidden" />
-      <p className="mb-1.5 truncate px-1.5 text-micro font-medium text-ink-dim">{space.name}</p>
+      <p className="mb-1.5 truncate px-1.5 text-micro font-medium text-ink-dim">{spaceName(space)}</p>
       <div className="space-y-0.5">
         {space.kind === "sport" ? null : space.status === "archived" ? (
           <button
@@ -31,7 +33,7 @@ export default function SpaceMenuModal(opts: {
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-ink transition hover:bg-wash"
           >
             <span className="flex w-5 shrink-0 justify-center"><Upload size={14} /></span>
-            <span className="min-w-0 flex-1">恢复空间</span>
+            <span className="min-w-0 flex-1">{t("恢复空间")}</span>
           </button>
         ) : (
           <button
@@ -39,7 +41,7 @@ export default function SpaceMenuModal(opts: {
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-warn transition hover:bg-wash"
           >
             <span className="flex w-5 shrink-0 justify-center"><Archive size={14} /></span>
-            <span className="min-w-0 flex-1">归档空间</span>
+            <span className="min-w-0 flex-1">{t("归档空间")}</span>
           </button>
         )}
         {space.kind === "sport" ? null : (
@@ -48,7 +50,7 @@ export default function SpaceMenuModal(opts: {
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-danger transition hover:bg-rose-500/10"
           >
             <span className="flex w-5 shrink-0 justify-center"><Trash2 size={14} /></span>
-            <span className="min-w-0 flex-1">删除空间</span>
+            <span className="min-w-0 flex-1">{t("删除空间")}</span>
           </button>
         )}
       </div>

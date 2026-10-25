@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { useParams } from "next/navigation";
-import { TYPE_EMOJI, type InteractionType } from "@/lib/social";
+import { INTERACTION_TYPES, TYPE_EMOJI, type InteractionType } from "@/lib/social";
 import { isoToBjInput, bjInputToIso } from "@/lib/bj-time";
 import { api } from "@/shared/api"; // 统一走 401 收口层：会话失效跳 /login（裸 client-api 不跳）
 import { Modal } from "@/components/ui/modal";
+import { t as tr, tpl } from "@/i18n"; // t as tr：Object.keys(...).map((t) => 局部参数遮蔽 t
 
 export function InteractionFormModal({
   contactName,
@@ -20,7 +21,8 @@ export function InteractionFormModal({
   const id = !params2.id || params2.id === "__shell__"
     ? (typeof window !== "undefined" ? window.location.pathname.split("/").filter(Boolean)[1] ?? "" : "")
     : params2.id;
-  const [type, setType] = useState<InteractionType>("见面");
+  // 默认往来类型=见面（入库中文值，经 INTERACTION_TYPES 常量取，展示层 tr() 双语）
+  const [type, setType] = useState<InteractionType>(INTERACTION_TYPES[0]);
   const [summary, setSummary] = useState("");
   // 默认值与解析都走北京墙上时间口径：本地 getter 组串/裸 new Date 解析会让输入 20:30 落库成别的时间
   const [when, setWhen] = useState(() => isoToBjInput(new Date().toISOString()));
@@ -28,7 +30,7 @@ export function InteractionFormModal({
   const [err, setErr] = useState<string | null>(null);
 
   return (
-    <Modal title={`补一笔往来 · ${contactName}`} onClose={onClose} busy={busy}>
+    <Modal title={tpl("补一笔往来 · {name}", { name: contactName })} onClose={onClose} busy={busy}>
       <div className="space-y-2.5">
           <div className="flex gap-2">
             <select
@@ -37,7 +39,7 @@ export function InteractionFormModal({
               className="rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none focus:border-sky-500"
             >
               {(Object.keys(TYPE_EMOJI) as InteractionType[]).map((t) => (
-                <option key={t} value={t}>{TYPE_EMOJI[t]} {t}</option>
+                <option key={t} value={t}>{TYPE_EMOJI[t]} {tr(t)}</option>
               ))}
             </select>
             <input
@@ -51,13 +53,13 @@ export function InteractionFormModal({
           <input
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
-            placeholder="记点什么（如：一起看了场电影）"
+            placeholder={tr("记点什么（如：一起看了场电影）")}
             className="w-full rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
           />
           {err && <p className="text-xs text-danger">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button onClick={onClose} className="rounded-lg px-4 py-1.5 text-xs text-ink-mute hover:bg-soft">
-              取消
+              {tr("取消")}
             </button>
             <button
               disabled={busy || !summary.trim()} // 空摘要提交会被服务端拒：按钮态先行禁用
@@ -70,7 +72,7 @@ export function InteractionFormModal({
                     summary,
                     occurredAt: bjInputToIso(when) ?? undefined,
                   });
-                  await onSaved("🤝 已补记一笔往来");
+                  await onSaved(tr("🤝 已补记一笔往来"));
                 } catch (e) {
                   setErr(e instanceof Error ? e.message : String(e));
                 } finally {
@@ -79,7 +81,7 @@ export function InteractionFormModal({
               }}
               className="btn-primary rounded-lg px-5 py-1.5 text-xs font-medium disabled:opacity-40"
             >
-              {busy ? "保存中…" : "记入"}
+              {busy ? tr("保存中…") : tr("记入")}
             </button>
           </div>
         </div>

@@ -14,4 +14,113 @@ export const EN: Record<string, string> = {
   "💾 流水已更新": "💾 Transaction updated",
   "✅ 已记一笔": "✅ Entry added",
   "账户管理": "Accounts",
+
+  // ---- 二级 tab / 导航 ----
+  "概览": "Overview",
+  "财务二级导航": "Finance navigation",
+
+  // ---- 记一笔 / 编辑表单 ----
+  "金额": "Amount",
+  "金额需大于 0": "Amount must be greater than 0",
+  "单笔金额不能超过 ¥100 万": "A single entry can't exceed ¥1,000,000",
+  "请填写发生时间": "Please fill in the time it occurred",
+  "挂到哪个账户（只作标签，不改变账户余额）": "Which account to tag (label only, doesn't change the balance)",
+  "不挂账户": "No account",
+  "对方（可空）": "Counterparty (optional)",
+  "和谁有关 —— 填了会关联到 TA 的人情账（如：老王）": "Who it involves — filling this links to their gift ledger (e.g. Old Wang)",
+  "备注（可空）": "Note (optional)",
+
+  // ---- 账户管理 ----
+  "管理": "Manage",
+  "合计": "Total",
+  "改名失败": "Failed to rename",
+  "点击更换图标": "Click to change the icon",
+  "点击编辑账户名，回车或移开焦点保存": "Click to edit the account name; Enter or blur to save",
+  "期初余额（元，改后账户余额=新期初+流水）": "Opening balance (yuan; after edit, balance = new opening + transactions)",
+  "金额格式不正确": "Invalid amount format",
+  "归档账户（历史流水保留，3 秒内再点确认）": "Archive account (history kept; click again within 3s to confirm)",
+  "归档失败": "Failed to archive",
+  "确认归档?": "Archive?",
+  "更换图标失败": "Failed to change the icon",
+  "新账户名（如：招行储蓄卡）": "New account name (e.g. CMB debit card)",
+  "当前余额": "Current balance",
+  "当前余额（元），可留空": "Current balance (yuan), can be empty",
+  "余额为负——流水大于期初，点「管理」调整期初余额": "Negative balance — transactions exceed the opening balance; tap Manage to adjust the opening balance",
+  "还没有账户 —— 点「管理」添加现金/支付宝等": "No accounts yet — tap Manage to add cash, Alipay, etc.",
+
+  // ---- 流水行 / 列表 ----
+  "支": "Out",
+  "确认记录": "Confirm",
+  "3 秒内再点确认删除": "Click again within 3s to delete",
+  "流水": "Transactions",
+  "{a} / {b} 笔": "{a} / {b}",
+  "{n} 笔": "{n}",
+  '本月还没有流水 —— 说句"打车花了30"，或点「＋ 记一笔」': "No transactions this month yet — say \"taxi cost 30\", or tap \"＋ Add entry\"",
+  "加载更多 · 还有 {n} 笔": "Load more · {n} left",
+
+  // ---- 待确认（草稿）区 ----
+  "待确认流水": "Transactions to confirm",
+  "来自动态识别 · 确认后计入报表": "Recognized from moments · counted in reports once confirmed",
+  "确认中…": "Confirming…",
+  "全部确认": "Confirm all",
+  "有": "There are",
+  "笔动态识别的流水待确认": "moment-recognized transactions to confirm",
+  "去确认": "Confirm",
+
+  // ---- 概览卡 ----
+  "本月支出": "Spent this month",
+  "本月收入": "Income this month",
+  "结余": "Balance",
+  "储蓄率": "Savings rate",
+  "较上月": "vs last month",
+  "储蓄率 · 近 6 个月": "Savings rate · last 6 months",
+  "支出 · 近 6 个月": "Expense · last 6 months",
+  "收入 · 近 6 个月": "Income · last 6 months",
+  "{n}月": "{n}",
+  "{month}：收入 ¥{inAmt} · 支出 ¥{outAmt}": "{month}: income ¥{inAmt} · expense ¥{outAmt}",
+  "{month}：支出 ¥{amt}": "{month}: expense ¥{amt}",
+  "{month}：收入 ¥{amt}": "{month}: income ¥{amt}",
+
+  // ---- 预算 ----
+  "月度支出上限 ¥": "Monthly spend cap ¥",
+  "0 = 不设上限": "0 = no cap",
+  "预警阈值": "Alert threshold",
+  "月度上限 ¥{amt}": "Monthly cap ¥{amt}",
+  "未设月度上限": "No monthly cap set",
+  "调整": "Adjust",
+  "设置": "Set",
+  "⚠️ 已超支 ¥{amt}（{pct}%）": "⚠️ Over cap ¥{amt} ({pct}%)",
+  "⚠️ 已用 {pct}%，接近上限，注意控制": "⚠️ {pct}% used, nearing the cap — watch your spend",
+  "已用 {pct}%": "{pct}% used",
+
+  // ---- 月份导航 / 日期 ----
+  "{y}年{m}月": "{y}/{m}",
+
+  // ---- 收支复盘页 ----
+  // 说明：下列 key 与 pages2.ts EN_REVIEW 同值（那边多 key 同行，审计脚本按行首解析不到，
+  // 此处逐行补齐镜像条目；运行时后 spread 的 pages2 同值覆盖，行为不变）
+  "拾光 · 收支复盘": "Shiguang · Budget review",
+  "周": "Week",
+  "上一周": "Previous week",
+  "下一周": "Next week",
+  "下一日": "Next day",
+  "本周支出": "This week's spend",
+  "本周收入": "This week's income",
+  "支出分类": "Spend by category",
+  "账户分布": "By account",
+  "Top 对方": "Top counterparties",
+  "缓存": "cached",
+  "已生成": "generated",
+  "生成周报": "Generate report",
+  "重新生成": "Regenerate",
+  "今": "Today",
+  "环比": "MoM",
+  "刷新失败：": "Failed to refresh: ",
+  "（下方为最近成功的数据）": " (below is the last successful data)",
+  "统计零 AI 消耗，周报走 AI 配额": "Stats use zero AI quota; the weekly report uses AI quota",
+  "结余 ": "Balance ",
+  "支出 {v}": "Spent {v}",
+  "收入 {v}": "Income {v}",
+  "环比 {v}%": "WoM {v}%",
+  "未指定": "Unassigned",
 };

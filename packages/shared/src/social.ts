@@ -125,9 +125,12 @@ export function birthdayCountdownOf(c: BirthdayFields, today = new Date()): numb
 }
 
 /** 生日完整信息：date 展示文本（农历带「农历」前缀）、下一次生日对应公历（仅农历有） */
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 export function birthdayInfoOf(
   c: BirthdayFields,
   today = new Date(),
+  lang: "zh" | "en" = "zh",
 ): { date: string; countdown: number | null; lunar: boolean; nextSolar: string | null } | null {
   if (c.birthday_cal === "lunar" && c.lunar_month && c.lunar_day) {
     const b = { month: c.lunar_month, day: c.lunar_day, leap: !!c.lunar_leap };
@@ -136,10 +139,12 @@ export function birthdayInfoOf(
     // next 是按北京日历日构造的本地零点 holder（getFullYear 读回即构造值）；today 必须先归一到北京帧，
     // 否则非 CST 宿主在两地年界错位窗口会把「今年」标成「明年」
     const nextSolar = next
-      ? `${next.getFullYear() === bjYearOf(today) ? "今年" : "明年"}${next.getMonth() + 1}月${next.getDate()}日`
+      ? lang === "en"
+        ? `${MONTHS_EN[next.getMonth()]} ${next.getDate()}, ${next.getFullYear() === bjYearOf(today) ? "this year" : "next year"}`
+        : `${next.getFullYear() === bjYearOf(today) ? "今年" : "明年"}${next.getMonth() + 1}月${next.getDate()}日`
       : null;
     return {
-      date: `农历${lunarBirthdayLabel(b)}`,
+      date: lang === "en" ? `Lunar ${c.lunar_month}/${c.lunar_day}${c.lunar_leap ? " (leap)" : ""}` : `农历${lunarBirthdayLabel(b)}`,
       countdown: lunarBirthdayCountdown(b, today),
       lunar: true,
       nextSolar,
@@ -153,7 +158,7 @@ export function birthdayInfoOf(
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (day > new Date(Date.UTC(2000, month, 0)).getUTCDate()) return null; // 真实日历日（2 月无 30 日）
   return {
-    date: `${month}月${day}日`,
+    date: lang === "en" ? `${MONTHS_EN[month - 1]} ${day}` : `${month}月${day}日`,
     countdown: birthdayCountdown(c.birthday, today),
     lunar: false,
     nextSolar: null,
@@ -181,12 +186,17 @@ export function birthdayCountdown(birthday: string | null | undefined, today = n
 }
 
 /** 生日展示（自动区分阳历/农历）：null → null；返回 "10月2日"/"农历五月初二" 与倒计时短语 */
-export function birthdayLabel(c: BirthdayFields, today = new Date()): { date: string; countdown: string | null } | null {
-  const info = birthdayInfoOf(c, today);
+export function birthdayLabel(
+  c: BirthdayFields,
+  today = new Date(),
+  lang: "zh" | "en" = "zh",
+): { date: string; countdown: string | null } | null {
+  const info = birthdayInfoOf(c, today, lang);
   if (!info) return null;
   let countdown: string | null = null;
-  if (info.countdown === 0) countdown = "🎂 今天生日";
-  else if (info.countdown === 1) countdown = "明天生日";
-  else if (info.countdown != null) countdown = `${info.countdown} 天后生日`;
+  if (info.countdown === 0) countdown = lang === "en" ? "🎂 Birthday today" : "🎂 今天生日";
+  else if (info.countdown === 1) countdown = lang === "en" ? "Birthday tomorrow" : "明天生日";
+  else if (info.countdown != null)
+    countdown = lang === "en" ? `Birthday in ${info.countdown} days` : `${info.countdown} 天后生日`;
   return { date: info.date, countdown };
 }

@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BarChart3, Check, Megaphone } from "lucide-react";
 import { api, ApiClientError } from "@/shared/api";
+import { t, tpl, getLang } from "@/i18n";
+import { dateLabel } from "@shiguangri/shared/i18n-enum";
 
 /**
  * 邀请管理面板（仅管理员）：嵌入个人设置页。
@@ -43,11 +45,11 @@ interface UsageByModel {
   d30: Usage;
 }
 
-// 北京时间口径：UTC getter + 8h（本地 getter 在非中国时区设备会错 8 小时）
+// 北京时间口径：UTC getter + 8h（本地 getter 在非中国时区设备会错 8 小时）；展示按当前语言
 const zhDate = (iso: string | null) => {
-  if (!iso) return "不限";
+  if (!iso) return t("不限");
   const d = new Date(new Date(iso).getTime() + 8 * 3600_000);
-  return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+  return dateLabel(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), getLang());
 };
 
 const fmtTokens = (n: number) => (n >= 10_000 ? `${(n / 1000).toFixed(1)}k` : n.toLocaleString("zh-CN"));
@@ -112,7 +114,7 @@ export default function InvitesPanel() {
     setMsg(null);
     try {
       const j = await api<any>("/api/auth/invites", "POST", { days });
-      setMsg(`✅ 已生成邀请码 ${j.invite.code}`);
+      setMsg(tpl("✅ 已生成邀请码 {code}", { code: j.invite.code }));
       await load();
     } catch (e) {
       setMsg(`❌ ${e instanceof Error ? e.message : e}`);
@@ -135,7 +137,7 @@ export default function InvitesPanel() {
       const ok = document.execCommand("copy");
       ta.remove();
       if (!ok) {
-        setMsg("❌ 复制失败，请手动选中邀请码复制");
+        setMsg(t("❌ 复制失败，请手动选中邀请码复制"));
         return;
       }
     }
@@ -145,26 +147,26 @@ export default function InvitesPanel() {
   }
 
   const statusOf = (i: Invite) => {
-    if (i.used_by) return { text: `已使用 · ${i.used_by_name ?? ""}`, cls: "text-ink-dim bg-elevated" };
+    if (i.used_by) return { text: tpl("已使用 · {name}", { name: i.used_by_name ?? "" }), cls: "text-ink-dim bg-elevated" };
     if (i.expires_at && new Date(i.expires_at) < new Date())
-      return { text: "已过期", cls: "text-danger bg-rose-500/10" };
-    return { text: "未使用", cls: "text-success bg-emerald-500/10" };
+      return { text: t("已过期"), cls: "text-danger bg-rose-500/10" };
+    return { text: t("未使用"), cls: "text-success bg-emerald-500/10" };
   };
 
   if (state === "loading") {
     return (
       <section className="glass mb-5 rounded-2xl p-5">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> 邀请管理</h2>
-        <p className="mt-2 py-4 text-center text-xs text-ink-dim">加载中…</p>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> {t("邀请管理")}</h2>
+        <p className="mt-2 py-4 text-center text-xs text-ink-dim">{t("加载中…")}</p>
       </section>
     );
   }
   if (state === "error") {
     return (
       <section className="glass mb-5 rounded-2xl p-5">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> 邀请管理</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> {t("邀请管理")}</h2>
         <div className="mt-2 py-4 text-center">
-          <p className="text-xs text-danger">加载失败：{loadErr}</p>
+          <p className="text-xs text-danger">{t("加载失败：")}{loadErr}</p>
           <button
             onClick={() => {
               setState("loading");
@@ -172,7 +174,7 @@ export default function InvitesPanel() {
             }}
             className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium"
           >
-            重试
+            {t("重试")}
           </button>
         </div>
       </section>
@@ -181,53 +183,53 @@ export default function InvitesPanel() {
   if (state === "forbidden") {
     return (
       <section className="glass mb-5 rounded-2xl p-5">
-        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> 邀请管理</h2>
-        <p className="mt-2 text-xs text-ink-mute">仅管理员（初始化账号）可管理邀请码</p>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> {t("邀请管理")}</h2>
+        <p className="mt-2 text-xs text-ink-mute">{t("仅管理员（初始化账号）可管理邀请码")}</p>
       </section>
     );
   }
 
   return (
     <section className="glass mb-5 rounded-2xl p-5">
-      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> 邀请管理</h2>
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> {t("邀请管理")}</h2>
       <p className="mt-1 text-xs text-ink-dim">
-        注册已开放，无需邀请码；邀请码仅作注册来源记录（一码一人），生成后可发给对方留档
+        {t("注册已开放，无需邀请码；邀请码仅作注册来源记录（一码一人），生成后可发给对方留档")}
       </p>
 
       {/* Token 消耗（管理员视角：自己 + 被邀请人） */}
       <div className="mt-4 border-t border-line-soft pt-3">
         <p className="flex items-center gap-1 text-xs font-medium text-ink-soft">
           <BarChart3 size={12} className="text-accent" aria-hidden />
-          Token 消耗
-          <span className="text-micro font-normal text-ink-dim">识别 · 复盘 · 语音全阶段</span>
+          {t("Token 消耗")}
+          <span className="text-micro font-normal text-ink-dim">{t("识别 · 复盘 · 语音全阶段")}</span>
         </p>
 
         {!usage && usageErr ? (
           <p className="mt-2 text-xs text-ink-dim">
-            消耗数据加载失败
-            <button onClick={retryUsage} className="ml-2 underline underline-offset-2">重试</button>
+            {t("消耗数据加载失败")}
+            <button onClick={retryUsage} className="ml-2 underline underline-offset-2">{t("重试")}</button>
           </p>
         ) : !usage ? (
-          <p className="mt-2 text-xs text-ink-dim">消耗数据加载中…</p>
+          <p className="mt-2 text-xs text-ink-dim">{t("消耗数据加载中…")}</p>
         ) : (
           <>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {(
                 [
-                  ["全部累计", usage.self.all],
-                  ["近 30 天", usage.self.d30],
+                  [t("全部累计"), usage.self.all],
+                  [t("近 30 天"), usage.self.d30],
                 ] as const
               ).map(([label, u]) => (
                 <div key={label} className="rounded-xl border border-line-soft bg-elevated/60 px-3 py-2.5">
                   <p className="text-micro text-ink-dim">
-                    我的消耗 · {label}
-                    <span className="ml-1 text-ink-faint">（{u.calls} 次调用）</span>
+                    {tpl("我的消耗 · {label}", { label })}
+                    <span className="ml-1 text-ink-faint">{tpl("（{n} 次调用）", { n: u.calls })}</span>
                   </p>
                   <p className="mt-0.5 text-lg font-semibold tabular-nums text-ink">
                     {fmtTotal(u)} <span className="text-xs font-normal text-ink-mute">tokens</span>
                   </p>
                   <p className="text-badge tabular-nums text-ink-faint">
-                    输入 {fmtTokens(u.promptTokens)} · 输出 {fmtTokens(u.completionTokens)}
+                    {tpl("输入 {p} · 输出 {c}", { p: fmtTokens(u.promptTokens), c: fmtTokens(u.completionTokens) })}
                   </p>
                 </div>
               ))}
@@ -236,16 +238,16 @@ export default function InvitesPanel() {
             {/* 按模型统计 */}
             {usage.byModel && usage.byModel.length > 0 && (
               <div className="mt-3">
-                <p className="mb-1.5 text-micro text-ink-dim">按模型统计（自己 + 被邀请人）</p>
+                <p className="mb-1.5 text-micro text-ink-dim">{t("按模型统计（自己 + 被邀请人）")}</p>
                 <div className="overflow-hidden rounded-xl border border-line-soft">
                   <table className="w-full text-left text-micro tabular-nums">
                     <thead className="bg-elevated/60 text-ink-dim">
                       <tr>
-                        <th className="px-2.5 py-1.5 font-medium">模型</th>
-                        <th className="px-2 py-1.5 font-medium">全部调用</th>
-                        <th className="px-2 py-1.5 font-medium">全部 tokens</th>
-                        <th className="px-2 py-1.5 font-medium">30 天调用</th>
-                        <th className="px-2 py-1.5 font-medium">30 天 tokens</th>
+                        <th className="px-2.5 py-1.5 font-medium">{t("模型")}</th>
+                        <th className="px-2 py-1.5 font-medium">{t("全部调用")}</th>
+                        <th className="px-2 py-1.5 font-medium">{t("全部 tokens")}</th>
+                        <th className="px-2 py-1.5 font-medium">{t("30 天调用")}</th>
+                        <th className="px-2 py-1.5 font-medium">{t("30 天 tokens")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -262,17 +264,17 @@ export default function InvitesPanel() {
                   </table>
                 </div>
                 <p className="mt-1 text-badge text-ink-faint">
-                  tokens = 输入 + 输出；明细可按 stage（asr/parse/review/chat）在 audit_logs 表中进一步追溯
+                  {t("tokens = 输入 + 输出；明细可按 stage（asr/parse/review/chat）在 audit_logs 表中进一步追溯")}
                 </p>
               </div>
             )}
 
             {/* 被邀请人消耗 */}
             <div className="mt-3">
-              <p className="mb-1.5 text-micro text-ink-dim">被邀请人（{usage.invitees.length} 人）</p>
+              <p className="mb-1.5 text-micro text-ink-dim">{tpl("被邀请人（{n} 人）", { n: usage.invitees.length })}</p>
               {usage.invitees.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-line px-3 py-3 text-center text-micro text-ink-dim">
-                  还没有带邀请记录的用户
+                  {t("还没有带邀请记录的用户")}
                 </p>
               ) : (
                 <ul className="space-y-1">
@@ -280,13 +282,13 @@ export default function InvitesPanel() {
                     <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg px-2 py-1.5 text-xs hover:bg-wash">
                       <span className="font-medium text-ink">
                         {p.nickname}
-                        {p.phoneTail && <span className="ml-1 text-badge font-normal text-ink-faint">尾号 {p.phoneTail}</span>}
+                        {p.phoneTail && <span className="ml-1 text-badge font-normal text-ink-faint">{tpl("尾号 {n}", { n: p.phoneTail })}</span>}
                       </span>
-                      <span className="text-badge text-ink-faint">{zhDate(p.createdAt)} 加入</span>
+                      <span className="text-badge text-ink-faint">{tpl("{date} 加入", { date: zhDate(p.createdAt) })}</span>
                       <span className="ml-auto tabular-nums text-ink-mute">
-                        近 30 天 <span className="tabular-nums text-ink">{fmtTotal(p.d30)}</span> · 累计{" "}
+                        {t("近 30 天")} <span className="tabular-nums text-ink">{fmtTotal(p.d30)}</span> · {t("累计")}{" "}
                         <span className="tabular-nums text-ink">{fmtTotal(p.all)}</span>
-                        <span className="ml-1 text-badge text-ink-faint">tokens（{p.all.calls} 次）</span>
+                        <span className="ml-1 text-badge text-ink-faint">tokens{tpl("（{n} 次）", { n: p.all.calls })}</span>
                       </span>
                     </li>
                   ))}
@@ -300,20 +302,20 @@ export default function InvitesPanel() {
       {/* 生成区 */}
       <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-line-soft pt-3">
         <label className="flex items-center gap-2 text-xs text-ink-mute">
-          有效期
+          {t("有效期")}
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             className="rounded border border-line-soft bg-surface px-2 py-1.5 text-xs outline-none focus:border-sky-500"
           >
-            <option value={7}>7 天</option>
-            <option value={30}>30 天</option>
-            <option value={90}>90 天</option>
-            <option value={0}>不限</option>
+            <option value={7}>{t("7 天")}</option>
+            <option value={30}>{t("30 天")}</option>
+            <option value={90}>{t("90 天")}</option>
+            <option value={0}>{t("不限")}</option>
           </select>
         </label>
         <button onClick={generate} disabled={busy} className="btn-primary rounded-xl px-5 py-1.5 text-sm font-medium">
-          {busy ? "生成中…" : "生成邀请码"}
+          {busy ? t("生成中…") : t("生成邀请码")}
         </button>
         {msg && <span className="text-xs text-ink-soft">{msg}</span>}
       </div>
@@ -321,7 +323,7 @@ export default function InvitesPanel() {
       {/* 列表 */}
       <div className="mt-3 border-t border-line-soft pt-3">
         {invites.length === 0 ? (
-          <p className="empty-state">还没有邀请码 —— 点上方「生成邀请码」创建第一个</p>
+          <p className="empty-state">{t("还没有邀请码 —— 点上方「生成邀请码」创建第一个")}</p>
         ) : (
           <ul className="space-y-1.5">
             {invites.map((i) => {
@@ -332,7 +334,7 @@ export default function InvitesPanel() {
                   <span className="flex-1 font-mono text-base tracking-[0.2em] text-ink">{i.code}</span>
                   <span className={`shrink-0 rounded px-1.5 py-0.5 text-badge ${st.cls}`}>{st.text}</span>
                   <span className="hidden shrink-0 text-badge text-ink-faint sm:inline">
-                    {zhDate(i.created_at)} 生成 · 有效至 {zhDate(i.expires_at)}
+                    {tpl("{date} 生成 · 有效至 {exp}", { date: zhDate(i.created_at), exp: zhDate(i.expires_at) })}
                   </span>
                   {usable && (
                     <button
@@ -341,10 +343,10 @@ export default function InvitesPanel() {
                     >
                       {copied === i.code ? (
                         <>
-                          <Check size={11} aria-hidden /> 已复制
+                          <Check size={11} aria-hidden /> {t("已复制")}
                         </>
                       ) : (
-                        "复制"
+                        t("复制")
                       )}
                     </button>
                   )}

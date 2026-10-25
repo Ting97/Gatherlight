@@ -14,6 +14,7 @@ import { useSession } from "@/shared/session";
 import { toast } from "@/shared/ui/toast";
 import { blobToDataUrl, compressImage } from "@/lib/image";
 import { bjAddDays, bjMondayOf, bjToday } from "@shiguangri/shared/date";
+import { t, tpl } from "@/i18n";
 import FitnessTrends from "./charts";
 import FitnessArchive from "./archive";
 import {
@@ -24,9 +25,9 @@ import {
   km,
   mdLabel,
   pace,
-  PLAN_STATUS_META,
+  planStatusMeta,
   planTitle,
-  RUN_WORKOUT_LABELS,
+  runWorkoutLabel,
   type FitnessBodyMetric,
   type FitnessExercise,
   type FitnessGoal,
@@ -37,13 +38,6 @@ import {
   type RunPlanContent,
   type StrengthPlanContent,
 } from "./kit";
-
-const TABS = [
-  { key: "today", label: "今日" },
-  { key: "plans", label: "计划" },
-  { key: "trends", label: "趋势" },
-  { key: "archive", label: "目标&档案" },
-];
 
 interface PageData {
   modules: FitnessModule[];
@@ -59,6 +53,13 @@ interface PageData {
 export default function FitnessPanel() {
   const [today, setToday] = useState<string | null>(null); // mounted 后再取（SSG 防 hydration mismatch）
   const [tab, setTab] = useState("today");
+  // 子导航标签组件体内求值（模块级 t() 会定格在 import 时的默认语言）
+  const TABS = [
+    { key: "today", label: t("今日") },
+    { key: "plans", label: t("计划") },
+    { key: "trends", label: t("趋势") },
+    { key: "archive", label: t("目标&档案") },
+  ];
   const [data, setData] = useState<PageData | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [xunjiEnabled, setXunjiEnabled] = useState(false); // 训记集成配置（REQ-017 按钮显隐）
@@ -119,13 +120,13 @@ export default function FitnessPanel() {
 
   return (
     <div>
-      <SubNav items={TABS} value={tab} onChange={setTab} ariaLabel="健身子导航" className="mb-5" />
+      <SubNav items={TABS} value={tab} onChange={setTab} ariaLabel={t("健身子导航")} className="mb-5" />
 
         {loadErr ? (
           <div className="rounded-2xl border border-line-soft bg-surface p-6 text-center">
             <p className="text-sm text-danger">{loadErr}</p>
             <button className="btn-ghost mt-3 px-4 py-1.5 text-sm" onClick={load}>
-              重试
+              {t("重试")}
             </button>
           </div>
         ) : !data || !today ? (
@@ -167,7 +168,7 @@ function TodayTab({ today, data, reload, xunjiEnabled, sleepOn }: { today: strin
       <ImportCard today={today} tomorrow={tomorrow} reload={reload} />
 
       <section>
-        <h2 className="mb-2 text-sm font-medium">今天 · {mdLabel(today)}</h2>
+        <h2 className="mb-2 text-sm font-medium">{tpl("今天 · {d}", { d: mdLabel(today) })}</h2>
         {todays.length ? (
           <div className="space-y-3">
             {todays.map((p) => (
@@ -176,14 +177,14 @@ function TodayTab({ today, data, reload, xunjiEnabled, sleepOn }: { today: strin
           </div>
         ) : (
           <p className="rounded-2xl border border-dashed border-line-soft bg-surface/50 p-4 text-xs text-ink-mute">
-            今天还没有计划——粘贴佳明课表导入，或在拾光助手里让 AI 生成（「今天有间歇课，力量怎么排？」）。
+            {t("今天还没有计划——粘贴佳明课表导入，或在拾光助手里让 AI 生成（「今天有间歇课，力量怎么排？」）。")}
           </p>
         )}
       </section>
 
       {tomorrows.length > 0 && (
         <section>
-          <h2 className="mb-2 text-sm font-medium">明天 · {mdLabel(tomorrow)}</h2>
+          <h2 className="mb-2 text-sm font-medium">{tpl("明天 · {d}", { d: mdLabel(tomorrow) })}</h2>
           <div className="space-y-3">
             {tomorrows.map((p) => (
               <PlanCard key={p.id} plan={p} exercises={data.exercises} logs={data.logs} reload={reload} xunjiEnabled={xunjiEnabled} />
@@ -199,12 +200,6 @@ function TodayTab({ today, data, reload, xunjiEnabled, sleepOn }: { today: strin
 }
 
 /** 睡眠独立记录（REQ-024）：每日一条，教练调整协议「睡眠<6h 降级」的数据源；REQ-025 加主观感受与 App 得分 */
-const SLEEP_FEELING_META: { key: "good" | "ok" | "bad"; label: string }[] = [
-  { key: "good", label: "饱满" },
-  { key: "ok", label: "一般" },
-  { key: "bad", label: "疲惫" },
-];
-
 function SleepCard({
   today,
   sleep,
@@ -214,6 +209,12 @@ function SleepCard({
   sleep: { log_date: string; hours: number; feeling?: string | null; score?: number | null; source: string }[];
   reload: () => void;
 }) {
+  // 感受标签组件体内求值 t()（模块级会定格在 import 时的默认语言）
+  const SLEEP_FEELING_META: { key: "good" | "ok" | "bad"; label: string }[] = [
+    { key: "good", label: t("饱满") },
+    { key: "ok", label: t("尚可") },
+    { key: "bad", label: t("疲惫") },
+  ];
   const [open, setOpen] = useState(false);
   const [hours, setHours] = useState("");
   const [feeling, setFeeling] = useState<"good" | "ok" | "bad" | "">("");
@@ -240,20 +241,20 @@ function SleepCard({
     // Number.isFinite 守卫（同 MetricCard）："6a" 之类非法输入 Number() 得 NaN，
     // JSON.stringify 会静默序列化成 null，请求 200 后 toast 成功实则 no-op
     if (!Number.isFinite(Number(hours))) {
-      toast("睡眠小时数格式不正确", "err");
+      toast(t("睡眠小时数格式不正确"), "err");
       return;
     }
     // 范围前置守卫（十五轮体验）：直接打 API 会弹英文 zod 原文「入参不合法：hours Number must be…」
     if (Number(hours) < 0 || Number(hours) > 16) {
-      toast("睡眠时长需在 0~16 小时之间", "err");
+      toast(t("睡眠时长需在 0~16 小时之间"), "err");
       return;
     }
     if (score && !Number.isFinite(Number(score))) {
-      toast("App 睡眠得分格式不正确", "err");
+      toast(t("App 睡眠得分格式不正确"), "err");
       return;
     }
     if (score && (Number(score) < 0 || Number(score) > 100)) {
-      toast("App 睡眠得分需在 0~100 之间", "err");
+      toast(t("App 睡眠得分需在 0~100 之间"), "err");
       return;
     }
     setBusy(true);
@@ -267,11 +268,11 @@ function SleepCard({
         score: score ? Number(score) : null,
       });
       if (resp.sync && resp.sync.ok === false) {
-        toast(`😴 睡眠已记录；日程同步跳过：${resp.sync.reason ?? "时间段被占用"}`, "err");
+        toast(tpl("😴 睡眠已记录；日程同步跳过：{reason}", { reason: resp.sync.reason ?? t("时间段被占用") }), "err");
       } else if (resp.sync?.blockId) {
-        toast("😴 已记录睡眠，并同步到日程");
+        toast(t("😴 已记录睡眠，并同步到日程"));
       } else {
-        toast("✅ 已记录睡眠");
+        toast(t("✅ 已记录睡眠"));
       }
       setOpen(false);
       reload();
@@ -285,26 +286,26 @@ function SleepCard({
   return (
     <section className="rounded-2xl border border-line-soft bg-surface p-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">😴 睡眠</h2>
+        <h2 className="text-sm font-medium">{t("😴 睡眠")}</h2>
         <button className="tap-lg inline-block py-1 text-xs text-accent hover:underline" onClick={() => openModal(today)}>
-          {last?.log_date === today ? "改今天" : "+ 记录"}
+          {last?.log_date === today ? t("改今天") : t("+ 记录")}
         </button>
       </div>
       {last ? (
         <p className="mt-2 text-xs text-ink-mute">
-          最近（{mdLabel(last.log_date)}）：{last.hours} 小时
+          {tpl("最近（{d}）：{h} 小时", { d: mdLabel(last.log_date), h: last.hours })}
           {last.feeling ? ` · ${feelingLabel(last.feeling)}` : ""}
-          {last.score != null ? ` · 得分 ${last.score}` : ""}
-          {avg7 != null ? ` · 近 7 天均值 ${avg7} 小时` : ""}
+          {last.score != null ? tpl(" · 得分 {s}", { s: last.score }) : ""}
+          {avg7 != null ? tpl(" · 近 7 天均值 {a} 小时", { a: avg7 }) : ""}
         </p>
       ) : (
-        <p className="mt-2 text-xs text-ink-mute">每天记一晚睡眠（可选手环 App 得分与感受）——教练排课时会参考。</p>
+        <p className="mt-2 text-xs text-ink-mute">{t("每天记一晚睡眠（可选手环 App 得分与感受）——教练排课时会参考。")}</p>
       )}
       {open && (
-        <Modal title={`睡眠 · ${mdLabel(date)}`} onClose={() => setOpen(false)}>
+        <Modal title={tpl("睡眠 · {d}", { d: mdLabel(date) })} onClose={() => setOpen(false)}>
           <div className="space-y-3">
             <label className="block text-xs text-ink-mute">
-              日期
+              {t("日期")}
               <input
                 className="input-glow w-full text-sm"
                 type="date"
@@ -321,11 +322,11 @@ function SleepCard({
               />
             </label>
             <label className="block text-xs text-ink-mute">
-              昨晚睡眠（小时）
+              {t("昨晚睡眠（小时）")}
               <input className="input-glow w-full text-sm" inputMode="decimal" value={hours} onChange={(e) => setHours(e.target.value)} placeholder="6.5" autoFocus />
             </label>
             <div className="text-xs text-ink-mute">
-              睡眠感受
+              {t("睡眠感受")}
               <div className="mt-1 flex gap-2">
                 {SLEEP_FEELING_META.map((m) => (
                   <button
@@ -340,16 +341,16 @@ function SleepCard({
               </div>
             </div>
             <label className="block text-xs text-ink-mute">
-              App 睡眠得分（0-100，佳明/手环等，选填）
+              {t("App 睡眠得分（0-100，佳明/手环等，选填）")}
               <input className="input-glow w-full text-sm" inputMode="numeric" value={score} onChange={(e) => setScore(e.target.value.replace(/[^\d]/g, ""))} placeholder="82" />
             </label>
-            <p className="text-xs text-ink-mute/70">保存后自动按起床 07:00 生成日程睡眠段（如 8 小时 → 前夜 23:00–07:00），与已有日程重叠时跳过。</p>
+            <p className="text-xs text-ink-mute/70">{t("保存后自动按起床 07:00 生成日程睡眠段（如 8 小时 → 前夜 23:00–07:00），与已有日程重叠时跳过。")}</p>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setOpen(false)}>
-                取消
+                {t("取消")}
               </button>
               <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy || !hours} onClick={save}>
-                {busy ? "保存中…" : "保存"}
+                {busy ? t("保存中…") : t("保存")}
               </button>
             </div>
           </div>
@@ -417,7 +418,7 @@ function ImportCard({ today, tomorrow, reload }: { today: string; tomorrow: stri
         content: draft.content,
         rationale: draft.rationale,
       });
-      toast(`✅ 已导入${res.syncedActions ? `，联动 ${res.syncedActions} 条今日行动` : ""}`);
+      toast(tpl("✅ 已导入{linked}", { linked: res.syncedActions ? tpl("，联动 {n} 条今日行动", { n: res.syncedActions }) : "" }));
       setDraft(null);
       setText("");
       setImage(null);
@@ -431,13 +432,13 @@ function ImportCard({ today, tomorrow, reload }: { today: string; tomorrow: stri
 
   return (
     <section className="rounded-2xl border border-line-soft bg-surface p-4">
-      <h2 className="mb-2 text-sm font-medium">📥 导入课表</h2>
-      <p className="mb-2 text-xs text-ink-mute">把佳明当日课表文字粘进来，或上传佳明 App 训练详情截图，AI 解析成结构化计划草稿。</p>
+      <h2 className="mb-2 text-sm font-medium">{t("📥 导入课表")}</h2>
+      <p className="mb-2 text-xs text-ink-mute">{t("把佳明当日课表文字粘进来，或上传佳明 App 训练详情截图，AI 解析成结构化计划草稿。")}</p>
       <textarea
         className="input-glow h-20 w-full text-sm"
         value={text}
         onChange={(e) => setText(e.target.value)}
-        placeholder="例：间歇跑 8 公里，55 分钟。热身 1 公里 @6:15；6×400 米 @5:20，组间 400 米慢跑；放松 1 公里"
+        placeholder={t("例：间歇跑 8 公里，55 分钟。热身 1 公里 @6:15；6×400 米 @5:20，组间 400 米慢跑；放松 1 公里")}
         maxLength={2000}
       />
       {/* 移动端选图走「label 包隐藏 input + 具体 MIME 列表」原生路径（同 publish-sheet）：
@@ -446,7 +447,7 @@ function ImportCard({ today, tomorrow, reload }: { today: string; tomorrow: stri
         <label
           className={`btn-ghost px-3 py-1.5 text-xs ${picking || parsing ? "pointer-events-none opacity-50" : "cursor-pointer"}`}
         >
-          {picking ? "处理中…" : "📷 佳明截图识别"}
+          {picking ? t("处理中…") : t("📷 佳明截图识别")}
           <input
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"
@@ -463,41 +464,41 @@ function ImportCard({ today, tomorrow, reload }: { today: string; tomorrow: stri
           onClick={parse}
           disabled={parsing || (!text.trim() && !image)}
         >
-          {parsing ? "解析中…" : "AI 解析"}
+          {parsing ? t("解析中…") : t("AI 解析")}
         </button>
       </div>
       {image && (
         <div className="mt-2 flex items-start gap-2 rounded-xl border border-line-soft bg-wash/40 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={image.previewUrl} alt="课表截图预览" className="h-20 w-14 rounded-lg border border-line-soft object-cover" />
+          <img src={image.previewUrl} alt={t("课表截图预览")} className="h-20 w-14 rounded-lg border border-line-soft object-cover" />
           <div className="min-w-0 flex-1 text-xs text-ink-mute">
-            已附截图，可与文字备注一起解析（如「明天的课」）
+            {t("已附截图，可与文字备注一起解析（如「明天的课」）")}
             <button className="mt-1 block text-accent hover:underline" onClick={() => setImage(null)}>
-              移除截图
+              {t("移除截图")}
             </button>
           </div>
         </div>
       )}
       {draft && (
-        <Modal title="解析草稿（确认后入库）" onClose={() => setDraft(null)} size="lg">
+        <Modal title={t("解析草稿（确认后入库）")} onClose={() => setDraft(null)} size="lg">
           <div className="space-y-3">
             <label className="block text-xs text-ink-mute">
-              计划日期
+              {t("计划日期")}
               <select className="input-glow mt-1 w-full" value={date} onChange={(e) => setDate(e.target.value)}>
-                <option value={today}>今天 · {mdLabel(today)}</option>
-                <option value={tomorrow}>明天 · {mdLabel(tomorrow)}</option>
+                <option value={today}>{tpl("今天 · {d}", { d: mdLabel(today) })}</option>
+                <option value={tomorrow}>{tpl("明天 · {d}", { d: mdLabel(tomorrow) })}</option>
               </select>
             </label>
             <div className="rounded-xl border border-line-soft bg-wash/40 p-3 text-sm">
               <ContentPreview content={draft.content} moduleCode={draft.moduleCode} />
             </div>
-            {draft.rationale ? <p className="text-xs text-ink-mute">识别依据：{draft.rationale}</p> : null}
+            {draft.rationale ? <p className="text-xs text-ink-mute">{t("识别依据：")}{draft.rationale}</p> : null}
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setDraft(null)}>
-                放弃
+                {t("放弃")}
               </button>
               <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" onClick={save} disabled={busy}>
-                {busy ? "保存中…" : "保存并联动今日行动"}
+                {busy ? t("保存中…") : t("保存并联动今日行动")}
               </button>
             </div>
           </div>
@@ -509,8 +510,8 @@ function ImportCard({ today, tomorrow, reload }: { today: string; tomorrow: stri
 
 /** 分段时长展示：整分钟给 "10 分钟"；小数是秒级步骤（佳明 0:40 → 0.67），换算回 "40 秒" */
 function fmtStepMinutes(min: number): string {
-  if (Number.isInteger(min)) return `${min} 分钟`;
-  return `${Math.round(min * 60)} 秒`;
+  if (Number.isInteger(min)) return tpl("{n} 分钟", { n: min });
+  return tpl("{n} 秒", { n: Math.round(min * 60) });
 }
 
 /** 计划 content 预览（导入草稿与计划卡共用） */
@@ -528,8 +529,8 @@ function ContentPreview({
     return (
       <div className="space-y-1">
         <p className="font-medium">
-          {RUN_WORKOUT_LABELS[c.workoutType] ?? c.workoutType} · {c.title}
-          {c.totalDistanceM ? <span className="ml-2 text-xs text-ink-mute">{km(c.totalDistanceM)}{c.durationMin ? ` / ${c.durationMin} 分钟` : ""}</span> : c.durationMin ? <span className="ml-2 text-xs text-ink-mute">{c.durationMin} 分钟</span> : null}
+          {runWorkoutLabel(c.workoutType)} · {c.title}
+          {c.totalDistanceM ? <span className="ml-2 text-xs text-ink-mute">{km(c.totalDistanceM)}{c.durationMin ? tpl(" / {n} 分钟", { n: c.durationMin }) : ""}</span> : c.durationMin ? <span className="ml-2 text-xs text-ink-mute">{tpl("{n} 分钟", { n: c.durationMin })}</span> : null}
         </p>
         {c.segments?.map((s, i) => (
           <p key={i} className="text-xs text-ink-mute">
@@ -538,11 +539,11 @@ function ContentPreview({
             {s.distanceM ? ` ${km(s.distanceM)}` : ""}
             {s.durationMin ? ` ${fmtStepMinutes(s.durationMin)}` : ""}
             {s.paceSPerKm ? ` @ ${pace(s.paceSPerKm)}/km` : ""}
-            {s.hrZone ? `（心率 ${s.hrZone} 区）` : ""}
-            {s.hrBpmText ? `（目标心率 ${s.hrBpmText} bpm）` : ""}
+            {s.hrZone ? tpl("（心率 {z} 区）", { z: s.hrZone }) : ""}
+            {s.hrBpmText ? tpl("（目标心率 {h} bpm）", { h: s.hrBpmText }) : ""}
           </p>
         ))}
-        {c.note ? <p className="text-xs text-ink-mute">备注:{c.note}</p> : null}
+        {c.note ? <p className="text-xs text-ink-mute">{t("备注:")}{c.note}</p> : null}
       </div>
     );
   }
@@ -551,7 +552,7 @@ function ContentPreview({
     <div className="space-y-1">
       <p className="font-medium">
         {c.title}
-        {c.durationMin ? <span className="ml-2 text-xs text-ink-mute">{c.durationMin} 分钟</span> : null}
+        {c.durationMin ? <span className="ml-2 text-xs text-ink-mute">{tpl("{n} 分钟", { n: c.durationMin })}</span> : null}
       </p>
       {c.exercises.map((e, i) => {
         const meta = exercises ? exerciseMeta(e, exercises) : undefined;
@@ -560,14 +561,14 @@ function ContentPreview({
             {e.name}
             {e.weightG ? ` ${kg(e.weightG)}` : ""}
             {e.sets || e.repsText ? ` × ${[e.sets, e.repsText].filter(Boolean).join("×")}` : ""}
-            {e.rir != null ? <span className="text-ink-mute">（RIR {e.rir}）</span> : null}
+            {e.rir != null ? <span className="text-ink-mute">{tpl("（RIR {r}）", { r: e.rir })}</span> : null}
             {meta ? <span className="ml-1 text-ink-mute">· {meta.muscle_primary.join("/")}</span> : null}
             <span className="block pl-2 text-[11px] leading-snug text-ink-mute/80">{meta?.benefit}</span>
             {e.note ? <span className="block pl-2 text-[11px] leading-snug text-ink-mute/80">{e.note}</span> : null}
           </p>
         );
       })}
-      {c.note ? <p className="text-xs text-ink-mute">备注:{c.note}</p> : null}
+      {c.note ? <p className="text-xs text-ink-mute">{t("备注:")}{c.note}</p> : null}
     </div>
   );
 }
@@ -593,7 +594,7 @@ function PlanCard({
   /** REQ-023 同步确认：目录外动作名 → 用户挑官方名/跳过；picks 记录每个名字的选择 */
   const [xunjiConfirm, setXunjiConfirm] = useState<{ name: string; candidates: { name: string; type: string | null }[] }[] | null>(null);
   const [xunjiPicks, setXunjiPicks] = useState<Record<string, string>>({});
-  const meta = PLAN_STATUS_META[plan.status];
+  const meta = planStatusMeta(plan.status);
   const log = logs.find((l) => l.plan_id === plan.id) ?? null;
   const xunjiSynced = Boolean(plan.xunji_sync?.localids?.length);
 
@@ -619,8 +620,8 @@ function PlanCard({
         return;
       }
       if (r.warning) toast(r.warning);
-      const skippedNote = r.skipped?.length ? `，跳过 ${r.skipped.length} 项` : "";
-      toast(`${r.updated ? "已更新训记训练" : "已写入训记 App"}（${r.movements ?? 0} 项${skippedNote}），训练时在训记里打勾`);
+      const skippedNote = r.skipped?.length ? tpl("，跳过 {n} 项", { n: r.skipped.length }) : "";
+      toast(tpl("{action}（{n} 项{skipped}），训练时在训记里打勾", { action: r.updated ? t("已更新训记训练") : t("已写入训记 App"), n: r.movements ?? 0, skipped: skippedNote }));
       setXunjiConfirm(null);
       reload();
     } catch (e) {
@@ -661,7 +662,7 @@ function PlanCard({
     setBusy(true);
     try {
       await api(`/api/fitness/plans/${plan.id}`, "DELETE");
-      toast("已删除计划，联动行动已清理");
+      toast(t("已删除计划，联动行动已清理"));
       reload();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -674,7 +675,7 @@ function PlanCard({
     <article className={`rounded-2xl border border-line-soft bg-surface p-4 ${plan.status === "skipped" ? "opacity-55" : ""}`}>
       <div className="mb-2 flex items-start justify-between gap-2">
         <h3 className="text-sm font-medium">{planTitle(plan)}</h3>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${meta.cls}`}>{meta.label}</span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${meta.cls}`}>{t(meta.label)}</span>
       </div>
       <ContentPreview content={plan.content} moduleCode={plan.module_code} exercises={exercises} />
       {plan.rationale && plan.source === "ai" ? (
@@ -684,14 +685,14 @@ function PlanCard({
       {log ? (
         <div className="mt-2 rounded-lg bg-emerald-500/5 p-2 text-xs text-ink-mute">
           {/* 分段拼装而非硬编码「·」前缀：力量打卡无距离/配速/心率时，旧版首段「· N 个动作」悬空 */}
-          实际:&nbsp;
+          {t("实际")}:&nbsp;
           {[
             log.actual?.distanceM ? km(log.actual.distanceM) : null,
             log.actual?.paceSPerKm ? `@ ${pace(log.actual.paceSPerKm)}/km` : null,
-            log.actual?.avgHr ? `心率 ${log.actual.avgHr}` : null,
-            log.actual?.exercises?.length ? `${log.actual.exercises.length} 个动作` : null,
-            log.fatigue ? `疲劳 ${log.fatigue}/10` : null,
-            log.soreness ? `酸痛:${log.soreness}` : null,
+            log.actual?.avgHr ? tpl("心率 {v}", { v: log.actual.avgHr }) : null,
+            log.actual?.exercises?.length ? tpl("{n} 个动作", { n: log.actual.exercises.length }) : null,
+            log.fatigue ? tpl("疲劳 {v}/10", { v: log.fatigue }) : null,
+            log.soreness ? tpl("酸痛:{v}", { v: log.soreness }) : null,
           ]
             .filter(Boolean)
             .join(" · ")}
@@ -702,8 +703,8 @@ function PlanCard({
         {plan.status !== "skipped" && plan.status !== "done" && plan.status !== "partial" && (
           <>
             {plan.status === "draft" && (
-              <button className="btn-primary tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => patch({ status: "confirmed" }, "已确认计划")}>
-                确认
+              <button className="btn-primary tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => patch({ status: "confirmed" }, t("已确认计划"))}>
+                {t("确认")}
               </button>
             )}
             <button
@@ -711,40 +712,39 @@ function PlanCard({
               disabled={busy}
               onClick={() => setChecking(true)}
             >
-              打卡
+              {t("打卡")}
             </button>
             {xunjiEnabled ? (
               <>
                 <button className="btn-ghost tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => syncXunji()}>
-                  {xunjiSynced ? "更新训记" : "同步训记"}
+                  {xunjiSynced ? t("更新训记") : t("同步训记")}
                 </button>
                 <button className="btn-ghost tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => setPulling(true)}>
-                  从训记同步完成
+                  {t("从训记同步完成")}
                 </button>
               </>
             ) : null}
-            <button className="btn-ghost tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => patch({ status: "skipped" }, "已跳过（联动行动已清理）")}>
-              跳过
+            <button className="btn-ghost tap-lg px-3 py-1.5 text-xs disabled:opacity-50" disabled={busy} onClick={() => patch({ status: "skipped" }, t("已跳过（联动行动已清理）"))}>
+              {t("跳过")}
             </button>
           </>
         )}
         <button className="btn-ghost tap-lg px-3 py-1.5 text-xs text-danger disabled:opacity-50" disabled={busy} onClick={() => setConfirmDel(true)}>
-          删除
+          {t("删除")}
         </button>
       </div>
       <p className="mt-2 text-[11px] text-ink-mute/70">
-        ✅ 已同步到首页「今日行动」，打卡后行动自动完成
-        {xunjiSynced ? " · 📲 训记已同步" : ""}
+        {t("✅ 已同步到首页「今日行动」，打卡后行动自动完成")}
+        {xunjiSynced ? t(" · 📲 训记已同步") : ""}
       </p>
 
       {checking && <CheckInModal plan={plan} onClose={() => setChecking(false)} onDone={() => { setChecking(false); reload(); }} />}
       {pulling && <PullXunjiModal plan={plan} onClose={() => setPulling(false)} onDone={() => { setPulling(false); reload(); }} />}
       {xunjiConfirm && (
-        <Modal title="确认训记动作名" onClose={() => setXunjiConfirm(null)} size="lg">
+        <Modal title={t("确认训记动作名")} onClose={() => setXunjiConfirm(null)} size="lg">
           <div className="space-y-3">
             <p className="text-xs leading-relaxed text-ink-mute">
-              以下动作在训记官方动作库里没有同名项（多为佳明截图的自重/循环动作）。请为每个动作挑一个训记官方名——
-              确认后记住映射，以后自动套用；没有合适候选可以跳过，该动作不写入训记 App。
+              {t("以下动作在训记官方动作库里没有同名项（多为佳明截图的自重/循环动作）。请为每个动作挑一个训记官方名——确认后记住映射，以后自动套用；没有合适候选可以跳过，该动作不写入训记 App。")}
             </p>
             {xunjiConfirm.map((u) => (
               <label key={u.name} className="block text-sm">
@@ -760,39 +760,39 @@ function PlanCard({
                       {c.type ? `（${c.type}）` : ""}
                     </option>
                   ))}
-                  <option value="__skip__">跳过——不写入训记</option>
+                  <option value="__skip__">{t("跳过——不写入训记")}</option>
                 </select>
               </label>
             ))}
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setXunjiConfirm(null)}>
-                取消
+                {t("取消")}
               </button>
               <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={confirmXunjiMappings}>
-                {busy ? "同步中…" : "确认并同步训记"}
+                {busy ? t("同步中…") : t("确认并同步训记")}
               </button>
             </div>
           </div>
         </Modal>
       )}
       {confirmDel && (
-        <Modal title={`删除计划 · ${planTitle(plan)}`} onClose={() => setConfirmDel(false)}>
+        <Modal title={tpl("删除计划 · {title}", { title: planTitle(plan) })} onClose={() => setConfirmDel(false)}>
           <div className="space-y-3">
             <p className="text-sm leading-relaxed">
-              确定删除这条计划？删除后不可恢复，联动的今日行动会一并清理。
-              {log ? " 该计划已打卡，执行记录将保留为独立打卡历史（趋势统计不受影响）。" : ""}
-              {xunjiSynced ? " 已同步到训记的训练不受影响，如需可在训记 App 里删除。" : ""}
+              {t("确定删除这条计划？删除后不可恢复，联动的今日行动会一并清理。")}
+              {log ? t(" 该计划已打卡，执行记录将保留为独立打卡历史（趋势统计不受影响）。") : ""}
+              {xunjiSynced ? t(" 已同步到训记的训练不受影响，如需可在训记 App 里删除。") : ""}
             </p>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setConfirmDel(false)}>
-                取消
+                {t("取消")}
               </button>
               <button
                 className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50"
                 disabled={busy}
                 onClick={remove}
               >
-                {busy ? "删除中…" : "确认删除"}
+                {busy ? t("删除中…") : t("确认删除")}
               </button>
             </div>
           </div>
@@ -824,13 +824,13 @@ function CheckInModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose: (
     // JSON.stringify 会静默序列化成 null——疲劳/心率成 null、距离时长走 `|| 0` 通道静默归零，
     // 打卡 200 后 toast 成功实则实绩缺失（十一轮修复：距离/时长并入守卫）
     for (const [v, label] of [
-      [fatigue, "疲劳度"],
-      [avgHr, "均心率"],
-      [isRun ? distanceKm : "", "距离"],
-      [isRun ? durationMin : "", "时长"],
+      [fatigue, t("疲劳度")],
+      [avgHr, t("均心率")],
+      [isRun ? distanceKm : "", t("距离")],
+      [isRun ? durationMin : "", t("时长")],
     ] as const) {
       if (v && !Number.isFinite(Number(v))) {
-        toast(`${label}格式不正确`, "err");
+        toast(tpl("{label}格式不正确", { label }), "err");
         return;
       }
     }
@@ -839,7 +839,7 @@ function CheckInModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose: (
     if (fatigue) {
       const f = Number(fatigue);
       if (!Number.isInteger(f) || f < 1 || f > 10) {
-        toast("疲劳度需为 1~10 的整数", "err");
+        toast(t("疲劳度需为 1~10 的整数"), "err");
         return;
       }
     }
@@ -865,7 +865,7 @@ function CheckInModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose: (
         soreness: soreness || null,
         note: note || null,
       });
-      toast(partial ? "已记录部分完成" : "✅ 打卡完成，联动行动已自动完成");
+      toast(partial ? t("已记录部分完成") : t("✅ 打卡完成，联动行动已自动完成"));
       onDone();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -877,20 +877,20 @@ function CheckInModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose: (
   const inputCls = "input-glow w-full text-sm";
 
   return (
-    <Modal title={`打卡 · ${planTitle(plan)}`} onClose={onClose}>
+    <Modal title={tpl("打卡 · {title}", { title: planTitle(plan) })} onClose={onClose}>
       <div className="space-y-3">
         {isRun ? (
           <div className="grid grid-cols-3 gap-2">
             <label className="text-xs text-ink-mute">
-              距离(km)
+              {t("距离(km)")}
               <input className={inputCls} inputMode="decimal" value={distanceKm} onChange={(e) => setDistanceKm(e.target.value)} placeholder="8.2" />
             </label>
             <label className="text-xs text-ink-mute">
-              时长(分)
+              {t("时长(分)")}
               <input className={inputCls} inputMode="numeric" value={durationMin} onChange={(e) => setDurationMin(e.target.value)} placeholder="50" />
             </label>
             <label className="text-xs text-ink-mute">
-              均心率
+              {t("均心率")}
               <input className={inputCls} inputMode="numeric" value={avgHr} onChange={(e) => setAvgHr(e.target.value)} placeholder="158" />
             </label>
           </div>
@@ -914,27 +914,27 @@ function CheckInModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose: (
         )}
         <div className="grid grid-cols-2 gap-2">
           <label className="text-xs text-ink-mute">
-            疲劳(1-10)
+            {t("疲劳(1-10)")}
             <input className={inputCls} inputMode="numeric" value={fatigue} onChange={(e) => setFatigue(e.target.value)} placeholder="6" />
           </label>
           <label className="text-xs text-ink-mute">
-            酸痛部位
-            <input className={inputCls} maxLength={60} value={soreness} onChange={(e) => setSoreness(e.target.value)} placeholder="大腿前侧" />
+            {t("酸痛部位")}
+            <input className={inputCls} maxLength={60} value={soreness} onChange={(e) => setSoreness(e.target.value)} placeholder={t("大腿前侧")} />
           </label>
         </div>
         <label className="block text-xs text-ink-mute">
-          一句话备注
-          <input className={inputCls} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder="最后一组间歇顶住了" />
+          {t("一句话备注")}
+          <input className={inputCls} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("最后一组间歇顶住了")} />
         </label>
         <div className="flex justify-end gap-2">
           <button className="btn-ghost px-3 py-1.5 text-sm" onClick={onClose}>
-            取消
+            {t("取消")}
           </button>
           <button className="btn-ghost px-3 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={() => submit(true)}>
-            部分完成
+            {t("部分完成")}
           </button>
           <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={() => submit(false)}>
-            完成打卡
+            {t("完成打卡")}
           </button>
         </div>
       </div>
@@ -964,7 +964,7 @@ function PullXunjiModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose:
     setBusy(true);
     try {
       await api(`/api/fitness/plans/${plan.id}/pull-xunji`, "POST", { preview: false });
-      toast("✅ 已按训记实练打卡，联动行动自动完成");
+      toast(t("✅ 已按训记实练打卡，联动行动自动完成"));
       onDone();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -977,20 +977,20 @@ function PullXunjiModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose:
   const kgOf = (g: number | null) => (g ? `${Math.round(g / 100) / 10}kg` : "");
 
   return (
-    <Modal title={`从训记同步 · ${planTitle(plan)}`} onClose={onClose}>
+    <Modal title={tpl("从训记同步 · {title}", { title: planTitle(plan) })} onClose={onClose}>
       <div className="space-y-3">
-        {loading ? <p className="py-6 text-center text-xs text-ink-mute">正在读取训记当日记录…</p> : null}
+        {loading ? <p className="py-6 text-center text-xs text-ink-mute">{t("正在读取训记当日记录…")}</p> : null}
         {preview ? (
           <>
             <p className="text-xs text-ink-mute">
-              {preview.summary} · 判定为 <span className="font-medium text-ink">{preview.status === "done" ? "全部完成" : "部分完成"}</span>
+              {preview.summary} · {t("判定为")} <span className="font-medium text-ink">{preview.status === "done" ? t("全部完成") : t("部分完成")}</span>
             </p>
             {exs.length ? (
               <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg bg-wash/60 p-2.5">
                 {exs.map((e, i) => (
                   <p key={i} className="text-xs">
                     · {e.name}
-                    {e.weightG ? ` ${kgOf(e.weightG)}` : ""} × {e.sets} 组
+                    {e.weightG ? ` ${kgOf(e.weightG)}` : ""} × {e.sets} {t("组")}
                     {e.repsText ? `（${e.repsText}）` : ""}
                   </p>
                 ))}
@@ -998,17 +998,17 @@ function PullXunjiModal({ plan, onClose, onDone }: { plan: FitnessPlan; onClose:
             ) : null}
             {preview.actual?.distanceM ? (
               <p className="text-xs text-ink-mute">
-                跑步 {(preview.actual.distanceM as number) / 1000}km
-                {preview.actual?.durationS ? ` · ${Math.round((preview.actual.durationS as number) / 60)} 分钟` : ""}
-                {preview.actual?.paceSPerKm ? ` · 配速 ${pace(preview.actual.paceSPerKm as number)}/km` : ""}
+                {t("跑步")} {(preview.actual.distanceM as number) / 1000}km
+                {preview.actual?.durationS ? tpl(" · {n} 分钟", { n: Math.round((preview.actual.durationS as number) / 60) }) : ""}
+                {preview.actual?.paceSPerKm ? tpl(" · 配速 {p}/km", { p: pace(preview.actual.paceSPerKm as number) }) : ""}
               </p>
             ) : null}
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={onClose}>
-                取消
+                {t("取消")}
               </button>
               <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" disabled={busy} onClick={confirm}>
-                {busy ? "打卡中…" : "按训记实练打卡"}
+                {busy ? t("打卡中…") : t("按训记实练打卡")}
               </button>
             </div>
           </>
@@ -1032,14 +1032,14 @@ function MetricCard({ today, last, reload }: { today: string; last: FitnessBodyM
     // Number.isFinite 守卫："6a" 之类非法输入 Number() 得 NaN，JSON.stringify 会静默序列化成 null
     //（等价「留空保持原值」），请求 200 后 toast 成功实则 no-op
     const fields: Array<[string, string, string]> = [
-      ["weightKg", weightKg, "体重"],
-      ["waistCm", waistCm, "腰围"],
-      ["heightCm", heightCm, "身高"],
-      ["bodyFatPct", bodyFatPct, "体脂率"],
+      ["weightKg", weightKg, t("体重")],
+      ["waistCm", waistCm, t("腰围")],
+      ["heightCm", heightCm, t("身高")],
+      ["bodyFatPct", bodyFatPct, t("体脂率")],
     ];
     for (const [, v, label] of fields) {
       if (v && !Number.isFinite(Number(v))) {
-        toast(`${label}格式不正确`, "err");
+        toast(tpl("{label}格式不正确", { label }), "err");
         return;
       }
     }
@@ -1051,14 +1051,14 @@ function MetricCard({ today, last, reload }: { today: string; last: FitnessBodyM
       ["heightCm", 50, 250],
       ["bodyFatPct", 3, 60],
     ];
-    const labels: Record<string, string> = { weightKg: "体重", waistCm: "腰围", heightCm: "身高", bodyFatPct: "体脂率" };
+    const labels: Record<string, string> = { weightKg: t("体重"), waistCm: t("腰围"), heightCm: t("身高"), bodyFatPct: t("体脂率") };
     for (const [key, min, max] of ranges) {
       const v = fields.find(([k]) => k === key)?.[1];
       if (v) {
         const n = Number(v);
         const unit = key === "bodyFatPct" ? "%" : key === "weightKg" ? "kg" : "cm";
         if (n < min || n > max) {
-          toast(`${labels[key]}需在 ${min}~${max}${unit} 之间`, "err");
+          toast(tpl("{label}需在 {min}~{max}{unit} 之间", { label: labels[key], min, max, unit }), "err");
           return;
         }
       }
@@ -1072,7 +1072,7 @@ function MetricCard({ today, last, reload }: { today: string; last: FitnessBodyM
         heightCm: heightCm ? Number(heightCm) : null,
         bodyFatPct: bodyFatPct ? Number(bodyFatPct) : null,
       });
-      toast("✅ 已记录身体指标");
+      toast(t("✅ 已记录身体指标"));
       setOpen(false);
       reload();
     } catch (e) {
@@ -1085,52 +1085,52 @@ function MetricCard({ today, last, reload }: { today: string; last: FitnessBodyM
   return (
     <section className="rounded-2xl border border-line-soft bg-surface p-4">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-medium">⚖️ 身体指标</h2>
+        <h2 className="text-sm font-medium">{t("⚖️ 身体指标")}</h2>
         <button className="tap-lg inline-block py-1 text-xs text-accent hover:underline" onClick={() => setOpen(true)}>
-          {last ? "记一笔" : "+ 录入"}
+          {last ? t("记一笔") : t("+ 录入")}
         </button>
       </div>
       {last ? (
         <p className="mt-2 text-xs text-ink-mute">
-          最近（{mdLabel(last.measured_on)}）：体重 {kg(last.weight_g)} · 腰围 {cm(last.waist_mm)}cm
-          {last.body_fat_pct_x10 ? ` · 体脂 ${last.body_fat_pct_x10 / 10}%` : ""}
-          {last.height_mm ? ` · 身高 ${cm(last.height_mm)}cm` : ""}
+          {tpl("最近（{d}）：体重 {w} · 腰围 {wa}cm", { d: mdLabel(last.measured_on), w: kg(last.weight_g), wa: cm(last.waist_mm) })}
+          {last.body_fat_pct_x10 ? tpl(" · 体脂 {v}%", { v: last.body_fat_pct_x10 / 10 }) : ""}
+          {last.height_mm ? tpl(" · 身高 {v}cm", { v: cm(last.height_mm) }) : ""}
         </p>
       ) : (
-        <p className="mt-2 text-xs text-ink-mute">每周一晨起空腹：体重 + 腰围（肚脐水平），可补身高与体脂率。</p>
+        <p className="mt-2 text-xs text-ink-mute">{t("每周一晨起空腹：体重 + 腰围（肚脐水平），可补身高与体脂率。")}</p>
       )}
       {open && (
-        <Modal title={`身体指标 · ${mdLabel(today)}`} onClose={() => setOpen(false)}>
+        <Modal title={tpl("身体指标 · {d}", { d: mdLabel(today) })} onClose={() => setOpen(false)}>
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
               <label className="text-xs text-ink-mute">
-                晨重（kg）
+                {t("晨重（kg）")}
                 <input className="input-glow w-full text-sm" inputMode="decimal" value={weightKg} onChange={(e) => setWeightKg(e.target.value)} placeholder="68.4" />
               </label>
               <label className="text-xs text-ink-mute">
-                腰围（cm）
+                {t("腰围（cm）")}
                 <input className="input-glow w-full text-sm" inputMode="decimal" value={waistCm} onChange={(e) => setWaistCm(e.target.value)} placeholder="88" />
               </label>
               <label className="text-xs text-ink-mute">
-                身高（cm）
+                {t("身高（cm）")}
                 <input className="input-glow w-full text-sm" inputMode="decimal" value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="172" />
               </label>
               <label className="text-xs text-ink-mute">
-                体脂率（%）
+                {t("体脂率（%）")}
                 <input className="input-glow w-full text-sm" inputMode="decimal" value={bodyFatPct} onChange={(e) => setBodyFatPct(e.target.value)} placeholder="18.5" />
               </label>
             </div>
-            <p className="text-micro text-ink-faint">留空的项保持原值不被清除；身高体脂可只在变化时记录。</p>
+            <p className="text-micro text-ink-faint">{t("留空的项保持原值不被清除；身高体脂可只在变化时记录。")}</p>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setOpen(false)}>
-                取消
+                {t("取消")}
               </button>
               <button
                 className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50"
                 disabled={busy || (!weightKg && !waistCm && !heightCm && !bodyFatPct)}
                 onClick={save}
               >
-                保存
+                {t("保存")}
               </button>
             </div>
           </div>
@@ -1151,14 +1151,14 @@ function PlansTab({ today, data, reload, xunjiEnabled }: { today: string; data: 
     <div className="space-y-4">
       {weeks.length === 0 && (
         <p className="rounded-2xl border border-dashed border-line-soft bg-surface/50 p-4 text-xs text-ink-mute">
-          近两周还没有计划。去「今日」粘贴导入，或让拾光助手生成。
+          {t("近两周还没有计划。去「今日」粘贴导入，或让拾光助手生成。")}
         </p>
       )}
       {weeks.map((w) => (
         <section key={w.monday} className="rounded-2xl border border-line-soft bg-surface/60 p-4">
           <h2 className="mb-3 text-sm font-medium">
-            周 · {w.monday}
-            {w.monday === thisMonday ? "（本周）" : ""}
+            {tpl("周 · {d}", { d: w.monday })}
+            {w.monday === thisMonday ? t("（本周）") : ""}
           </h2>
           <div className="space-y-3">
             {w.items.map((p) => (

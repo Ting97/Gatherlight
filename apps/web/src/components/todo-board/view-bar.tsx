@@ -1,7 +1,7 @@
 "use client";
 
 import { FilterChip } from "../tag-chip";
-import { VIEWS } from "./kit";
+import { views } from "./kit";
 import type { View } from "./types";
 
 /**
@@ -23,7 +23,7 @@ export function ViewBar({
 }) {
   return (
     <>
-      {VIEWS.map(([v, label]) => (
+      {views().map(([v, label]) => (
         <FilterChip
           key={v}
           label={label}

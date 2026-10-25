@@ -1,4 +1,5 @@
 /** fitness 页公共构件（REQ-016）：单位换算/展示格式/状态元数据 */
+import { t } from "@/i18n";
 import { bjMondayOf } from "@shiguangri/shared/date";
 import type {
   FitnessBodyMetric,
@@ -42,30 +43,38 @@ export const pace = (sPerKm?: number | null) => {
 /** 小时×10 → "6.5h" 展示（一位小数；旧版 Math.round(x/10)/1 会把 6.5 吞成 7） */
 export const hours = (x10?: number | null) => (x10 != null ? `${Math.round(x10) / 10}h` : "—");
 
-export const RUN_WORKOUT_LABELS: Record<RunPlanContent["workoutType"], string> = {
-  interval: "间歇",
-  tempo: "节奏",
-  long: "长距离",
-  easy: "轻松",
-  recovery: "恢复",
-};
+/** 跑步课型展示标签（t() 在调用期求值：模块级求值会定格在 import 时的默认语言） */
+export function runWorkoutLabel(workoutType: RunPlanContent["workoutType"] | undefined): string {
+  const labels: Record<RunPlanContent["workoutType"], string> = {
+    interval: t("间歇"),
+    tempo: t("节奏"),
+    long: t("长距离"),
+    easy: t("轻松"),
+    recovery: t("恢复跑"),
+  };
+  return (workoutType && labels[workoutType]) || t("跑步");
+}
 
-export const PLAN_STATUS_META: Record<FitnessPlan["status"], { label: string; cls: string }> = {
-  draft: { label: "草稿", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  confirmed: { label: "已确认", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  done: { label: "已完成", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  partial: { label: "部分完成", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
-  skipped: { label: "已跳过", cls: "bg-wash text-ink-mute" },
-};
+/** 计划状态徽标元数据（label 同上走调用期 t()；cls 为样式类名不翻译） */
+export function planStatusMeta(status: FitnessPlan["status"]): { label: string; cls: string } {
+  const meta: Record<FitnessPlan["status"], { label: string; cls: string }> = {
+    draft: { label: t("草稿"), cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
+    confirmed: { label: t("已确认"), cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+    done: { label: t("已完成"), cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+    partial: { label: t("部分完成"), cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
+    skipped: { label: t("已跳过"), cls: "bg-wash text-ink-mute" },
+  };
+  return meta[status];
+}
 
 /** 计划主标题（跑步含课型与总量；力量为 content.title） */
 export function planTitle(plan: FitnessPlan): string {
   const c = plan.content as RunPlanContent & StrengthPlanContent;
   if (plan.module_code === "run") {
-    const label = RUN_WORKOUT_LABELS[(c as RunPlanContent).workoutType] ?? "跑步";
+    const label = runWorkoutLabel((c as RunPlanContent).workoutType);
     return `${label} · ${c.title}`;
   }
-  return c.title ?? "力量课";
+  return c.title ?? t("力量课");
 }
 
 /** 按日期组织计划（含跨周分组用的周一键——北京时区口径走 shared 的 bjMondayOf） */

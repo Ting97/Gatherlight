@@ -5,6 +5,7 @@
  */
 
 import { apiForm } from "@/shared/api";
+import { t } from "@/i18n";
 
 export interface CompressedImage {
   blob: Blob;
@@ -34,7 +35,8 @@ export async function compressImage(file: File): Promise<CompressedImage> {
   const keepPng = file.type === "image/png" && await hasAlpha(ctx, w, h);
   const blob: Blob = await new Promise((resolve, reject) =>
     canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new Error("压缩失败"))),
+      (b) =>
+        b ? resolve(b) : reject(new Error(t("压缩失败"))),
       keepPng ? "image/png" : "image/jpeg",
       keepPng ? undefined : JPEG_QUALITY,
     ),
@@ -61,7 +63,8 @@ export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("图片读取失败"));
+    reader.onerror = () =>
+      reject(new Error(t("图片读取失败")));
     reader.readAsDataURL(blob);
   });
 }

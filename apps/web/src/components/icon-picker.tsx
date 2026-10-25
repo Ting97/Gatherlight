@@ -1,19 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import { t } from "@/i18n";
 import { Dismissable } from "./dismissable";
 
-/** 分类图标候选（emoji 网格，按主题分组） */
-const ICON_GROUPS: Array<[string, string[]]> = [
-  ["预设", ["😴", "💼", "📚", "💪", "👥", "🎮", "🧹", "🚌", "📌"]],
-  ["运动", ["🏃", "🚴", "🏊", "🧘", "⚽", "🏀", "🎾", "🥊", "🤸"]],
-  ["学习", ["✍️", "🧠", "💻", "📖", "✏️", "🔍", "🎓", "🔬", "🧩"]],
-  ["生活", ["🍳", "🍜", "☕", "🛒", "🧺", "🛏️", "🚿", "🌱", "🐶", "🐱"]],
-  ["娱乐", ["🎬", "🎵", "📺", "📱", "🎨", "🎲", "🎣", "📷", "🎈", "🀄"]],
-  ["社交", ["❤️", "🎁", "🍻", "☎️", "💬", "🎉", "👨‍👩‍👧", "🤝", "🫶"]],
-  ["出行", ["✈️", "🚗", "🚕", "🚲", "🗺️", "🏔️", "🏖️", "🏕️"]],
-  ["健康", ["💊", "🩺", "🌿", "🫁", "🦷", "👁️"]],
-  ["其他", ["⭐", "🔥", "💰", "🧾", "⏰", "🌙", "☀️", "🎯", "🛠️", "💡"]],
+/** 分类图标候选（emoji 网格，按主题分组）。
+ *  工厂函数而非模块顶层常量：组名需按当前语言取 t()，import 期调用会定格语言（i18n 约定） */
+const iconGroups = (): Array<[string, string[]]> => [
+  [t("预设"), ["😴", "💼", "📚", "💪", "👥", "🎮", "🧹", "🚌", "📌"]],
+  [t("运动"), ["🏃", "🚴", "🏊", "🧘", "⚽", "🏀", "🎾", "🥊", "🤸"]],
+  [t("学习"), ["✍️", "🧠", "💻", "📖", "✏️", "🔍", "🎓", "🔬", "🧩"]],
+  [t("生活"), ["🍳", "🍜", "☕", "🛒", "🧺", "🛏️", "🚿", "🌱", "🐶", "🐱"]],
+  [t("娱乐"), ["🎬", "🎵", "📺", "📱", "🎨", "🎲", "🎣", "📷", "🎈", "🀄"]],
+  [t("社交"), ["❤️", "🎁", "🍻", "☎️", "💬", "🎉", "👨‍👩‍👧", "🤝", "🫶"]],
+  [t("出行"), ["✈️", "🚗", "🚕", "🚲", "🗺️", "🏔️", "🏖️", "🏕️"]],
+  [t("健康"), ["💊", "🩺", "🌿", "🫁", "🦷", "👁️"]],
+  [t("其他"), ["⭐", "🔥", "💰", "🧾", "⏰", "🌙", "☀️", "🎯", "🛠️", "💡"]],
 ];
 
 /** 图标选择器：点击展开 emoji 网格；支持自定义输入任意字符 */
@@ -26,14 +28,14 @@ export default function IconPicker({ value, onChange }: { value: string; onChang
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title="点击选择图标"
+        title={t("点击选择图标")}
         className="flex h-9 w-12 items-center justify-center rounded border border-line-strong bg-surface text-base hover:border-sky-500"
       >
         {value || "🏷"}
       </button>
       {open && (
         <Dismissable onClose={() => setOpen(false)} className="absolute left-0 top-10 z-30 max-h-[65vh] w-72 overflow-y-auto rounded-xl border border-line bg-surface p-3 shadow-xl">
-          {ICON_GROUPS.map(([group, icons]) => (
+          {iconGroups().map(([group, icons]) => (
               <div key={group} className="mb-1.5 last:mb-0">
                 <p className="mb-1 text-badge text-ink-dim">{group}</p>
                 <div className="flex flex-wrap gap-1">
@@ -70,7 +72,7 @@ export default function IconPicker({ value, onChange }: { value: string; onChang
                   }
                   e.stopPropagation();
                 }}
-                placeholder="自定义：粘贴 emoji 后回车"
+                placeholder={t("自定义：粘贴 emoji 后回车")}
                 className="flex-1 rounded border border-line-strong bg-bg px-2 py-1 text-xs outline-none focus:border-sky-500"
               />
             </div>

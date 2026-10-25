@@ -5,6 +5,7 @@ import { Puzzle } from "lucide-react";
 import { api } from "@/shared/api";
 import { TagChip } from "./tag-chip";
 import Switch from "./switch";
+import { t, tpl } from "@/i18n";
 
 interface AdminModule {
   key: string;
@@ -50,10 +51,18 @@ export default function AdminModulesPanel({ notify }: { notify: (text: string, o
     setModules((prev) => prev?.map((x) => (x.key === m.key ? { ...x, [field]: next } : x)) ?? prev);
     try {
       await api("/api/admin/modules", "PATCH", { module: m.key, [field]: next });
-      notify(`✅ ${m.name} 已${field === "enabled" ? (next ? "开启" : "关闭") : next ? "允许用户自开关" : "禁止用户自开关"}`);
+      const action =
+        field === "enabled"
+          ? next
+            ? t("开启")
+            : t("关闭")
+          : next
+            ? t("允许用户自开关")
+            : t("禁止用户自开关");
+      notify(tpl("✅ {name} 已{action}", { name: m.name, action }));
       load();
     } catch (e) {
-      notify(`保存失败：${e instanceof Error ? e.message : String(e)}`, false);
+      notify(tpl("保存失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }), false);
       load();
     } finally {
       mutatingRef.current = false;
@@ -63,20 +72,20 @@ export default function AdminModulesPanel({ notify }: { notify: (text: string, o
   return (
     <section className="glass rounded-2xl p-5">
       <h2 className="text-sm font-semibold text-ink-soft">
-        <TagChip icon={<Puzzle size={12} />} label="模块开关（全局层）" tone="violet" />
+        <TagChip icon={<Puzzle size={12} />} label={t("模块开关（全局层）")} tone="violet" />
       </h2>
       <p className="mt-1.5 text-badge text-ink-faint">
-        关闭后全站隐藏该模块入口（数据保留不删）；「允许用户自开关」控制用户能否在【我的 → 功能管理】自行关闭。逐用户的强制开/关在「营销管理」tab 设置。
+        {t("关闭后全站隐藏该模块入口（数据保留不删）；「允许用户自开关」控制用户能否在【我的 → 功能管理】自行关闭。逐用户的强制开/关在「营销管理」tab 设置。")}
       </p>
       {err ? (
         <div className="mt-3 text-xs">
-          <p className="text-danger">加载失败：{err}</p>
+          <p className="text-danger">{tpl("加载失败：{err}", { err })}</p>
           <button onClick={load} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-            重试
+            {t("重试")}
           </button>
         </div>
       ) : !modules ? (
-        <p className="mt-3 text-xs text-ink-dim">加载中…</p>
+        <p className="mt-3 text-xs text-ink-dim">{t("加载中…")}</p>
       ) : (
         <ul className="mt-4 space-y-1.5">
           {modules.map((m) => (
@@ -89,29 +98,31 @@ export default function AdminModulesPanel({ notify }: { notify: (text: string, o
             >
               <span className="min-w-[5.5rem] font-medium text-ink">
                 {m.name}
-                {m.core && <span className="ml-1.5 text-micro text-ink-faint">核心</span>}
+                {m.core && <span className="ml-1.5 text-micro text-ink-faint">{t("核心")}</span>}
               </span>
               <span className="flex items-center gap-1.5 text-ink-dim">
                 <Switch
                   checked={m.enabled}
                   disabled={m.core}
                   onChange={(next) => patch(m, "enabled", next)}
-                  title={m.core ? "核心模块不可关闭" : m.enabled ? "点击关闭（全站）" : "点击开启（全站）"}
+                  title={m.core ? t("核心模块不可关闭") : m.enabled ? t("点击关闭（全站）") : t("点击开启（全站）")}
                 />
-                全局{m.enabled ? "开" : "关"}
-                {!m.configured && <span className="text-micro text-ink-faint">（默认）</span>}
+                {m.enabled ? t("全局开") : t("全局关")}
+                {!m.configured && <span className="text-micro text-ink-faint">{t("（默认）")}</span>}
               </span>
               <span className="flex items-center gap-1.5 text-ink-dim">
                 <Switch
                   checked={m.userToggleable}
                   disabled={m.core}
                   onChange={(next) => patch(m, "userToggleable", next)}
-                  title="允许用户在【我的 → 功能管理】自行开关该模块"
+                  title={t("允许用户在【我的 → 功能管理】自行开关该模块")}
                 />
-                {m.userToggleable ? "用户可自选" : "禁止自选"}
+                {m.userToggleable ? t("用户可自选") : t("禁止自选")}
               </span>
               <span className="ml-auto flex items-center gap-2 text-micro text-ink-faint">
-                {m.userOverrides > 0 && <span title="「营销管理」里有针对个别用户的覆盖">个别覆盖 {m.userOverrides} 人</span>}
+                {m.userOverrides > 0 && (
+                  <span title={t("「营销管理」里有针对个别用户的覆盖")}>{tpl("个别覆盖 {n} 人", { n: m.userOverrides })}</span>
+                )}
                 <span className="font-mono">{m.key}</span>
               </span>
             </li>

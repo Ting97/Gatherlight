@@ -7,6 +7,7 @@
  */
 import type { FitnessBodyMetric, FitnessPlan } from "@shiguangri/shared/fitness-types";
 import { bjMondayOf } from "@shiguangri/shared/date";
+import { t as tr, tpl } from "@/i18n"; // 局部 t 遮蔽（LineChart y 轴换算），别名 tr（历史坑规约）
 import { km, mdLabel, pace as fmtPace } from "./kit";
 
 /** 迷你折线：值域自适应 + 首末点数值标注；空数据给占位文案 */
@@ -25,7 +26,7 @@ function LineChart({
   if (points.length < 2) {
     return (
       <div className="flex h-32 items-center justify-center text-xs text-ink-mute">
-        {hint ?? "数据不足两条，暂不出图"}
+        {hint ?? tr("数据不足两条，暂不出图")}
       </div>
     );
   }
@@ -109,13 +110,13 @@ function HeatGrid({ plans, today }: { plans: FitnessPlan[]; today: string }) {
   }
 
   return (
-    <div className="flex gap-[3px] overflow-x-auto pb-1 scrollbar-none" aria-label="训练热力图">
+    <div className="flex gap-[3px] overflow-x-auto pb-1 scrollbar-none" aria-label={tr("训练热力图")}>
       {Array.from({ length: nWeeks }, (_, w) => (
         <div key={w} className="flex flex-col gap-[3px]">
           {cells.slice(w * 7, w * 7 + 7).map((c) => (
             <span
               key={c.date}
-              title={`${c.date} · ${["无计划", "草稿", "已确认", "部分完成", "已完成"][c.level]}`}
+              title={`${c.date} · ${[tr("无计划"), tr("草稿"), tr("已确认"), tr("部分完成"), tr("已完成")][c.level]}`}
               className="h-3.5 w-3.5 rounded-[4px]"
               style={{ backgroundColor: `var(--heat-${c.level})` }}
             />
@@ -174,32 +175,32 @@ export default function FitnessTrends({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2">
-        <ChartCard title="体重趋势" sub="每周一晨起空腹口径（kg）">
+        <ChartCard title={tr("体重趋势")} sub={tr("每周一晨起空腹口径（kg）")}>
           <LineChart points={weightPts} unit="kg" />
         </ChartCard>
-        <ChartCard title="腰围趋势" sub="肚脐水平（cm）">
+        <ChartCard title={tr("腰围趋势")} sub={tr("肚脐水平（cm）")}>
           <LineChart points={waistPts} unit="cm" />
         </ChartCard>
-        <ChartCard title="体脂率趋势" sub="体成分秤/估算口径（%），越低越精瘦">
+        <ChartCard title={tr("体脂率趋势")} sub={tr("体成分秤/估算口径（%），越低越精瘦")}>
           <LineChart points={bodyFatPts} unit="%" />
         </ChartCard>
-        <ChartCard title="身高趋势" sub="变化缓慢，仅记录生长/测量差异（cm）">
+        <ChartCard title={tr("身高趋势")} sub={tr("变化缓慢，仅记录生长/测量差异（cm）")}>
           <LineChart points={heightPts} unit="cm" />
         </ChartCard>
-        <ChartCard title="跑步配速趋势" sub="已完成跑步课的平均配速，越低越好">
+        <ChartCard title={tr("跑步配速趋势")} sub={tr("已完成跑步课的平均配速，越低越好")}>
           <LineChart points={pacePts} unit={'"'} invert />
         </ChartCard>
         {sleepPts.length ? (
-          <ChartCard title="睡眠趋势" sub="每日独立记录（小时）；教练参考它执行「睡眠<6h 降级」协议">
+          <ChartCard title={tr("睡眠趋势")} sub={tr("每日独立记录（小时）；教练参考它执行「睡眠<6h 降级」协议")}>
             <LineChart points={sleepPts} unit="h" />
           </ChartCard>
         ) : null}
-        <ChartCard title="区间跑量" sub="列表范围内已完成跑步课合计">
+        <ChartCard title={tr("区间跑量")} sub={tr("列表范围内已完成跑步课合计")}>
           <p className="text-2xl font-semibold text-gradient">{km(totalKm)}</p>
-          <p className="mt-1 text-xs text-ink-mute">{runDone.length} 次已完成跑步课</p>
+          <p className="mt-1 text-xs text-ink-mute">{tpl("{n} 次已完成跑步课", { n: runDone.length })}</p>
         </ChartCard>
       </div>
-      <ChartCard title="训练热力" sub="最近 12 周：深=已完成，中=已确认，浅=草稿">
+      <ChartCard title={tr("训练热力")} sub={tr("最近 12 周：深=已完成，中=已确认，浅=草稿")}>
         <HeatGrid plans={plans} today={today} />
       </ChartCard>
     </div>

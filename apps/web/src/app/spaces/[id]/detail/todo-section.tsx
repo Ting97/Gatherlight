@@ -9,6 +9,7 @@ import { bjDate } from "./kit";
 import TodoRowItem from "./todo-row";
 import type { Msg } from "./types";
 import type { TodoActions } from "./use-todo-actions";
+import { t as tr, tpl } from "@/i18n";
 
 /** 关联 TODO·行动区块（自 detail.tsx 拆出）：添加 todo / 行列表 / 已完成折叠列表 */
 export default function TodoSection(opts: {
@@ -23,13 +24,13 @@ export default function TodoSection(opts: {
   return (
     <section className="glass mb-4 rounded-2xl p-5">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold text-ink-soft">
-        <TagChip icon={<ClipboardList size={12} />} label="TODO·行动" tone="sky" />
-        <span className="text-xs font-normal text-ink-dim">{todos.length} 条</span>
+        <TagChip icon={<ClipboardList size={12} />} label={tr("TODO·行动")} tone="sky" />
+        <span className="text-xs font-normal text-ink-dim">{tpl("{n} 条", { n: todos.length })}</span>
         <button
           onClick={() => void openLinkPicker()}
           className="ml-auto flex items-center gap-1 rounded-lg border border-line-soft px-2.5 py-1 text-micro font-normal text-ink-mute transition hover:border-sky-500/50 hover:text-accent"
         >
-          <Link2 size={12} aria-hidden /> 关联已有
+          <Link2 size={12} aria-hidden /> {tr("关联已有")}
         </button>
       </h2>
       {/* 添加 todo */}
@@ -41,14 +42,14 @@ export default function TodoSection(opts: {
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.nativeEvent.isComposing) void addTodo();
           }}
-          placeholder="添加服务于该空间的 TODO，回车保存"
+          placeholder={tr("添加服务于该空间的 TODO，回车保存")}
           maxLength={200}
           className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-ink-faint"
         />
       </div>
 
       {todos.length === 0 ? (
-        <p className="py-4 text-center text-xs text-ink-faint">还没有 TODO/行动 —— 在上面添加、用「关联已有」归属未关联的，或在「日程 · todo」里选择该空间</p>
+        <p className="py-4 text-center text-xs text-ink-faint">{tr("还没有 TODO/行动 —— 在上面添加、用「关联已有」归属未关联的，或在「日程 · todo」里选择该空间")}</p>
       ) : (
         <ul className="space-y-2">
           {todos.map((t) => (
@@ -61,7 +62,7 @@ export default function TodoSection(opts: {
       {doneTodos.length > 0 && (
         <details className="group mt-3 border-t border-line-soft pt-2">
           <summary className="flex cursor-pointer select-none list-none items-center gap-1 text-micro text-ink-faint transition hover:text-ink-mute">
-            <Check size={11} className="text-success" aria-hidden /> 已完成（{doneTodos.length}）
+            <Check size={11} className="text-success" aria-hidden /> {tpl("已完成（{n}）", { n: doneTodos.length })}
             <span className="inline-block transition-transform group-open:rotate-90"><ChevronRight size={10} /></span>
           </summary>
           <ul className="mt-1.5 space-y-0.5">
@@ -76,10 +77,10 @@ export default function TodoSection(opts: {
                     {(() => { const p = childProgress(t.children); return p ? `${p.n}/${p.m}` : ""; })()}
                   </span>
                 )}
-                {t.done_at && <span className="shrink-0 text-badge text-ink-faint">{bjDate(t.done_at).slice(5)} 完成</span>}
+                {t.done_at && <span className="shrink-0 text-badge text-ink-faint">{bjDate(t.done_at).slice(5)} {tr("完成")}</span>}
                 <button
-                  onClick={() => patchTodo(t.id, { undone: true }, `↩️「${t.title}」已恢复`)}
-                  title="恢复为未完成"
+                  onClick={() => patchTodo(t.id, { undone: true }, tpl("↩️「{title}」已恢复", { title: t.title }))}
+                  title={tr("恢复为未完成")}
                   className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 text-ink-dim transition hover:text-accent group-hover:block"
                 >
                   <RotateCcw size={11} />

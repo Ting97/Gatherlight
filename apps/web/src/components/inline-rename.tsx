@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Pencil } from "lucide-react";
+import { t as tr, tpl } from "@/i18n";
 import { useDismiss } from "./dismissable";
 
 /**
@@ -44,11 +45,11 @@ export default function InlineRename({
     if (busyRef.current) return;
     const t = name.trim();
     if (!t) {
-      setErr("名称不能为空");
+      setErr(tr("名称不能为空"));
       return;
     }
     if ([...t].length > maxLength) {
-      setErr(`名称过长（≤${maxLength} 字）`);
+      setErr(tpl("名称过长（≤{n} 字）", { n: maxLength }));
       return;
     }
     busyRef.current = true;
@@ -58,7 +59,7 @@ export default function InlineRename({
       if (ok) setEditing(false);
     } catch {
       // 兜底：异常不抛出点击处理器（裸 rejection 会触发整页刷新），转成行内错误提示
-      setErr("网络异常，请稍后重试");
+      setErr(tr("网络异常，请稍后重试"));
     } finally {
       busyRef.current = false;
       setBusy(false);
@@ -77,7 +78,7 @@ export default function InlineRename({
               setEditing(true);
               setTimeout(() => inputRef.current?.focus(), 50);
             }}
-            title="重命名"
+            title={tr("重命名")}
             className="row-actions-hidden hidden shrink-0 rounded px-1 text-ink-mute transition hover:text-accent group-hover/rename:block"
           >
             <Pencil size={11} />

@@ -10,6 +10,9 @@ import { useRouter } from "next/navigation";
 import { api } from "@/shared/api";
 import { useSession } from "@/shared/session";
 import ModuleLocked from "@/components/module-locked";
+import { t, tpl, getLang } from "@/i18n";
+import { moduleLabel } from "@shiguangri/shared/i18n-enum";
+import { getModule } from "@shiguangri/shared/modules";
 import type { Space } from "@shiguangri/shared/types";
 
 export default function FitnessRedirect() {
@@ -41,10 +44,10 @@ export default function FitnessRedirect() {
       <main className="min-h-screen text-ink">
         <div className="mx-auto max-w-2xl px-5 py-8 text-center">
           <ModuleLocked
-            title="健身"
-            desc="该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。"
+            title={moduleLabel(getModule("fitness")?.name ?? "fitness", getLang())}
+            desc={t("该模块已关闭。可在【我的 → 功能管理】重新开启（数据保留不丢），或联系管理员。")}
             backHref="/spaces"
-            backLabel="返回目标空间"
+            backLabel={t("返回目标空间")}
           />
         </div>
       </main>
@@ -56,13 +59,13 @@ export default function FitnessRedirect() {
       <div className="mx-auto max-w-6xl px-5 pb-16 pt-8 text-center">
         {err ? (
           <>
-            <p className="mt-10 text-sm text-danger">加载失败：{err}</p>
+            <p className="mt-10 text-sm text-danger">{tpl("加载失败：{err}", { err })}</p>
             <button className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs" onClick={() => router.replace("/spaces")}>
-              去目标空间
+              {t("去目标空间")}
             </button>
           </>
         ) : (
-          <p className="mt-10 text-xs text-ink-dim">正在前往运动空间…</p>
+          <p className="mt-10 text-xs text-ink-dim">{t("正在前往运动空间…")}</p>
         )}
       </div>
     </main>

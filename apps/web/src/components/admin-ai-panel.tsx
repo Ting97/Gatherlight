@@ -1,5 +1,6 @@
 "use client";
 
+import { t, tpl } from "@/i18n";
 import EditorHeader from "./admin-ai-panel/editor-header";
 import EngineModeCard from "./admin-ai-panel/engine-mode-card";
 import InputAssemblySection from "./admin-ai-panel/input-assembly-section";
@@ -24,13 +25,13 @@ export default function AdminAiPanel({ notify }: { notify: (text: string, ok?: b
   if (!ai.items) {
     return ai.loadErr ? (
       <div className="py-10 text-center">
-        <p className="text-xs text-danger">加载失败：{ai.loadErr}</p>
+        <p className="text-xs text-danger">{tpl("加载失败：{err}", { err: ai.loadErr })}</p>
         <button onClick={ai.retryLoad} className="btn-primary mt-2 rounded-lg px-4 py-1.5 text-micro font-medium">
-          重试
+          {t("重试")}
         </button>
       </div>
     ) : (
-      <p className="py-10 text-center text-xs text-ink-dim">加载中…</p>
+      <p className="py-10 text-center text-xs text-ink-dim">{t("加载中…")}</p>
     );
   }
 
@@ -61,7 +62,7 @@ export default function AdminAiPanel({ notify }: { notify: (text: string, ok?: b
               onRevert={ai.revertDefault}
               revertArmed={ai.armKey?.startsWith("revert:") ?? false}
               saveBlocked={ai.userDataOverCap}
-              saveBlockReason="个性化注入估算超 8000 字符上限，请下调条数或移除数据集"
+              saveBlockReason={t("个性化注入估算超 8000 字符上限，请下调条数或移除数据集")}
             />
 
             {/* ===== 第一段：System prompt ===== */}

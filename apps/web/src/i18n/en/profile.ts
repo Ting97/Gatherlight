@@ -46,4 +46,31 @@ export const EN: Record<string, string> = {
   "全量备份 (JSON)": "Full backup (JSON)",
   "动态日记 (Markdown)": "Journal (Markdown)",
   "拾光 · 我的": "Shiguang · Me",
+
+  // ---- 训记同步（REQ-042） ----
+  "✅ 训记已绑定（{key}）——健身页的「同步训记 / 回读打卡」即刻可用": "✅ Xunji bound ({key}) — \"Sync to Xunji / read back check-ins\" on the fitness page is ready",
+  "已解绑训记 apiKey（此前写入训记的数据不受影响）": "Xunji apiKey unbound (data already written to Xunji is unaffected)",
+  "训记同步": "Xunji sync",
+  "绑定自己训记 App 的 Open API key 后，训练计划可同步到训记、实练完成可回读打卡、助手可查询实练。": "After binding your Xunji app's Open API key, training plans can sync to Xunji, completed sessions read back as check-ins, and the assistant can query your sessions.",
+  "key 在训记 App「我的 → 设置 → Open API」里申请，加密存储不会明文展示。": "Request the key in the Xunji app under Me → Settings → Open API; it's stored encrypted and never shown in plain text.",
+  "已绑定 · {key}": "Bound · {key}",
+  "更新于 {date}": "Updated {date}",
+  "更换": "Replace",
+  "确认解绑？（3 秒内再点）": "Unbind? (click again within 3s)",
+  "解绑": "Unbind",
+  "粘贴训记 App 内申请的 Open API key": "Paste the Open API key from the Xunji app",
+  "校验中…": "Verifying…",
+  "绑定": "Bind",
+  "正在向训记校验 key…": "Verifying the key with Xunji…",
+
+  // ---- 功能管理（REQ-028 用户自选层） ----
+  "功能管理": "Modules",
+  "管理员账号全模块直通，无需自选开关。": "The admin account has every module enabled — no per-module toggles needed.",
+  "当前没有可自行开关的模块。": "No self-service module toggles available.",
+  "按需开关功能模块：关闭即隐藏入口（数据保留不删），重新开启即恢复。": "Toggle modules as needed: turning one off hides its entry (data is kept), turning it back on restores it.",
+  "✅ {name}已开启": "✅ {name} enabled",
+  "{name}已关闭（数据保留，随时可再开启）": "{name} disabled (data kept; re-enable anytime)",
+  "先开启上级模块": "Enable the parent module first",
+  "点击关闭模块": "Click to turn the module off",
+  "点击开启模块": "Click to turn the module on",
 };

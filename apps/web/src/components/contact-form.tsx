@@ -6,6 +6,8 @@ import { Modal } from "@/components/ui/modal";
 import { useImeSubmit } from "@/lib/use-ime-submit";
 import { CONTACT_GROUPS, GROUP_EMOJI, IMPORTANCE_TIERS, importanceLabel } from "@/lib/social";
 import { lunarDayLabel, lunarMonthLabel } from "@/lib/lunar";
+import { t as tr, tpl, getLang } from "@/i18n"; // t as tr：IMPORTANCE_TIERS.map((t) => 局部参数遮蔽 t
+import { contactGroupLabel } from "@shiguangri/shared/i18n-enum";
 
 export interface ContactDraft {
   id: string;
@@ -38,7 +40,8 @@ export default function ContactFormModal({
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [alias, setAlias] = useState(initial?.alias ?? "");
-  const [group, setGroup] = useState(initial?.group_tag ?? "朋友");
+  // 默认分组=朋友（入库中文值，经 CONTACT_GROUPS 常量取，避免中文枚举字面量散落展示层）
+  const [group, setGroup] = useState(initial?.group_tag ?? CONTACT_GROUPS[1]);
   const [bdayCal, setBdayCal] = useState<"solar" | "lunar">(initial?.birthday_cal === "lunar" ? "lunar" : "solar");
   const [birthday, setBirthday] = useState(initial?.birthday ?? "");
   const [lunarMonth, setLunarMonth] = useState<number>(initial?.lunar_month ?? 1);
@@ -79,10 +82,10 @@ export default function ContactFormModal({
       };
       if (initial) {
         await api(`/api/contacts/${initial.id}`, "PATCH", payload);
-        await onSaved("💾 档案已更新");
+        await onSaved(tr("💾 档案已更新"));
       } else {
         await api("/api/contacts", "POST", payload);
-        await onSaved(`✅ 已建档：${name.trim()}`);
+        await onSaved(tpl("✅ 已建档：{name}", { name: name.trim() }));
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -93,7 +96,7 @@ export default function ContactFormModal({
 
   const ime = useImeSubmit(save);
   return (
-    <Modal title={initial ? "编辑联系人" : "新建联系人"} onClose={onClose} busy={busy}>
+    <Modal title={initial ? tr("编辑联系人") : tr("新建联系人")} onClose={onClose} busy={busy}>
       <form
         className="space-y-2.5"
         onSubmit={ime.onSubmit}
@@ -105,14 +108,14 @@ export default function ContactFormModal({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="姓名（必填）"
+              placeholder={tr("姓名（必填）")}
               maxLength={30}
               className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
             />
             <input
               value={alias}
               onChange={(e) => setAlias(e.target.value)}
-              placeholder="备注名（如：老王）"
+              placeholder={tr("备注名（如：老王）")}
               className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
             />
           </div>
@@ -123,23 +126,23 @@ export default function ContactFormModal({
               className="flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm outline-none focus:border-sky-500"
             >
               {CONTACT_GROUPS.map((g) => (
-                <option key={g} value={g}>{GROUP_EMOJI[g]} {g}</option>
+                <option key={g} value={g}>{GROUP_EMOJI[g]} {contactGroupLabel(g, getLang())}</option>
               ))}
             </select>
             <input
               type="date"
               value={anniversary ?? ""}
               onChange={(e) => setAnniversary(e.target.value)}
-              title="纪念日（如：结婚纪念日）"
+              title={tr("纪念日（如：结婚纪念日）")}
               className="flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500"
             />
-            <span className="flex items-center whitespace-nowrap text-micro text-ink-dim">纪念日</span>
+            <span className="flex items-center whitespace-nowrap text-micro text-ink-dim">{tr("纪念日")}</span>
           </div>
           <div>
             <div className="flex gap-2">
               {/* 生日历法切换：阳历=日期选择；农历=月/日选择 + 闰月标记 */}
               <div className="flex shrink-0 items-center rounded-lg border border-line-strong bg-surface p-0.5 text-xs">
-                {([["solar", "阳历"], ["lunar", "农历"]] as const).map(([v, label]) => (
+                {([["solar", tr("阳历")], ["lunar", tr("农历")]] as const).map(([v, label]) => (
                   <button
                     key={v}
                     type="button"
@@ -159,7 +162,7 @@ export default function ContactFormModal({
                   type="date"
                   value={birthday ?? ""}
                   onChange={(e) => setBirthday(e.target.value)}
-                  title="生日（阳历）"
+                  title={tr("生日（阳历）")}
                   className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none focus:border-sky-500"
                 />
               ) : (
@@ -167,7 +170,7 @@ export default function ContactFormModal({
                   <select
                     value={lunarMonth}
                     onChange={(e) => setLunarMonth(Number(e.target.value))}
-                    title="农历月"
+                    title={tr("农历月")}
                     className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-1.5 py-1.5 text-sm outline-none focus:border-sky-500"
                   >
                     {LUNAR_MONTHS.map((m) => (
@@ -177,33 +180,33 @@ export default function ContactFormModal({
                   <select
                     value={lunarDay}
                     onChange={(e) => setLunarDay(Number(e.target.value))}
-                    title="农历日"
+                    title={tr("农历日")}
                     className="min-w-0 flex-1 rounded-lg border border-line-strong bg-surface px-1.5 py-1.5 text-sm outline-none focus:border-sky-500"
                   >
                     {LUNAR_DAYS.map((d) => (
                       <option key={d} value={d}>{lunarDayLabel(d)}</option>
                     ))}
                   </select>
-                  <label className="flex shrink-0 items-center gap-1 text-micro text-ink-mute" title="闰月生日；当年无闰月时按平月过">
+                  <label className="flex shrink-0 items-center gap-1 text-micro text-ink-mute" title={tr("闰月生日；当年无闰月时按平月过")}>
                     <input
                       type="checkbox"
                       checked={lunarLeap}
                       onChange={(e) => setLunarLeap(e.target.checked)}
                       className="h-3.5 w-3.5 accent-sky-500"
                     />
-                    闰
+                    {tr("闰")}
                   </label>
                 </div>
               )}
             </div>
             <p className="mt-1 text-micro text-ink-dim">
-              {bdayCal === "lunar" ? "农历生日每年公历日期不同，会自动换算提醒 · 闰月生日无闰月年份按平月过" : "生日（可空）"}
+              {bdayCal === "lunar" ? tr("农历生日每年公历日期不同，会自动换算提醒 · 闰月生日无闰月年份按平月过") : tr("生日（可空）")}
             </p>
           </div>
           <div>
             <div className="mb-1 flex items-center gap-2 text-micro text-ink-dim">
-              重要程度
-              <span className="text-ink-mute">决定图谱中与你的距离 · 当前：{importanceLabel(importance)}</span>
+              {tr("重要程度")}
+              <span className="text-ink-mute">{tr("决定图谱中与你的距离 · 当前：")}{tr(importanceLabel(importance))}</span>
             </div>
             <div className="flex gap-1">
               {[...IMPORTANCE_TIERS].reverse().map((t) => (
@@ -217,14 +220,14 @@ export default function ContactFormModal({
                       : "border border-line-strong bg-surface text-ink-mute hover:bg-elevated"
                   }`}
                 >
-                  {t.label}
+                  {tr(t.label)}
                 </button>
               ))}
             </div>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between text-micro text-ink-dim">
-              亲密度
+              {tr("亲密度")}
               <span className="tabular-nums text-ink-mute">{intimacy}/100</span>
             </div>
             <input
@@ -235,27 +238,27 @@ export default function ContactFormModal({
               value={intimacy}
               onChange={(e) => setIntimacy(Number(e.target.value))}
               className="h-6 w-full accent-sky-500"
-              aria-label="亲密度"
+              aria-label={tr("亲密度")}
             />
           </div>
           <textarea
             value={notes ?? ""}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
-            placeholder="备注：喜好/忌讳/重要的事…"
+            placeholder={tr("备注：喜好/忌讳/重要的事…")}
             className="w-full resize-none rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-sm outline-none focus:border-sky-500"
           />
           {err && <p className="text-xs text-danger">{err}</p>}
           <div className="flex justify-end gap-2 pt-1">
             <button type="button" onClick={onClose} className="rounded-lg px-4 py-1.5 text-xs text-ink-mute hover:bg-soft">
-              取消
+              {tr("取消")}
             </button>
             <button
               type="submit"
               disabled={busy || !name.trim()}
               className="btn-primary rounded-lg px-5 py-1.5 text-xs font-medium disabled:opacity-40"
             >
-              {busy ? "保存中…" : initial ? "保存" : "建档"}
+              {busy ? tr("保存中…") : initial ? tr("保存") : tr("建档")}
             </button>
           </div>
         </form>

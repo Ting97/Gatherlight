@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { api, ApiClientError } from "@/shared/api";
+import { t } from "@/i18n";
 import type { EditingReflection, Msg } from "./types";
 
 /** N2 感悟编辑器状态与提交（自 detail.tsx 拆出）：新建/编辑（编辑前拉全文） */
@@ -28,7 +29,7 @@ export function useReflection(opts: { id: string; load: () => Promise<void>; set
       setEditorOpen(true);
     } catch (e) {
       // ApiClientError 用服务端文案；断网等非 HTTP 错误也必须有反馈（旧版静默，编辑器不打开且无提示）
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "全文加载失败，请检查网络后重试" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== t("操作失败") ? e.message : t("全文加载失败，请检查网络后重试") });
     }
   }
 
@@ -40,18 +41,18 @@ export function useReflection(opts: { id: string; load: () => Promise<void>; set
         ? `/api/spaces/${id}/reflections/${editingReflection.id}`
         : `/api/spaces/${id}/reflections`;
       await api<any>(url, editingReflection ? "PATCH" : "POST", { content });
-      setMsg({ ok: true, text: editingReflection ? "✏️ 感悟已更新" : "📝 感悟已保存" });
+      setMsg({ ok: true, text: editingReflection ? t("✏️ 感悟已更新") : t("📝 感悟已保存") });
       setEditorOpen(false);
       setRev((r) => r + 1); // FR-4.1：列表立即刷新
       await load();
       return true;
     } catch (e) {
       if (e instanceof ApiClientError) {
-        setMsg({ ok: false, text: e.message === "操作失败" ? "保存失败" : e.message });
+        setMsg({ ok: false, text: e.message === t("操作失败") ? t("保存失败") : e.message });
         return false;
       }
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      setMsg({ ok: false, text: "网络异常，请稍后重试" });
+      setMsg({ ok: false, text: t("网络异常，请稍后重试") });
       return false;
     } finally {
       setRefEditorBusy(false);

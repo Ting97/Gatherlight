@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { createVoiceRecorder, VOICE_MAX_SECONDS, type VoiceRecorderState } from "@/lib/voice-recorder";
+import { t, tpl } from "@/i18n";
 
 /** 长按起录的等待时长（安卓长按标准 ~500ms）：松开早于它 = 点按打开文字面板 */
 const LONG_PRESS_MS = 500;
@@ -148,12 +149,12 @@ export default function CaptureButton({
                   <span className="inline-block h-3 w-3 animate-pulse rounded-full bg-danger" />
                   {mmss}
                 </span>
-                <span className="text-xs text-ink-mute">{cancelArmed ? "松开取消" : `松开识别文字 · 上滑取消（最长 ${VOICE_MAX_SECONDS} 秒）`}</span>
+                <span className="text-xs text-ink-mute">{cancelArmed ? t("松开取消") : tpl("松开识别文字 · 上滑取消（最长 {n} 秒）", { n: VOICE_MAX_SECONDS })}</span>
               </>
             ) : (
               <>
                 <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                <span className="text-xs text-ink-mute">识别中…</span>
+                <span className="text-xs text-ink-mute">{t("识别中…")}</span>
               </>
             )}
           </div>
@@ -162,7 +163,7 @@ export default function CaptureButton({
 
       <button
         type="button"
-        aria-label="点按打字，长按说话"
+        aria-label={t("点按打字，长按说话")}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -191,7 +192,7 @@ export default function CaptureButton({
       {/* 首次使用提示：用过一次后消失 */}
       {showHint && state === "idle" && (
         <div className="pointer-events-none fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] left-1/2 z-40 -translate-x-1/2 whitespace-nowrap rounded-full border border-line-soft bg-surface px-3 py-1 text-micro text-ink-mute sm:hidden">
-          点按打字 · 长按说话
+          {t("点按打字 · 长按说话")}
         </div>
       )}
     </>

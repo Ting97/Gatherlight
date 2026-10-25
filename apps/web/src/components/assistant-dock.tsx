@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import AssistantChat, { SCOPE_META, SCOPE_META_EN, type ChatScope } from "@/app/assistant/chat-core";
+import AssistantChat, { scopeMetaZh, SCOPE_META_EN, type ChatScope } from "@/app/assistant/chat-core";
 import { useSession } from "@/shared/session";
-import { useLang } from "@/i18n";
+import { tpl, useLang } from "@/i18n";
 
 /**
  * 助手悬浮 Dock（REQ-015 追加；REQ-019 分域参数化）：
@@ -19,7 +19,7 @@ export default function AssistantDock({ scope = "global" }: { scope?: ChatScope 
   const [open, setOpen] = useState(false);
   const mqRef = useRef<MediaQueryList | null>(null);
   const { lang } = useLang();
-  const meta = (lang === "en" ? SCOPE_META_EN : SCOPE_META)[scope];
+  const meta = (lang === "en" ? SCOPE_META_EN : scopeMetaZh())[scope];
 
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 640px)");
@@ -63,7 +63,7 @@ export default function AssistantDock({ scope = "global" }: { scope?: ChatScope 
         !open && (
           <button
             onClick={toggle}
-            aria-label={`打开${meta.dockLabel}`}
+            aria-label={tpl("打开{label}", { label: meta.dockLabel })}
             className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-4 z-40 flex items-center gap-1.5 rounded-full border border-violet-500/40 bg-surface/90 px-3.5 py-2.5 text-xs font-medium text-ai shadow-lg shadow-scrim/40 backdrop-blur transition hover:border-violet-500/70"
           >
             <Sparkles size={15} aria-hidden /> {meta.dockLabel}

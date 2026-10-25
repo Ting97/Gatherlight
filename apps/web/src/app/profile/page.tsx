@@ -256,7 +256,7 @@ export default function ProfilePage() {
                   <div className="mt-2.5">
                     <div className="flex justify-between text-xs text-ink-dim">
                       <span>{t("近 30 天 AI 识别次数")}</span>
-                      <span>{quota.used}{quota.limit === null ? t("（不限）") : tpl(" / {n}", { n: quota.limit })}</span>
+                      <span>{quota.used}{quota.limit === null ? t("（不限）") : ` / ${quota.limit}`}</span>
                     </div>
                     {quota.limit !== null && (
                       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-elevated">

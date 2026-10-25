@@ -4,6 +4,7 @@
  * Markdown 编辑快捷键与工具栏共用变换（REQ-019 FR-B2）：
  * 有选区包裹、无选区插占位并选中占位文字；调用方在 set 后自行恢复光标（requestAnimationFrame）。
  */
+import { t } from "@/i18n";
 
 export type MdKind = "bold" | "italic" | "link" | "h2" | "list" | "quote";
 
@@ -13,18 +14,20 @@ interface MdSpec {
   placeholder: string;
 }
 
-const SPECS: Record<MdKind, MdSpec> = {
-  bold: { wrap: ["**", "**"], placeholder: "粗体文字" },
-  italic: { wrap: ["*", "*"], placeholder: "斜体文字" },
-  link: { wrap: ["[", "](https://)"], placeholder: "链接文字" },
-  h2: { prefix: "## ", placeholder: "标题" },
-  list: { prefix: "- ", placeholder: "列表项" },
-  quote: { prefix: "> ", placeholder: "引用内容" },
-};
+/** 变换表工厂：占位文案需按当前语言取 t()，模块顶层常量会在 import 期定格语言（i18n 约定） */
+const specs = (): Record<MdKind, MdSpec> => ({
+  bold: { wrap: ["**", "**"], placeholder: t("粗体文字") },
+  italic: { wrap: ["*", "*"], placeholder: t("斜体文字") },
+  link: { wrap: ["[", "](https://)"], placeholder: t("链接文字") },
+  h2: { prefix: "## ", placeholder: t("标题") },
+  list: { prefix: "- ", placeholder: t("列表项") },
+  // placeholder 放 prefix 前：行前缀 "> " 的 > 紧跟中文会干扰 i18n 审计的 JSX 文本识别
+  quote: { placeholder: t("引用内容"), prefix: "> " },
+});
 
 /** 对 textarea 应用一个 Markdown 变换：返回是否发生了修改（调用方据此 setState） */
 export function applyMarkdown(ta: HTMLTextAreaElement, kind: MdKind): { value: string; selStart: number; selEnd: number } | null {
-  const spec = SPECS[kind];
+  const spec = specs()[kind];
   const { value, selectionStart: s, selectionEnd: e } = ta;
   const selected = value.slice(s, e);
 

@@ -12,18 +12,23 @@ import { COMMON_MOODS } from "./moment-feed";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { bjInputToIso } from "@/lib/bj-time";
-import { t } from "@/i18n";
-import { getLang } from "@/i18n";
+import { t, tpl, getLang } from "@/i18n";
 import { txCatLabel, mealLabel } from "@shiguangri/shared/i18n-enum";
+import { domainLabel } from "./moment-feed/kit";
+import { spaceName } from "@/lib/space-i18n";
 
 const SIX = [
-  { key: "schedule", icon: Clock, label: "日程", hint: "做了什么事" },
-  { key: "todo", icon: ListTodo, label: "todo", hint: "之后要做" },
-  { key: "finance", icon: Wallet, label: "收支", hint: "花了 / 收入" },
-  { key: "mood", icon: Smile, label: "心情", hint: "此刻情绪" },
-  { key: "people", icon: Users, label: "关系", hint: "和谁在一起" },
-  { key: "diet", icon: Utensils, label: "饮食", hint: "吃了什么" },
+  { key: "schedule", icon: Clock },
+  { key: "todo", icon: ListTodo },
+  { key: "finance", icon: Wallet },
+  { key: "mood", icon: Smile },
+  { key: "people", icon: Users },
+  { key: "diet", icon: Utensils },
 ] as const;
+
+/** 餐次/交往类型选项（入库中文枚举值；展示按语言映射：餐次走 mealLabel，类型走字典） */
+export const MEAL_OPTIONS = ["早餐", "午餐", "晚餐", "加餐", "夜宵"];
+export const PEOPLE_TYPES = ["见面", "通话", "送礼", "收礼", "请客", "帮忙", "其他"];
 
 type SixKey = (typeof SIX)[number]["key"];
 
@@ -70,12 +75,22 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
   const [due, setDue] = useState("");
   const [direction, setDirection] = useState("out");
   const [yuan, setYuan] = useState("");
-  const [category, setCategory] = useState("餐饮");
+  const [category, setCategory] = useState(TX_CATEGORIES[0]);
   const [mood, setMood] = useState("");
-  const [meal, setMeal] = useState("午餐");
-  const [pType, setPType] = useState("见面");
+  const [meal, setMeal] = useState(MEAL_OPTIONS[1]);
+  const [pType, setPType] = useState(PEOPLE_TYPES[0]);
   // 点外/Esc 关闭（Hook 留在组件体顶部：JSX 内调用因顺序稳定能跑，但违反 Hooks 惯例且重构易踩坑）
   const dismissRef = useDismiss<HTMLDivElement>(onClose);
+
+  // 六域提示文案（渲染期取词，随语言切换）
+  const hints: Record<SixKey, string> = {
+    schedule: t("做了什么事"),
+    todo: t("之后要做"),
+    finance: t("花了 / 收入"),
+    mood: t("此刻情绪"),
+    people: t("和谁在一起"),
+    diet: t("吃了什么"),
+  };
 
   function openManual(key: SixKey) {
     if (key === manualDomain) {
@@ -213,10 +228,10 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
               {wrap(
                 t("餐次"),
                 <select value={meal} onChange={(e) => setMeal(e.target.value)} className={inputCls}>
-                  {["早餐", "午餐", "晚餐", "加餐", "夜宵"].map((x) => <option key={x} value={x}>{mealLabel(x, getLang())}</option>)}
+                  {MEAL_OPTIONS.map((x) => <option key={x} value={x}>{mealLabel(x, getLang())}</option>)}
                 </select>,
               )}
-              {wrap("吃了什么", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="如 牛肉面一碗" className={inputCls} />)}
+              {wrap(t("吃了什么"), <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("如 牛肉面一碗")} className={inputCls} />)}
             </div>
             <button onClick={() => submitManual(key)} disabled={busy || !text.trim()} className={btnMini}>
               <Plus size={12} /> {t("添加")}
@@ -227,11 +242,11 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
         return (
           <div className="space-y-1.5">
             <div className="flex gap-1.5">
-              {wrap("姓名", <input value={text} onChange={(e) => setText(e.target.value)} placeholder="和谁在一起" className={inputCls} />)}
+              {wrap(t("姓名"), <input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("和谁在一起")} className={inputCls} />)}
               {wrap(
                 t("类型"),
                 <select value={pType} onChange={(e) => setPType(e.target.value)} className={inputCls}>
-                  {["见面", "通话", "送礼", "收礼", "请客", "帮忙", "其他"].map((x) => <option key={x}>{x}</option>)}
+                  {PEOPLE_TYPES.map((x) => <option key={x} value={x}>{t(x)}</option>)}
                 </select>,
               )}
             </div>
@@ -255,24 +270,26 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
       <div className="mx-auto mb-2 h-1 w-10 rounded-full bg-soft sm:hidden" />
       <div className="mb-2 flex items-center justify-between">
         <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-ink">
-          <Sparkles size={13} className="text-ai" /> 识别与补充
+          <Sparkles size={13} className="text-ai" /> {t("识别与补充")}
         </span>
-        <button onClick={onClose} title="关闭" className="rounded p-1 text-ink-dim hover:bg-wash hover:text-ink">
+        <button onClick={onClose} title={t("关闭")} className="rounded p-1 text-ink-dim hover:bg-wash hover:text-ink">
           <X size={14} />
         </button>
       </div>
 
       <div className="space-y-0.5">
-        {SIX.map(({ key, icon: Icon, label, hint }) => {
+        {SIX.map(({ key, icon: Icon }) => {
           const st = domainState(m, key as SixKey);
           const isManual = manualDomain === key;
+          const label = domainLabel(key);
+          const hint = hints[key as SixKey];
           return (
             <div key={key} className={`rounded-lg ${isManual ? "border border-sky-500/40 bg-elevated/60 p-2" : ""}`}>
               <div className="flex items-center gap-2 rounded-lg px-1.5 py-1.5 hover:bg-wash">
                 <button
                   onClick={() => onAI(key)}
                   disabled={busyDomain === key}
-                  title={`AI 识别${label}`}
+                  title={tpl("AI 识别{label}", { label })}
                   className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                 >
                   <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${st === "applied" ? "bg-emerald-500/15 text-success" : "bg-soft/50 text-ink-mute"}`}>
@@ -283,14 +300,14 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
                     <span className="block truncate text-badge text-ink-faint">{hint}</span>
                   </span>
                   {busyDomain === key ? (
-                    <span className="shrink-0 animate-pulse text-badge text-accent">识别中…</span>
+                    <span className="shrink-0 animate-pulse text-badge text-accent">{t("识别中…")}</span>
                   ) : st === "applied" ? (
                     <span className="shrink-0 text-success"><Check size={14} /></span>
                   ) : null}
                 </button>
                 <button
                   onClick={() => openManual(key)}
-                  title={`手动添加${label}`}
+                  title={tpl("手动添加{label}", { label })}
                   className={`shrink-0 rounded-lg p-1.5 transition ${
                     isManual ? "bg-sky-600 text-white" : "text-ink-dim hover:bg-wash hover:text-accent"
                   }`}
@@ -306,7 +323,7 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
 
       {/* 所属空间（REQ-001 R3）：单选归属 / 移除；spaceMenu 列表由父级挂载时拉取 */}
       <div className="mt-2 border-t border-line-soft pt-2">
-        <span className="text-micro font-semibold text-ink">所属空间</span>
+        <span className="text-micro font-semibold text-ink">{t("所属空间")}</span>
         {spaceMenu === null ? (
           <button
             onClick={() => {
@@ -325,14 +342,14 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
             }}
             className="mt-1 block text-micro text-accent hover:underline"
           >
-            选择归属…
+            {t("选择归属…")}
           </button>
         ) : (
           <div className="mt-1 space-y-0.5">
             {spaceMenu.length === 0 &&
               (spaceMenuErr ? (
                 <p className="text-badge text-ink-faint">
-                  空间列表加载失败，
+                  {t("空间列表加载失败，")}
                   <button
                     className="text-accent hover:underline"
                     onClick={() => {
@@ -340,11 +357,11 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
                       setSpaceMenuErr(false);
                     }}
                   >
-                    重试
+                    {t("重试")}
                   </button>
                 </p>
               ) : (
-                <p className="text-badge text-ink-faint">还没有进行中的空间</p>
+                <p className="text-badge text-ink-faint">{t("还没有进行中的空间")}</p>
               ))}
             {spaceMenu.map((s: { id: string; name: string; icon: string; color: string }) => (
               <button
@@ -358,7 +375,7 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
                 }`}
               >
                 <span>{s.icon}</span>
-                <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                <span className="min-w-0 flex-1 truncate">{spaceName(s)}</span>
                 {m.space?.id === s.id && <Check size={12} />}
               </button>
             ))}
@@ -370,7 +387,7 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
                 }}
                 className="w-full rounded-lg px-1.5 py-1 text-left text-micro text-danger hover:bg-wash"
               >
-                移除归属
+                {t("移除归属")}
               </button>
             )}
           </div>
@@ -378,8 +395,8 @@ export default function EntryMenu({ m, activities, busyDomain, onAI, onManual, o
       </div>
 
       <p className="mt-2 flex items-center gap-1.5 border-t border-line-soft pt-2 text-badge leading-relaxed text-ink-dim">
-        <Sparkles size={10} className="shrink-0 text-ai" /> 点行 = AI 识别该类
-        <PencilLine size={10} className="ml-1 shrink-0 text-accent" /> 点 ✏️ = 手动补充
+        <Sparkles size={10} className="shrink-0 text-ai" /> {t("点行 = AI 识别该类")}
+        <PencilLine size={10} className="ml-1 shrink-0 text-accent" /> {t("点 ✏️ = 手动补充")}
       </p>
     </div>
   );

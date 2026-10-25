@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { TodoItem, TodoRow } from "@/lib/types";
+import { t as tr } from "@/i18n";
 import { toast } from "@/shared/ui/toast";
 import { isoToLocalInput, localInputToIso } from "../todo-bits";
 import { isChildId } from "./kit";
@@ -40,13 +41,13 @@ export function useTodoEdit({ todos, patchTodo }: TodoEditCtx) {
   function closeEdit(t: TodoRow) {
     // 脏检查含「每日重复」（漏掉时切了重复再点空白，改动被静默丢弃且无提示）
     const dirty = editTitle !== t.title || editDue !== isoToLocalInput(t.due_at) || editActivity !== (t.activity_id ?? "other") || editRepeat !== !!t.repeat_daily;
-    if (dirty) toast("已取消，未保存", "info");
+    if (dirty) toast(tr("已取消，未保存"), "info");
     setEditingId(null);
   }
 
   async function saveEdit() {
     if (!editingId || !editTitle.trim()) {
-      toast("标题不能为空", "err");
+      toast(tr("标题不能为空"), "err");
       return;
     }
     if (editSaving) return;
@@ -60,13 +61,13 @@ export function useTodoEdit({ todos, patchTodo }: TodoEditCtx) {
           activityId: editActivity,
           ...(isChildId(editingId, todos) ? { repeatDaily: editRepeat } : {}),
         },
-        "💾 已保存",
+        tr("💾 已保存"),
       );
       // 失败时不关闭编辑态，保留用户正在编辑的内容
       if (ok) setEditingId(null);
     } catch {
       // 兜底：任何异常只提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      toast("网络异常，请稍后重试", "err");
+      toast(tr("网络异常，请稍后重试"), "err");
     } finally {
       setEditSaving(false);
     }

@@ -3,6 +3,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { PenLine } from "lucide-react";
 import SpaceReflections from "@/components/space-reflections";
+import { t } from "@/i18n";
 import type { Msg } from "./types";
 import type { ReflectionActions } from "./use-reflection";
 
@@ -22,7 +23,7 @@ export default function ReflectionSection(opts: {
           onClick={openNew}
           className="btn-primary flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium"
         >
-          <PenLine size={14} aria-hidden /> 写感悟
+          <PenLine size={14} aria-hidden /> {t("写感悟")}
         </button>
       </div>
       <SpaceReflections

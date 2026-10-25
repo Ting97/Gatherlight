@@ -6,6 +6,7 @@ import MarkdownView from "./markdown-view";
 import { applyMarkdownControlled, handleMarkdownKey, type MdKind } from "./markdown-shortcuts";
 import { useBodyScrollLock } from "@/components/ui/use-body-scroll-lock";
 import { useDismiss } from "./dismissable";
+import { t as tr } from "@/i18n";
 
 /**
  * N2 感悟编辑器（REQ-002 FR-N2.2/2.3）：底部抽屉，自适应 textarea + 字数（码点口径，与 DB char_length 一致）。
@@ -45,7 +46,7 @@ export default function ReflectionEditor({
   // （开销可忽略，闭包恒最新；旧注释宣称「稳定化不重订阅」与实现相反，已如实更正）
   const cancel = useCallback(() => {
     // N3.5：有改动时轻提示「已取消，未保存」（不弹确认，保持轻量）
-    if (value !== initialRef.current) notify?.({ ok: true, text: "已取消，未保存" });
+    if (value !== initialRef.current) notify?.({ ok: true, text: tr("已取消，未保存") });
     onCancel();
   }, [value, notify, onCancel]);
 
@@ -71,44 +72,44 @@ export default function ReflectionEditor({
       >
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-ink">{initialRef.current ? "编辑感悟" : "写感悟"}</h3>
+            <h3 className="text-sm font-semibold text-ink">{initialRef.current ? tr("编辑感悟") : tr("写感悟")}</h3>
             {/* 编辑 | 预览 切换（markdown 实时渲染） */}
             <div className="flex overflow-hidden rounded-lg border border-line-soft text-micro">
               <button
                 onClick={() => setTab("edit")}
                 className={`px-2.5 py-1 transition ${tab === "edit" ? "bg-sky-500/15 text-accent" : "text-ink-mute hover:text-ink"}`}
               >
-                编辑
+                {tr("编辑")}
               </button>
               <button
                 onClick={() => setTab("preview")}
                 className={`px-2.5 py-1 transition ${tab === "preview" ? "bg-sky-500/15 text-accent" : "text-ink-mute hover:text-ink"}`}
               >
-                预览
+                {tr("预览")}
               </button>
             </div>
           </div>
-          <button onClick={cancel} disabled={busy} aria-label="关闭" className="rounded p-1 text-ink-dim hover:text-ink disabled:opacity-40"><X size={14} /></button>
+          <button onClick={cancel} disabled={busy} aria-label={tr("关闭")} className="rounded p-1 text-ink-dim hover:text-ink disabled:opacity-40"><X size={14} /></button>
         </div>
         {tab === "preview" ? (
           <div className="min-h-[40vh] w-full flex-1 overflow-y-auto rounded-xl border border-line-soft bg-surface/60 px-3 py-2.5">
             {value.trim() ? (
               <MarkdownView value={value} />
             ) : (
-              <p className="text-xs text-ink-faint">暂无内容 —— 回到「编辑」写点什么</p>
+              <p className="text-xs text-ink-faint">{tr("暂无内容 —— 回到「编辑」写点什么")}</p>
             )}
           </div>
         ) : (
           <>
             {/* Markdown 工具栏（REQ-019 FR-B2）：按钮与 Ctrl/Cmd+B/I/K 快捷键共用同一变换 */}
-            <div className="mb-1.5 flex items-center gap-0.5" role="toolbar" aria-label="Markdown 格式">
+            <div className="mb-1.5 flex items-center gap-0.5" role="toolbar" aria-label={tr("Markdown 格式")}>
               {([
-                ["bold", "B", "加粗（Ctrl/⌘+B）", "font-bold"],
-                ["italic", "I", "斜体（Ctrl/⌘+I）", "italic"],
-                ["h2", "H2", "标题", ""],
-                ["list", "•", "列表", ""],
-                ["quote", "❝", "引用", ""],
-                ["link", "🔗", "链接（Ctrl/⌘+K）", ""],
+                ["bold", "B", tr("加粗（Ctrl/⌘+B）"), "font-bold"],
+                ["italic", "I", tr("斜体（Ctrl/⌘+I）"), "italic"],
+                ["h2", "H2", tr("标题"), ""],
+                ["list", "•", tr("列表"), ""],
+                ["quote", "❝", tr("引用"), ""],
+                ["link", "🔗", tr("链接（Ctrl/⌘+K）"), ""],
               ] as [MdKind, string, string, string][]).map(([kind, label, title, extra]) => (
                 <button
                   key={kind}
@@ -144,26 +145,26 @@ export default function ReflectionEditor({
                   setValue(merged);
                 }
               }}
-              placeholder="记录阶段心得、踩坑复盘、自我对话……（支持 Markdown：# 标题、**粗体**、列表、表格、代码，单篇 ≤50000 字）"
+              placeholder={tr("记录阶段心得、踩坑复盘、自我对话……（支持 Markdown：# 标题、**粗体**、列表、表格、代码，单篇 ≤50000 字）")}
               className="input-glow min-h-[40vh] w-full flex-1 resize-none rounded-xl border border-line-soft bg-surface/60 px-3 py-2.5 text-sm leading-relaxed outline-none placeholder:text-ink-faint"
             />
           </>
         )}
         <div className="mt-2 flex items-center justify-between gap-2">
           <span className={`text-micro tabular-nums ${over ? "text-danger" : chars > 45_000 ? "text-warn" : "text-ink-faint"}`}>
-            {chars}/50000{over ? " · 超出上限" : ""}
+            {chars}/50000{over ? tr(" · 超出上限") : ""}
           </span>
           <div className="flex gap-2">
             <button onClick={cancel} className="rounded-xl px-4 py-2 text-xs text-ink-mute hover:bg-soft">
-              取消
+              {tr("取消")}
             </button>
             <button
               onClick={() => void save()}
               disabled={busy || over || !value.trim()}
               className="btn-primary rounded-xl px-5 py-2 text-xs font-medium disabled:opacity-50"
-              title={over ? "超出 50000 字上限" : ""}
+              title={over ? tr("超出 50000 字上限") : ""}
             >
-              {busy ? "保存中…" : "保存"}
+              {busy ? tr("保存中…") : tr("保存")}
             </button>
           </div>
         </div>

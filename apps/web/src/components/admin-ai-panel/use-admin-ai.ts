@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/shared/api";
+import { t, tpl } from "@/i18n";
 import { MODE_META, validateTpl, zhTime } from "./kit";
 import type { EngineMode, PromptItem, Version } from "./types";
 import { useAdminUserData } from "./use-admin-user-data";
@@ -50,8 +51,8 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
       return j.items as PromptItem[];
     } catch (e) {
       // 失败置错误终态（面板据此展示重试按钮），不再只 notify 后停在永久「加载中」
-      setLoadErr(e instanceof Error ? e.message : "加载失败");
-      notify(e instanceof Error ? e.message : "加载失败", false);
+      setLoadErr(e instanceof Error ? e.message : t("加载失败"));
+      notify(e instanceof Error ? e.message : t("加载失败"), false);
     }
   }, [notify]);
 
@@ -107,7 +108,7 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     try {
       await api("/api/admin/ai-mode", "PUT", { mode });
       setEngineMode(mode);
-      notify(`调用引擎已切换为「${MODE_META[mode].label}」，立即生效`);
+      notify(tpl("调用引擎已切换为「{mode}」，立即生效", { mode: MODE_META[mode].label() }));
     } catch (e) {
       notify(e instanceof Error ? e.message : String(e), false);
     } finally {
@@ -150,7 +151,15 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     if (!sel || !draft.trim() || saving) return;
     const key = sel.key; // 保存起点快照：await 期间用户可能已点选其他 prompt
     if (tplMissing.length || tplUnknown.length) {
-      notify(`user 模板占位符未通过：${[...tplMissing.map((x) => `{${x}}缺失`), ...tplUnknown.map((x) => `{${x}}未知`)].join("、")}`, false);
+      notify(
+        tpl("user 模板占位符未通过：{list}", {
+          list: [
+            ...tplMissing.map((x) => tpl("{p}缺失", { p: `{${x}}` })),
+            ...tplUnknown.map((x) => tpl("{p}未知", { p: `{${x}}` })),
+          ].join("、"),
+        }),
+        false,
+      );
       return;
     }
     setSaving(true);
@@ -162,7 +171,7 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
         userTemplate: tplDirty ? tplDraft : null,
         contextConfig: sendCfg ? { inject: injectDraft, caps: capsDraft, userData: ud.userDataDraft } : null,
       });
-      notify(`「${sel.title}」已保存并即时生效`);
+      notify(tpl("「{title}」已保存并即时生效", { title: sel.title }));
       const list = await load();
       // 仅当用户仍停留在该 prompt 才重 pick：await 后用旧 sel 找回会顶掉正在编辑的其他项
       const fresh = list?.find((x) => x.key === key);
@@ -181,14 +190,14 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     setArmKey(null);
     try {
       await api(`/api/admin/prompts/${sel.key}`, "DELETE");
-      notify(`「${sel.title}」已恢复代码默认`);
+      notify(tpl("「{title}」已恢复代码默认", { title: sel.title }));
       const list = await load();
       const fresh = list?.find((x) => x.key === sel.key);
       // selRef 守卫与 save() 同款：await 期间用户已点选其他 prompt 时 pick 会顶掉其正在编辑的草稿
       if (fresh && selRef.current === sel.key) pick(fresh);
     } catch (e) {
       // 服务端错误信息透传（与 rollback 同口径），不再笼统「操作失败」
-      notify(e instanceof Error ? e.message : "操作失败", false);
+      notify(e instanceof Error ? e.message : t("操作失败"), false);
     }
   }
 
@@ -200,12 +209,12 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     setArmKey(null);
     try {
       await api(`/api/admin/prompts/${sel.key}/restore`, "POST", { versionId: v.id });
-      notify(`已回滚到 ${zhTime(v.created_at)} 的版本`);
+      notify(tpl("已回滚到 {time} 的版本", { time: zhTime(v.created_at) }));
       const list = await load();
       const fresh = list?.find((x) => x.key === sel.key);
       if (fresh && selRef.current === sel.key) pick(fresh);
     } catch (e) {
-      notify(e instanceof Error ? e.message : "回滚失败", false);
+      notify(e instanceof Error ? e.message : t("回滚失败"), false);
     }
   }
 
@@ -253,7 +262,7 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     setDraft(suggestion);
     setDirty(true);
     setSuggestion(null);
-    notify("已采纳到编辑器（未保存）");
+    notify(t("已采纳到编辑器（未保存）"));
   }
 
   /** 一键补齐缺失占位符：追加在模板末尾（原内联 onClick；仅缺失占位符可点，守卫与之等价） */
@@ -262,25 +271,30 @@ export function useAdminAi(notify: (text: string, ok?: boolean) => void) {
     if (!validateTpl(tplDraft, sel.registry.placeholders).missing.includes(p)) return;
     const fixed = tplDraft.replace(/\s*$/, "") + "\n" + sel.registry.placeholders.filter((x) => validateTpl(tplDraft, sel.registry.placeholders).missing.includes(x)).map((x) => `{${x}}`).join(" ");
     setTplDraft(fixed);
-    notify("已补齐缺失占位符（追加在模板末尾，可自行调整位置）");
+    notify(t("已补齐缺失占位符（追加在模板末尾，可自行调整位置）"));
   }
 
   /** user 模板还原为代码默认（保存后清除覆盖）（原内联 onClick） */
   function resetTpl() {
     if (!sel) return;
     setTplDraft(sel.userTemplateDefault);
-    notify("user 模板已还原为代码默认（保存后清除覆盖）");
+    notify(t("user 模板已还原为代码默认（保存后清除覆盖）"));
   }
 
   /** 载入某版本 system 到编辑器（未保存）（原内联 onClick） */
   function loadVersionSystem(v: Version) {
     setDraft(v.payload?.system ?? v.content);
     setDirty(true);
-    notify("已载入该版本 system 到编辑器（未保存）");
+    notify(t("已载入该版本 system 到编辑器（未保存）"));
   }
 
   const isReview = sel?.key.startsWith("review_") ?? false;
-  const periodPlaceholder = sel?.key === "review_month" ? "期间 YYYY-MM（空=本月）" : sel?.key === "review_year" ? "期间 YYYY（空=今年）" : "期间 YYYY-MM-DD（空=今天）";
+  const periodPlaceholder =
+    sel?.key === "review_month"
+      ? t("期间 YYYY-MM（空=本月）")
+      : sel?.key === "review_year"
+        ? t("期间 YYYY（空=今年）")
+        : t("期间 YYYY-MM-DD（空=今天）");
 
   return {
     armKey,

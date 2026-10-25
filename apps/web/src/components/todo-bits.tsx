@@ -2,6 +2,8 @@
 
 import type { TodoRow } from "@/lib/types";
 import { Check } from "lucide-react";
+import { daysLeftLabel } from "@shiguangri/shared/i18n-enum";
+import { t as tr, getLang } from "@/i18n";
 import { bjDayIdx, isoToBjInput, bjInputToIso, zhTime as sharedZhTime } from "@/lib/bj-time";
 
 /** 待办共用小件：勾选圆圈 + 时间标签 + 日期工具（todo-board / actions-today 共用） */
@@ -11,16 +13,17 @@ export const pad = (n: number) => String(n).padStart(2, "0");
 /** 北京墙上时间（null 容错转发 shared 版；实现单源 @shiguangri/shared，UTC+8 推算禁本地 getter） */
 export const zhTime = (iso: string | null) => (iso ? sharedZhTime(iso) : "");
 
-/** due 标签：已过期红 / 今天 / 明天 / N 天后 / 无时间 */
+/** due 标签：已过期红 / 今天 / 明天 / N 天后 / 无时间（i18n：今天/明天/N 天后走 shared daysLeftLabel 双语） */
 export const dueTag = (iso: string | null) => {
   if (!iso) return null;
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null; // 非法 ISO 防御：旧版落「NaN 天后」（二十轮）
-  if (t < Date.now()) return { text: "已过期", cls: "text-danger" };
+  if (t < Date.now()) return { text: tr("已过期"), cls: "text-danger" };
   const days = bjDayIdx(t) - bjDayIdx(Date.now());
-  if (days === 0) return { text: "今天", cls: "text-warn" };
-  if (days === 1) return { text: "明天", cls: "text-accent" };
-  return { text: `${days} 天后`, cls: "text-ink-mute" };
+  return {
+    text: daysLeftLabel(days, getLang()),
+    cls: days === 0 ? "text-warn" : days === 1 ? "text-accent" : "text-ink-mute",
+  };
 };
 
 // 北京墙上时间口径（lib/bj-time 单源）：本地 getter 版在海外设备上编辑框与列表展示错位
@@ -45,8 +48,8 @@ export function TodoCircle({
     <button
       onClick={onClick}
       disabled={disabled}
-      title={done ? "点击恢复为未完成" : "点击标记完成"}
-      aria-label={done ? "恢复为未完成" : "标记完成"}
+      title={done ? tr("点击恢复为未完成") : tr("点击标记完成")}
+      aria-label={done ? tr("恢复为未完成") : tr("标记完成")}
       className={`tap-lg flex shrink-0 items-center justify-center rounded-full border-2 transition-all duration-200 ${
         size === "sm" ? "h-5 w-5 text-badge" : "h-6 w-6 text-xs"
       } ${

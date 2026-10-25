@@ -121,15 +121,15 @@ export default function DesktopComposer({
               {img.status === "error" ? (
                 <button
                   onClick={() => onRetryUpload()}
-                  title="重新上传"
+                  title={t("重新上传")}
                   className="absolute inset-0 flex items-center justify-center bg-black/50 text-xs text-white"
                 >
-                  ↻ 重试
+                  ↻ {t("重试")}
                 </button>
               ) : (
                 <button
                   onClick={() => onRemoveImage(i)}
-                  title="移除"
+                  title={t("移除")}
                   className="tap-lg absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-micro text-white"
                 >
                   ✕

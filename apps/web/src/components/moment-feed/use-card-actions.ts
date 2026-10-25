@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FeedMoment } from "@/lib/types";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t } from "@/i18n";
 
 /**
  * 单张动态卡内的提交逻辑 hook：
@@ -33,7 +34,7 @@ export function useCardActions(m: FeedMoment, onRefresh: () => Promise<void>) {
   const run = async (fn: () => Promise<string>): Promise<boolean> => {
     if (runningRef.current) {
       // 重入锁占用 = 本次点击未受理：静默返回会让用户以为点了没生效（全部调用方都是用户点击，无程序化路径）
-      toast("上一步操作还在进行中，请稍候", "info");
+      toast(t("上一步操作还在进行中，请稍候"), "info");
       return false;
     }
     runningRef.current = true;
@@ -59,7 +60,7 @@ export function useCardActions(m: FeedMoment, onRefresh: () => Promise<void>) {
         const j = await api(`/api/entries/${m.id}/recognize`, "POST", { domain }, undefined, {
           timeoutMs: 120_000,
         });
-        return j.message ?? "已重新识别";
+        return j.message ?? t("已重新识别");
       } finally {
         setBusyDomain(null);
       }
@@ -68,13 +69,13 @@ export function useCardActions(m: FeedMoment, onRefresh: () => Promise<void>) {
   /** 菜单里手动添加某域产物（与 run 同款重入锁 + 联动事件：手动补 todo 后「今日行动」同步） */
   const manualAdd = async (domain: string, payload: Record<string, unknown>) => {
     if (runningRef.current) {
-      toast("上一步操作还在进行中，请稍候", "info");
+      toast(t("上一步操作还在进行中，请稍候"), "info");
       throw new Error("busy"); // 调用方 catch 后保持表单打开，提示已在上方 toast
     }
     runningRef.current = true;
     try {
       const j = await api(`/api/entries/${m.id}/manual`, "POST", { domain, payload });
-      toast(j.message ?? "已添加");
+      toast(j.message ?? t("已添加"));
       await onRefresh();
       // 与 run() 同款联动：手动补充的 todo 也要实时出现在「今日行动」（它只监听该事件）
       window.dispatchEvent(new CustomEvent("shiguang:entry-analyzed"));
@@ -91,7 +92,10 @@ export function useCardActions(m: FeedMoment, onRefresh: () => Promise<void>) {
     if (delArmedRef.current === key) {
       delArmedRef.current = null;
       setDelArmed(null);
-      void run(async () => (await fn(), "🗑 已删除"));
+      void run(async () => {
+        await fn();
+        return t("🗑 已删除");
+      });
       return;
     }
     delArmedRef.current = key;

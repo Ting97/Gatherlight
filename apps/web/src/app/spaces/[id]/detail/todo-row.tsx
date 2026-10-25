@@ -8,6 +8,7 @@ import NotePanel from "./note-panel";
 import TodoEditRow from "./todo-edit-row";
 import type { Msg } from "./types";
 import type { TodoActions } from "./use-todo-actions";
+import { t as tr, tpl } from "@/i18n";
 import { ChevronDown, Ellipsis, FileText, Repeat, Sparkles } from "lucide-react";
 
 /** 顶层关联 todo 行（自 detail.tsx 拆出）：勾选/标题/行动列表/添加行动/AI 拆解/行内编辑/行动详情 */
@@ -37,11 +38,11 @@ export default function TodoRowItem(opts: {
       ) : (
         <>
           <div className="group flex items-center gap-2.5">
-            <TodoCircle size="md" done={done} disabled={busyId === t.id} onClick={() => patchTodo(t.id, done ? { undone: true } : { done: true }, done ? `↩️「${t.title}」已恢复` : `✅「${t.title}」已完成`)} />
+            <TodoCircle size="md" done={done} disabled={busyId === t.id} onClick={() => patchTodo(t.id, done ? { undone: true } : { done: true }, done ? tpl("↩️「{title}」已恢复", { title: t.title }) : tpl("✅「{title}」已完成", { title: t.title }))} />
             <button
               onClick={() => startEdit(t)}
               className={`min-w-0 flex-1 truncate text-left text-sm transition hover:text-accent ${done ? "text-ink-faint line-through" : ""}`}
-              title={`${t.title}（点击编辑）`}
+              title={tpl("{title}（点击编辑）", { title: t.title })}
             >
               {t.title}
             </button>
@@ -64,11 +65,11 @@ export default function TodoRowItem(opts: {
                 void decompose({ id: t.id, title: t.title, isAction: false });
               }}
               disabled={busyId === t.id || done}
-              title="AI 拆解为行动"
+              title={tr("AI 拆解为行动")}
               className="row-actions hidden shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-xs text-ai opacity-60 transition hover:bg-soft disabled:opacity-30 group-hover:flex"
             >
               <Sparkles size={12} className={busyId === t.id ? "animate-pulse" : ""} aria-hidden />
-              {busyId === t.id ? "…" : "拆解"}
+              {busyId === t.id ? "…" : tr("拆解")}
             </button>
             <button
               onClick={(e) => {
@@ -84,7 +85,7 @@ export default function TodoRowItem(opts: {
                 );
                 setMenuRow({ todo: t, isChild: false });
               }}
-              title="更多操作"
+              title={tr("更多操作")}
               className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 leading-none text-ink-dim transition hover:text-ink group-hover:block"
             >
               <Ellipsis size={14} />
@@ -93,7 +94,7 @@ export default function TodoRowItem(opts: {
             {(t.children.length > 0 || !done) && (
               <button
                 onClick={() => setExpanded((s) => { const n = new Set(s); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; })}
-                title={open ? "收起行动" : "展开行动"}
+                title={open ? tr("收起行动") : tr("展开行动")}
                 className={`-mx-2 -my-3 shrink-0 p-2 text-ink-mute transition-transform hover:text-ink ${open ? "rotate-180" : ""}`}
               >
                 <ChevronDown size={12} />
@@ -107,13 +108,13 @@ export default function TodoRowItem(opts: {
                 const cDone = c.status === "done";
                 return (
                   <div key={c.id} className="group/child flex items-center gap-2.5 rounded-lg px-1.5 py-1 hover:bg-elevated/60">
-                    <TodoCircle size="sm" done={cDone} disabled={busyId === c.id} onClick={() => patchTodo(c.id, cDone ? { undone: true } : { done: true }, cDone ? "↩️ 已恢复" : "✅ 已完成")}/>
-                    <span className={`min-w-0 flex-1 cursor-pointer truncate text-body transition hover:text-accent ${cDone ? "text-ink-faint line-through" : ""}`} onClick={() => (noteOpen === c.id ? setNoteOpen(null) : openNote(c))} title={`${c.title}（点击编辑详情）`}>
+                    <TodoCircle size="sm" done={cDone} disabled={busyId === c.id} onClick={() => patchTodo(c.id, cDone ? { undone: true } : { done: true }, cDone ? tr("↩️ 已恢复") : tr("✅ 已完成"))}/>
+                    <span className={`min-w-0 flex-1 cursor-pointer truncate text-body transition hover:text-accent ${cDone ? "text-ink-faint line-through" : ""}`} onClick={() => (noteOpen === c.id ? setNoteOpen(null) : openNote(c))} title={tpl("{title}（点击编辑详情）", { title: c.title })}>
                       {c.title}
                     </span>
-                    {c.repeat_daily && <TagChip icon={<Repeat size={11} />} label={c.repeat_done_count > 0 ? `×${c.repeat_done_count}` : "每日"} tone="emerald" size="sm" />}
+                    {c.repeat_daily && <TagChip icon={<Repeat size={11} />} label={c.repeat_done_count > 0 ? `×${c.repeat_done_count}` : tr("每日")} tone="emerald" size="sm" />}
                     {c.note && (
-                      <span className="shrink-0 text-ink-faint" title="有详情">
+                      <span className="shrink-0 text-ink-faint" title={tr("有详情")}>
                         <FileText size={11} aria-hidden />
                       </span>
                     )}
@@ -131,7 +132,7 @@ export default function TodoRowItem(opts: {
                         );
                         setMenuRow({ todo: c, isChild: true });
                       }}
-                      title="更多操作"
+                      title={tr("更多操作")}
                       className="row-actions-hidden hidden shrink-0 rounded px-1.5 py-0.5 leading-none text-ink-dim transition hover:text-ink group-hover/child:block"
                     >
                       <Ellipsis size={14} />
@@ -149,7 +150,7 @@ export default function TodoRowItem(opts: {
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && !e.nativeEvent.isComposing) void addAction(t);
                     }}
-                    placeholder="＋ 添加行动，回车保存"
+                    placeholder={tr("＋ 添加行动，回车保存")}
                     maxLength={200}
                     className="min-w-0 flex-1 bg-transparent text-body outline-none placeholder:text-ink-faint"
                   />
@@ -162,7 +163,7 @@ export default function TodoRowItem(opts: {
                   className="flex items-center gap-1 rounded-lg px-2 py-1 text-micro text-ai/80 transition hover:bg-soft disabled:opacity-40"
                 >
                   <Sparkles size={12} className={busyId === t.id ? "animate-pulse" : ""} aria-hidden />
-                  {busyId === t.id ? "AI 拆解中…" : "让 AI 拆解为可执行的行动"}
+                  {busyId === t.id ? tr("AI 拆解中…") : tr("让 AI 拆解为可执行的行动")}
                 </button>
               )}
             </div>

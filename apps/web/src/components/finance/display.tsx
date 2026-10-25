@@ -10,6 +10,8 @@ import { yuan, yuanToCents, centsToYuanInput } from "@/lib/finance";
 import type { Tx } from "./kit";
 import type { Overview } from "./kit";
 import { api, zhDay } from "./kit";
+import { t as tr, tpl, getLang } from "@/i18n";
+import { txCatLabel } from "@shiguangri/shared/i18n-enum";
 
 export /* ---------- 子组件 ---------- */
 
@@ -22,13 +24,13 @@ function TxRow({ tx: t, onConfirm, onEdit, onDelete, delArmed = false }: { tx: T
     <>
       {/* 上行：徽章 + 分类/对方/备注 + 金额；窄屏自动折行后下行是 日期+账户+操作 */}
       <span className={`shrink-0 rounded px-1.5 py-0.5 text-badge ${t.direction === "out" ? "bg-rose-500/15 text-danger" : "bg-emerald-500/15 text-success"}`}>
-        {t.direction === "out" ? "支" : "收"}
+        {t.direction === "out" ? tr("支") : tr("收")}
       </span>
       <span className="w-12 shrink-0 text-micro tabular-nums text-ink-dim" title={zhDay(t.occurred_at)}>
         {compactDay}
       </span>
       <span className="min-w-0 flex-1 truncate text-sm">
-        {t.category}
+        {txCatLabel(t.category, getLang())}
         {t.counterparty && <span className="text-xs text-ink-dim"> · {t.counterparty}</span>}
         {t.note && t.note !== t.category && <span className="text-xs text-ink-dim"> · {t.note}</span>}
       </span>
@@ -42,22 +44,22 @@ function TxRow({ tx: t, onConfirm, onEdit, onDelete, delArmed = false }: { tx: T
       )}
       <span className="row-actions hidden shrink-0 gap-1 group-hover:flex">
         {onConfirm && (
-          <button onClick={onConfirm} title="确认记录" className="rounded px-1.5 py-0.5 text-warn hover:bg-soft">
+          <button onClick={onConfirm} title={tr("确认记录")} className="rounded px-1.5 py-0.5 text-warn hover:bg-soft">
             <Check size={12} />
           </button>
         )}
         {onEdit && (
-          <button onClick={onEdit} title="修改" className="rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-accent">
+          <button onClick={onEdit} title={tr("修改")} className="rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-accent">
             <Pencil size={12} />
           </button>
         )}
         {onDelete && (
           <button
             onClick={onDelete}
-            title={delArmed ? "3 秒内再点确认删除" : "删除"}
+            title={delArmed ? tr("3 秒内再点确认删除") : tr("删除")}
             className={`flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${delArmed ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:bg-soft hover:text-danger"}`}
           >
-            {delArmed ? "确认删除?" : <Trash2 size={12} />}
+            {delArmed ? tr("确认删除?") : <Trash2 size={12} />}
           </button>
         )}
       </span>
@@ -73,7 +75,7 @@ export function SavingsTrend({ trend }: { trend: Overview["trend"] }) {
   return (
     <div className="mt-4 border-t border-line-soft pt-3">
       <p className="mb-2 flex items-center gap-1.5 text-micro text-ink-mute">
-        <TagChip icon={<TrendingUp size={12} />} label="储蓄率 · 近 6 个月" tone="emerald" />
+        <TagChip icon={<TrendingUp size={12} />} label={tr("储蓄率 · 近 6 个月")} tone="emerald" />
       </p>
       <div className="flex items-end justify-between gap-2">
         {trend.map((t, i) => {
@@ -89,7 +91,7 @@ export function SavingsTrend({ trend }: { trend: Overview["trend"] }) {
                 {t.rate == null ? "—" : `${t.rate}%`}
               </span>
               <div
-                title={`${t.month}：收入 ¥${yuan(t.inCents)} · 支出 ¥${yuan(t.outCents)}`}
+                title={tpl("{month}：收入 ¥{inAmt} · 支出 ¥{outAmt}", { month: t.month, inAmt: yuan(t.inCents), outAmt: yuan(t.outCents) })}
                 className={`w-full rounded-t transition-colors ${
                   t.rate == null
                     ? "bg-elevated"
@@ -100,7 +102,7 @@ export function SavingsTrend({ trend }: { trend: Overview["trend"] }) {
                 style={{ height: h }}
               />
               <span className={`text-micro tabular-nums ${isCur ? "text-ink-soft" : "text-ink-faint"}`}>
-                {Number(t.month.slice(5))}月
+                {tpl("{n}月", { n: Number(t.month.slice(5)) })}
               </span>
             </div>
           );
@@ -112,11 +114,20 @@ export function SavingsTrend({ trend }: { trend: Overview["trend"] }) {
 
 /** 金额紧凑展示（柱图轴标签口径）：≥1亿 以亿计，≥1万 以万计一位小数，否则取整元。
  *  商余整数口径（仓约定禁浮点 /100）：整元 = ⌊cents/100⌋，一位小数用余数补 */
+/** 紧凑金额单位语言：i18n 当前语言（模块加载时 en 默认——本函数在渲染期调用，读到的是实时值） */
+const compactLang = () => (getLang() === "en" ? "en" : "zh");
+
 const compactWan = (cents: number) => {
   const neg = cents < 0;
   const abs = Math.abs(cents);
   const yuanWhole = Math.floor(abs / 100);
   const fmtSigned = (s: string) => (neg ? `-${s}` : s);
+  if (compactLang() === "en") {
+    // 英文口径 k/M（1e3/1e6），与中文万/亿（1e4/1e8）阈值不同
+    if (yuanWhole >= 1_000_000) return fmtSigned(`${(yuanWhole / 1_000_000).toFixed(yuanWhole >= 10_000_000 ? 0 : 1)}M`);
+    if (yuanWhole >= 1_000) return fmtSigned(`${(yuanWhole / 1_000).toFixed(yuanWhole >= 10_000 ? 0 : 1)}k`);
+    return fmtSigned(String(yuanWhole));
+  }
   if (yuanWhole >= 100_000_000) {
     const yi = `${Math.floor(yuanWhole / 100_000_000)}.${Math.floor((yuanWhole % 100_000_000) / 10_000_000)}`;
     return fmtSigned(`${yi}亿`);
@@ -144,7 +155,7 @@ function MoneyBars({ trend, direction }: { trend: Overview["trend"]; direction: 
               {v <= 0 ? "—" : compactWan(v)}
             </span>
             <div
-              title={`${t.month}：${direction === "out" ? "支出" : "收入"} ¥${yuan(v)}`}
+              title={direction === "out" ? tpl("{month}：支出 ¥{amt}", { month: t.month, amt: yuan(v) }) : tpl("{month}：收入 ¥{amt}", { month: t.month, amt: yuan(v) })}
               className={`w-full rounded-t transition-colors ${
                 v <= 0
                   ? "bg-elevated"
@@ -155,7 +166,7 @@ function MoneyBars({ trend, direction }: { trend: Overview["trend"]; direction: 
               style={{ height: h }}
             />
             <span className={`text-micro tabular-nums ${isCur ? "text-ink-soft" : "text-ink-faint"}`}>
-              {Number(t.month.slice(5))}月
+              {tpl("{n}月", { n: Number(t.month.slice(5)) })}
             </span>
           </div>
         );
@@ -170,13 +181,13 @@ export function InOutTrend({ trend }: { trend: Overview["trend"] }) {
     <div className="mt-4 grid gap-4 border-t border-line-soft pt-3 sm:grid-cols-2">
       <div className="min-w-0">
         <p className="mb-2">
-          <TagChip icon={<TrendingDown size={12} />} label="支出 · 近 6 个月" tone="rose" />
+          <TagChip icon={<TrendingDown size={12} />} label={tr("支出 · 近 6 个月")} tone="rose" />
         </p>
         <MoneyBars trend={trend} direction="out" />
       </div>
       <div className="min-w-0">
         <p className="mb-2">
-          <TagChip icon={<TrendingUp size={12} />} label="收入 · 近 6 个月" tone="emerald" />
+          <TagChip icon={<TrendingUp size={12} />} label={tr("收入 · 近 6 个月")} tone="emerald" />
         </p>
         <MoneyBars trend={trend} direction="in" />
       </div>
@@ -193,7 +204,7 @@ export function BudgetEditor({ ov, onCancel, onSaved }: { ov: Overview; onCancel
 
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="text-ink-mute">月度支出上限 ¥</span>
+      <span className="text-ink-mute">{tr("月度支出上限 ¥")}</span>
       <input
         autoFocus
         type="number"
@@ -201,10 +212,10 @@ export function BudgetEditor({ ov, onCancel, onSaved }: { ov: Overview; onCancel
         step="1"
         value={limit}
         onChange={(e) => setLimit(e.target.value)}
-        placeholder="0 = 不设上限"
+        placeholder={tr("0 = 不设上限")}
         className="w-28 rounded border border-line-strong bg-surface px-2 py-1 tabular-nums outline-none focus:border-sky-500"
       />
-      <span className="text-ink-mute">预警阈值</span>
+      <span className="text-ink-mute">{tr("预警阈值")}</span>
       <select
         value={threshold}
         onChange={(e) => setThreshold(Number(e.target.value))}
@@ -215,7 +226,7 @@ export function BudgetEditor({ ov, onCancel, onSaved }: { ov: Overview; onCancel
         ))}
       </select>
       <span className="ml-auto flex gap-2">
-        <button onClick={onCancel} className="rounded px-3 py-1 text-ink-mute hover:bg-soft">取消</button>
+        <button onClick={onCancel} className="rounded px-3 py-1 text-ink-mute hover:bg-soft">{tr("取消")}</button>
         <button
           disabled={busy}
           onClick={async () => {
@@ -225,21 +236,21 @@ export function BudgetEditor({ ov, onCancel, onSaved }: { ov: Overview; onCancel
               // 上限允许留空/为 0（0 = 不设上限，原语义）；非法输入就地提示，不再静默按 0 入账
               const cents = limit ? yuanToCents(limit) : 0;
               if (cents == null) {
-                setMsg("金额格式不正确");
+                setMsg(tr("金额格式不正确"));
                 return;
               }
               await api("/api/budget", "PUT", { monthlyLimitCents: cents, alertThreshold: threshold });
               await onSaved();
             } catch (e) {
               // 失败就地提示（无 catch 会 unhandled rejection 且弹层卡在编辑态没有反馈）
-              setMsg(e instanceof Error ? e.message : "保存失败");
+              setMsg(e instanceof Error ? e.message : tr("保存失败"));
             } finally {
               setBusy(false);
             }
           }}
           className="btn-primary rounded px-4 py-1 font-medium"
         >
-          保存
+          {tr("保存")}
         </button>
       </span>
       {msg && <p className="w-full text-micro text-danger">{msg}</p>}

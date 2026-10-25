@@ -57,17 +57,24 @@ export function LangProvider({ children }: { children: ReactNode }) {
     // documentElement.lang 对齐，避免 hydration 后语言回跳
     setLangState(readStored());
   }, []);
+  // render 期同步 currentLang（先于子组件 render 期的 t() 调用）。不能放 effect：
+  // state 从默认语言变化触发的重渲染发生在 effect 重跑之前、之后无第三次渲染，
+  // 子组件 t() 会永远读到旧语言（手册页等纯 useLang 页面中文模式显示英文的根因）
+  currentLang = lang;
   useEffect(() => {
-    currentLang = lang;
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   }, [lang]);
   const setLang = (l: Lang) => {
+    if (l === lang) return;
     setLangState(l);
     try {
       localStorage.setItem(LANG_KEY, l);
     } catch {
       /* 隐私模式：本会话生效，不持久化 */
     }
+    // t() 不订阅 Context：仅更新状态只重渲染 useLang() 消费者，其余组件停在旧语言
+    // （表现为"点击没反应"）。整页刷新让全部组件按新语言重渲，首帧由内联脚本兜底
+    window.location.reload();
   };
   return <LangContext.Provider value={{ lang, setLang }}>{children}</LangContext.Provider>;
 }

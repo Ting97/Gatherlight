@@ -6,7 +6,7 @@ import { moodEmoji, moodTone } from "@/lib/mood";
 import { api } from "@/shared/api";
 import { COMMON_MOODS } from "./kit";
 import type { RunFn } from "./types";
-import { t } from "@/i18n";
+import { t, tpl } from "@/i18n";
 
 interface MoodBlockProps {
   m: FeedMoment;
@@ -30,7 +30,7 @@ export function MoodBlock({ m, run }: MoodBlockProps) {
                 // run 返回 false = 重入锁占用（请求未发出）：保持选择器打开，用户可重试
                 run(async () => {
                   await api(`/api/feed/${m.id}`, "PATCH", { mood: w });
-                  return `${moodEmoji(w)} 心情已改为「${w}」`;
+                  return tpl("{emoji} 心情已改为「{mood}」", { emoji: moodEmoji(w), mood: w });
                 }).then((ok) => {
                   if (ok) setMoodPicker(false);
                 })
@@ -54,20 +54,20 @@ export function MoodBlock({ m, run }: MoodBlockProps) {
             }
             className="rounded-full px-2 py-0.5 text-micro text-danger hover:bg-rose-500/20"
           >
-            清除
+            {t("清除")}
           </button>
           <button onClick={() => setMoodPicker(false)} className="ml-auto px-1 text-micro text-ink-dim">
-            取消
+            {t("取消")}
           </button>
         </div>
       ) : (
         <p className={`group/mood flex items-center gap-1.5 ${moodTone(m.mood_score)}`}>
-          <span>{moodEmoji(m.mood)} 此刻心情：{m.mood}</span>
+          <span>{moodEmoji(m.mood)} {t("此刻心情：")}{m.mood}</span>
           <button
             onClick={() => setMoodPicker(true)}
             className="row-actions-hidden hidden text-micro text-ink-dim hover:text-accent group-hover/mood:inline"
           >
-            改
+            {t("改")}
           </button>
         </p>
       )}

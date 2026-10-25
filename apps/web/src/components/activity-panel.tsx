@@ -6,6 +6,8 @@ import IconPicker from "@/components/icon-picker";
 import type { Activity } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t, tpl, getLang } from "@/i18n";
+import { activityLabel } from "@shiguangri/shared/i18n-enum";
 
 /** 日程页 · 分类子页：活动分类管理（原 /categories 页整体平移，逻辑不变） */
 
@@ -32,7 +34,7 @@ export default function ActivityPanel() {
     } catch (e) {
       // 失败置空列表 + 提示（裸 rejection 会触发 ChunkErrorReloader 整页刷新循环）
       setList([]);
-      toast(e instanceof Error ? e.message : "加载失败", "err");
+      toast(e instanceof Error ? e.message : t("加载失败"), "err");
     }
   }, []);
   useEffect(() => {
@@ -40,7 +42,7 @@ export default function ActivityPanel() {
   }, [load]);
 
   async function add() {
-    if (!adding.name.trim()) { toast("名称必填", "err"); return; }
+    if (!adding.name.trim()) { toast(t("名称必填"), "err"); return; }
     if (busy) return;
     setBusy(true);
     try {
@@ -48,13 +50,13 @@ export default function ActivityPanel() {
       await api<any>("/api/activities", "POST", { ...adding, defaultMin: Math.min(720, Math.max(5, Number(adding.defaultMin) || 30)) });
     } catch (e) {
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "新增失败" : e.message, "err"); return; }
-      toast("网络异常，请稍后重试", "err");
+      if (e instanceof ApiClientError) { toast(e.message === t("操作失败") ? t("新增失败") : e.message, "err"); return; }
+      toast(t("网络异常，请稍后重试"), "err");
       return;
     } finally {
       setBusy(false);
     }
-    toast(`✅ 已新增分类「${adding.name.trim()}」`);
+    toast(tpl("✅ 已新增分类「{name}」", { name: adding.name.trim() }));
     setAdding({ name: "", icon: "🏷", color: "#eab308", defaultMin: 30 });
     await load();
   }
@@ -68,14 +70,14 @@ export default function ActivityPanel() {
       await api<any>(`/api/activities/${editing.id}`, "PATCH", { name: editing.name, icon: editing.icon, color: editing.color, defaultMin: Math.min(720, Math.max(5, Number(editing.defaultMin) || 30)) });
     } catch (e) {
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "保存失败" : e.message, "err"); return; }
-      toast("网络异常，请稍后重试", "err");
+      if (e instanceof ApiClientError) { toast(e.message === t("操作失败") ? t("保存失败") : e.message, "err"); return; }
+      toast(t("网络异常，请稍后重试"), "err");
       return;
     } finally {
       setBusy(false);
     }
     setEditing(null);
-    toast("💾 已保存");
+    toast(t("💾 已保存"));
     await load();
   }
 
@@ -87,12 +89,12 @@ export default function ActivityPanel() {
       await api<any>(`/api/activities/${a.id}`, "DELETE");
     } catch (e) {
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-      if (e instanceof ApiClientError) { toast(e.message === "操作失败" ? "删除失败" : e.message, "err"); removingRef.current = false; return; }
-      toast("网络异常，请稍后重试", "err");
+      if (e instanceof ApiClientError) { toast(e.message === t("操作失败") ? t("删除失败") : e.message, "err"); removingRef.current = false; return; }
+      toast(t("网络异常，请稍后重试"), "err");
       removingRef.current = false;
       return;
     }
-    toast(`🗑 已删除「${a.name}」`);
+    toast(tpl("🗑 已删除「{name}」", { name: a.name }));
     setArmDeleteId(null);
     await load();
     removingRef.current = false;
@@ -117,7 +119,7 @@ export default function ActivityPanel() {
   return (
     <div>
       <p className="mb-4 text-xs text-ink-dim">
-        预设分类不可删除（可改名称/图标/颜色/默认时长）；自定义分类删除后其记录归入「其他」
+        {t("预设分类不可删除（可改名称/图标/颜色/默认时长）；自定义分类删除后其记录归入「其他」")}
       </p>
 
       {/* 新增（移动端纵向堆叠、控件全宽，触控目标 ≥40px） */}
@@ -126,7 +128,7 @@ export default function ActivityPanel() {
           value={adding.name}
           onChange={(e) => setAdding({ ...adding, name: e.target.value })}
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && add()}
-          placeholder="新分类名称（如：带娃 / 冥想 / 副业）"
+          placeholder={t("新分类名称（如：带娃 / 冥想 / 副业）")}
           maxLength={30}
           className="min-w-36 flex-1 rounded border border-line-strong bg-surface px-2.5 py-2 text-sm outline-none focus:border-sky-500"
         />
@@ -135,7 +137,7 @@ export default function ActivityPanel() {
           type="color"
           value={adding.color}
           onChange={(e) => setAdding({ ...adding, color: e.target.value })}
-          title="颜色"
+          title={t("颜色")}
           className="h-10 w-12 cursor-pointer rounded border border-line-strong bg-surface"
         />
         <input
@@ -144,12 +146,12 @@ export default function ActivityPanel() {
           max={720}
           value={adding.defaultMin}
           onChange={(e) => setAdding({ ...adding, defaultMin: Number(e.target.value) })}
-          title="默认时长（分钟）：没说时长时按此记录"
+          title={t("默认时长（分钟）：没说时长时按此记录")}
           className="w-20 rounded border border-line-strong bg-surface px-2 py-2 text-sm tabular-nums outline-none"
         />
-        <span className="text-badge text-ink-dim">分钟</span>
+        <span className="text-badge text-ink-dim">{t("分钟")}</span>
         <button onClick={add} className="btn-primary rounded-lg px-5 py-2 text-sm font-medium">
-          新增
+          {t("新增")}
         </button>
       </div>
 
@@ -179,24 +181,24 @@ export default function ActivityPanel() {
                 onChange={(e) => setEditing({ ...editing, defaultMin: Number(e.target.value) })}
                 className="w-20 rounded border border-line-strong bg-surface px-2 py-1.5 text-sm tabular-nums outline-none"
               />
-              <span className="text-badge text-ink-dim">分钟</span>
-              <button onClick={() => setEditing(null)} className="rounded px-3 py-1.5 text-xs text-ink-mute hover:bg-soft">取消</button>
-              <button onClick={save} className="btn-inline-save rounded px-3 py-1.5 text-xs font-medium">保存</button>
+              <span className="text-badge text-ink-dim">{t("分钟")}</span>
+              <button onClick={() => setEditing(null)} className="rounded px-3 py-1.5 text-xs text-ink-mute hover:bg-soft">{t("取消")}</button>
+              <button onClick={save} className="btn-inline-save rounded px-3 py-1.5 text-xs font-medium">{t("保存")}</button>
             </li>
           ) : (
             <li key={a.id} className="glass glass-hover group flex items-center gap-3 rounded-xl px-3 py-2.5">
               <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: a.color }} />
               <span className="text-lg">{a.icon}</span>
               <span className="flex-1 text-sm">
-                {a.name}
-                {a.is_preset && <span className="ml-2 rounded bg-elevated px-1.5 py-0.5 text-micro text-ink-dim">预设</span>}
+                {a.is_preset ? activityLabel(a.name, getLang()) : a.name}
+                {a.is_preset && <span className="ml-2 rounded bg-elevated px-1.5 py-0.5 text-micro text-ink-dim">{t("预设")}</span>}
               </span>
-              <span className="text-xs tabular-nums text-ink-dim">默认 {a.default_min} 分钟</span>
+              <span className="text-xs tabular-nums text-ink-dim">{tpl("默认 {n} 分钟", { n: a.default_min ?? 30 })}</span>
               <span className="row-actions hidden gap-1 group-hover:flex">
                 <button
                   onClick={() => setEditing({ id: a.id, name: a.name, icon: a.icon, color: a.color, defaultMin: a.default_min ?? 30 })}
                   className="rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-accent"
-                  title="编辑分类"
+                  title={t("编辑分类")}
                 >
                   <Pencil size={12} />
                 </button>
@@ -204,9 +206,9 @@ export default function ActivityPanel() {
                   <button
                     onClick={() => onDeleteClick(a)}
                     className={`flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none hover:bg-soft ${armDeleteId === a.id ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:text-danger"}`}
-                    title="删除分类（3 秒内再点确认）"
+                    title={t("删除分类（3 秒内再点确认）")}
                   >
-                    {armDeleteId === a.id ? "确认删除?" : <Trash2 size={12} />}
+                    {armDeleteId === a.id ? t("确认删除?") : <Trash2 size={12} />}
                   </button>
                 )}
               </span>

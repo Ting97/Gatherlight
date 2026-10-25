@@ -2,6 +2,7 @@
 
 import { createPortal } from "react-dom";
 import { Dismissable } from "@/components/dismissable";
+import { t, tpl } from "@/i18n";
 import type { MomentLinkActions } from "./use-moment-link";
 
 /** C1「关联未归属动态」浮层（自 detail.tsx 拆出；桌面居中 / 移动端底部弹层） */
@@ -22,14 +23,14 @@ export default function MomentLinkModal(opts: {
       className="fixed inset-x-0 bottom-0 z-[61] max-h-[70dvh] overflow-y-auto rounded-t-2xl border border-line-soft bg-elevated p-3 safe-bottom shadow-2xl shadow-scrim/70 sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:w-80 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-3"
     >
       <p className="mb-2 flex items-center justify-between px-0.5">
-        <span className="text-xs font-semibold text-ink">关联未归属动态</span>
-        <span className="text-badge tabular-nums text-ink-faint">{momentTotal} 条未归属</span>
+        <span className="text-xs font-semibold text-ink">{t("关联未归属动态")}</span>
+        <span className="text-badge tabular-nums text-ink-faint">{tpl("{n} 条未归属", { n: momentTotal })}</span>
       </p>
       <input
         autoFocus
         value={momentQuery}
         onChange={(e) => onMomentQueryChange(e.target.value)}
-        placeholder="搜索原文关键字…"
+        placeholder={t("搜索原文关键字…")}
         className="mb-2 w-full rounded-lg border border-line-strong bg-surface px-2.5 py-1.5 text-xs outline-none focus:border-sky-500"
       />
       <div className="max-h-[46dvh] space-y-0.5 overflow-y-auto sm:max-h-72">
@@ -51,10 +52,10 @@ export default function MomentLinkModal(opts: {
         ))}
         {momentItems.length === 0 && !momentLoading && (
           <p className="px-2 py-6 text-center text-micro text-ink-faint">
-            {momentQuery ? "没有匹配的动态" : "没有未归属的动态 —— 全部都已归入空间"}
+            {momentQuery ? t("没有匹配的动态") : t("没有未归属的动态 —— 全部都已归入空间")}
           </p>
         )}
-        {momentLoading && <p className="px-2 py-4 text-center text-micro text-ink-faint">加载中…</p>}
+        {momentLoading && <p className="px-2 py-4 text-center text-micro text-ink-faint">{t("加载中…")}</p>}
       </div>
       {momentItems.length < momentTotal && (
         <button
@@ -62,14 +63,14 @@ export default function MomentLinkModal(opts: {
           onClick={() => void loadUnlinkedMoments(momentQueryApplied, momentItems.length)}
           className="mt-2 w-full rounded-lg border border-line-soft py-1.5 text-micro text-ink-mute transition hover:bg-soft"
         >
-          加载更多（还有 {momentTotal - momentItems.length} 条）
+          {tpl("加载更多（还有 {n} 条）", { n: momentTotal - momentItems.length })}
         </button>
       )}
       <button
         onClick={() => setMomentLinkOpen(false)}
         className="mt-2 w-full rounded-lg border border-line-soft py-1.5 text-micro text-ink-mute transition hover:bg-soft"
       >
-        关闭
+        {t("关闭")}
       </button>
     </Dismissable>,
     document.body,

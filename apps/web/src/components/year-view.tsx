@@ -1,7 +1,8 @@
 "use client";
 
 import type { Activity, DayStat } from "@/lib/types";
-import { zhDuration } from "@/lib/date";
+import { activityLabel, durationLabel } from "@shiguangri/shared/i18n-enum";
+import { t, tpl, getLang } from "@/i18n";
 import { bjToday, bjAddDays, bjMondayOf } from "@/lib/date"; // 北京口径日历（本地构造器/游走在海外设备日界错位）
 
 interface Props {
@@ -51,6 +52,9 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
   }
   const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
   const actMap = new Map(activities.map((a) => [a.id, a]));
+  const lang = getLang();
+  // 月份标签（渲染期随语言取，每季度一个）
+  const monthLabels = [t("1月"), "", "", t("4月"), "", "", t("7月"), "", "", t("10月"), "", ""];
 
   return (
     <div>
@@ -58,7 +62,7 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
         <div className="flex gap-[3px]">
           {/* 月份标签 */}
           <div className="mr-1 flex flex-col justify-between py-[1px] text-micro text-ink-faint">
-            {["1月", "", "", "4月", "", "", "7月", "", "", "10月", "", ""].slice(0, 12).map((m, i) => (
+            {monthLabels.slice(0, 12).map((m, i) => (
               <span key={i}>{m}</span>
             ))}
           </div>
@@ -74,7 +78,7 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
                     key={date}
                     onClick={() => inYear && onPickDay(date)}
                     disabled={!inYear}
-                    title={inYear ? `${date} · ${s ? zhDuration(s.totalMin) : "未记录"}` : ""}
+                    title={inYear ? `${date} · ${s ? durationLabel(s.totalMin, lang) : t("未记录")}` : ""}
                     className={`h-[11px] w-[11px] rounded-[2px] max-sm:relative max-sm:after:absolute max-sm:after:inset-[-3px] ${inYear ? "transition hover:ring-1 hover:ring-sky-400" : "opacity-0"} ${isToday ? "ring-1 ring-rose-400" : ""}`}
                     style={{ backgroundColor: lv >= 0 ? COLORS[lv] : "transparent" }}
                   />
@@ -84,11 +88,11 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
           ))}
         </div>
         <div className="mt-2 flex items-center justify-end gap-1 text-badge text-ink-dim">
-          少
+          {t("少")}
           {COLORS.map((c) => (
             <span key={c} className="h-[10px] w-[10px] rounded-[2px]" style={{ backgroundColor: c }} />
           ))}
-          多
+          {t("多")}
         </div>
       </div>
 
@@ -96,8 +100,8 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
       {grand > 0 && (
         <div className="mt-4 rounded-lg border border-line-soft bg-bg/40 p-4">
           <p className="mb-2 text-xs text-ink-mute">
-            {year} 年共记录 <span className="font-semibold text-ink">{zhDuration(grand)}</span>
-            <span className="ml-2 text-ink-dim">· {recordedDays} 天有记录 · 平均每天 {zhDuration(Math.round(grand / (leap ? 366 : 365)))}</span>
+            {tpl("{y} 年共记录", { y: year })} <span className="font-semibold text-ink">{durationLabel(grand, lang)}</span>
+            <span className="ml-2 text-ink-dim">{tpl("· {n} 天有记录 · 平均每天 {dur}", { n: recordedDays, dur: durationLabel(Math.round(grand / (leap ? 366 : 365)), lang) })}</span>
           </p>
           <div className="flex h-3 w-full overflow-hidden rounded-full">
             {sorted.map(([id, min]) => (
@@ -110,8 +114,8 @@ export default function YearView({ year, stats, activities, onPickDay }: Props) 
               return (
                 <span key={id} className="flex items-center gap-1.5 text-micro text-ink-mute">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: a?.color }} />
-                  {a?.icon} {a?.name}
-                  <span className="tabular-nums text-ink-dim">{zhDuration(min)} · {Math.round((min / grand) * 100)}%</span>
+                  {a?.icon} {a ? activityLabel(a.name, lang) : ""}
+                  <span className="tabular-nums text-ink-dim">{durationLabel(min, lang)} · {Math.round((min / grand) * 100)}%</span>
                 </span>
               );
             })}

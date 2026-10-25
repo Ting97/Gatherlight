@@ -6,6 +6,8 @@ import { Dismissable } from "@/components/dismissable";
 import { TX_COLORS, budgetTone, categoryBreakdown, momChange, savingsRate, yuan } from "@/lib/finance";
 import { type Overview, fmtMoney } from "./kit";
 import { BudgetEditor, InOutTrend, SavingsTrend } from "./display";
+import { t, tpl, getLang } from "@/i18n";
+import { txCatLabel } from "@shiguangri/shared/i18n-enum";
 
 export function OverviewCard({
   ov,
@@ -30,25 +32,25 @@ export function OverviewCard({
     <section className="glass mb-4 rounded-2xl p-5">
       <div className="grid grid-cols-3 gap-3 text-center">
         <div>
-          <p className="text-micro text-ink-dim">本月支出</p>
+          <p className="text-micro text-ink-dim">{t("本月支出")}</p>
           <p className="mt-1 text-xl font-bold tabular-nums text-danger">¥{yuan(ov.outCents)}</p>
           {outDelta != null && (
             <p className={`mt-0.5 text-badge tabular-nums ${outDelta > 0 ? "text-danger" : "text-success"}`}>
-              较上月 {outDelta > 0 ? "+" : ""}{outDelta}%
+              {t("较上月")} {outDelta > 0 ? "+" : ""}{outDelta}%
             </p>
           )}
         </div>
         <div>
-          <p className="text-micro text-ink-dim">本月收入</p>
+          <p className="text-micro text-ink-dim">{t("本月收入")}</p>
           <p className="mt-1 text-xl font-bold tabular-nums text-success">¥{yuan(ov.inCents)}</p>
         </div>
         <div>
-          <p className="text-micro text-ink-dim">结余</p>
+          <p className="text-micro text-ink-dim">{t("结余")}</p>
           {/* whitespace-nowrap：移动端窄容器会把 -¥1506.50 从负号后断行成「-」/「¥1506.50」两行 */}
           <p className={`mt-1 whitespace-nowrap text-xl font-bold tabular-nums ${ov.inCents - ov.outCents >= 0 ? "text-accent" : "text-danger"}`}>
             {fmtMoney(ov.inCents - ov.outCents)}
           </p>
-          {rate != null && <p className="mt-0.5 text-badge text-ink-dim">储蓄率 {rate}%</p>}
+          {rate != null && <p className="mt-0.5 text-badge text-ink-dim">{t("储蓄率")} {rate}%</p>}
         </div>
       </div>
 
@@ -76,11 +78,11 @@ export function OverviewCard({
             <div className="flex items-center justify-between text-micro">
               <span className="text-ink-mute">
                 {ov.budget.monthly_limit_cents > 0
-                  ? `月度上限 ¥${yuan(ov.budget.monthly_limit_cents)}`
-                  : "未设月度上限"}
+                  ? tpl("月度上限 ¥{amt}", { amt: yuan(ov.budget.monthly_limit_cents) })
+                  : t("未设月度上限")}
               </span>
               <button onClick={() => onEditBudget(true)} className="text-ink-dim hover:text-accent">
-                {ov.budget.monthly_limit_cents > 0 ? "调整" : "设置"}
+                {ov.budget.monthly_limit_cents > 0 ? t("调整") : t("设置")}
               </button>
             </div>
             {ov.budget.monthly_limit_cents > 0 && (
@@ -101,10 +103,10 @@ export function OverviewCard({
                   budget.tone === "over" ? "text-danger" : budget.tone === "warn" ? "text-warn" : "text-ink-dim"
                 }`}>
                   {budget.tone === "over"
-                    ? `⚠️ 已超支 ¥${yuan(ov.outCents - ov.budget.monthly_limit_cents)}（${budget.pct}%）`
+                    ? tpl("⚠️ 已超支 ¥{amt}（{pct}%）", { amt: yuan(ov.outCents - ov.budget.monthly_limit_cents), pct: budget.pct })
                     : budget.tone === "warn"
-                      ? `⚠️ 已用 ${budget.pct}%，接近上限，注意控制`
-                      : `已用 ${budget.pct}%`}
+                      ? tpl("⚠️ 已用 {pct}%，接近上限，注意控制", { pct: budget.pct })
+                      : tpl("已用 {pct}%", { pct: budget.pct })}
                 </p>
               </>
             )}
@@ -119,7 +121,7 @@ export function OverviewCard({
             {slices.map((s) => (
               <div
                 key={s.category}
-                title={`${s.category} ${yuan(s.cents)}（${s.pct}%）`}
+                title={`${txCatLabel(s.category, getLang())} ${yuan(s.cents)}（${s.pct}%）`}
                 style={{
                   width: `${s.pct}%`,
                   backgroundColor: TX_COLORS[s.category] ?? "#64748b",
@@ -131,7 +133,7 @@ export function OverviewCard({
             {slices.slice(0, 6).map((s) => (
               <span key={s.category} className="flex items-center gap-1.5 text-micro text-ink-mute">
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TX_COLORS[s.category] ?? "#64748b" }} />
-                {s.category}
+                {txCatLabel(s.category, getLang())}
                 <span className="tabular-nums text-ink-dim">¥{yuan(s.cents)} · {s.pct}%</span>
               </span>
             ))}

@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { TodoItem, TodoRow } from "@/lib/types";
+import { t as tr, tpl } from "@/i18n";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { confirmDialog } from "@/shared/ui/confirm";
@@ -50,10 +51,10 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       });
       setDraft({ ...EMPTY_DRAFT, activityId: draft.activityId });
       setDraftOpen(false);
-      toast(`📌 已添加「${j.todo.title}」`);
+      toast(tpl("📌 已添加「{title}」", { title: j.todo.title }));
       await load(view);
     } catch (e) {
-      toast(`添加失败：${e instanceof Error ? e.message : e}`, "err");
+      toast(tpl("添加失败：{msg}", { msg: e instanceof Error ? e.message : String(e) }), "err");
     } finally {
       setAdding(false);
     }
@@ -81,7 +82,7 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       if (e instanceof ApiClientError) {
         toast(e.message, "err");
       } else {
-        toast("网络异常，请稍后重试", "err");
+        toast(tr("网络异常，请稍后重试"), "err");
       }
       return false;
     }
@@ -90,14 +91,14 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       await load(view);
     } catch {
       // 刷新列表失败同样只提示，不外抛
-      toast("网络异常，请稍后重试", "err");
+      toast(tr("网络异常，请稍后重试"), "err");
     }
     return true;
   }
 
   async function toggleDone(t: TodoRow) {
     const done = t.status === "done";
-    await patchTodo(t.id, done ? { undone: true } : { done: true }, done ? `↩️ 「${t.title}」已恢复` : `🎉 完成「${t.title}」`);
+    await patchTodo(t.id, done ? { undone: true } : { done: true }, done ? tpl("↩️ 「{title}」已恢复", { title: t.title }) : tpl("🎉 完成「{title}」", { title: t.title }));
   }
 
   /** 未完成行动数（菜单据此给出「重新生成 / 追加」显式选择） */
@@ -118,7 +119,7 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       } catch (e) {
         // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
         toast(
-          e instanceof ApiClientError ? (e.message === "操作失败" ? "AI 拆解失败" : e.message) : "网络异常，请稍后重试",
+          e instanceof ApiClientError ? (e.message === tr("操作失败") ? tr("AI 拆解失败") : e.message) : tr("网络异常，请稍后重试"),
           "err",
         );
         return;
@@ -126,15 +127,15 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       // 响应形状防御（spaces 详情版同款）：约定形状之外的 2xx（代理/网关注入）裸取
       // j.actions.length 会 TypeError → unhandledrejection → ChunkErrorReloader 整页刷新
       if (!Array.isArray(j?.actions)) {
-        toast("服务异常，请稍后重试", "err");
+        toast(tr("服务异常，请稍后重试"), "err");
         return;
       }
-      toast(`✨ AI 拆出 ${j.actions.length} 个行动${isAction ? "，已插入原行动之后" : ""}`);
+      toast(tpl("✨ AI 拆出 {n} 个行动", { n: j.actions.length }) + (isAction ? tr("，已插入原行动之后") : ""));
       try {
         await load(view);
       } catch {
         // 刷新列表失败同样只提示，不外抛
-        toast("网络异常，请稍后重试", "err");
+        toast(tr("网络异常，请稍后重试"), "err");
       }
     } finally {
       setDecomposingId(null);
@@ -143,11 +144,11 @@ export function useTodoActions(ctx: TodoActionsCtx) {
 
   async function removeTodo(t: TodoRow, isChild: boolean) {
     // 确认弹窗（9-B）：独立渲染树单次点击确认——规避 008 实测 portal 菜单内二次点击丢失问题
-    const hint = isChild ? "" : "\n其下行动将一并删除。";
+    const hint = isChild ? "" : `\n${tr("其下行动将一并删除。")}`;
     const ok = await confirmDialog({
-      title: `删除${isChild ? "行动" : "todo"}`,
-      message: `「${t.title}」${hint}`,
-      confirmText: "删除",
+      title: isChild ? tr("删除行动") : tr("删除 todo"),
+      message: tpl("「{title}」{hint}", { title: t.title, hint }),
+      confirmText: tr("删除"),
     });
     if (!ok) return;
     try {
@@ -155,17 +156,17 @@ export function useTodoActions(ctx: TodoActionsCtx) {
     } catch (e) {
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
       toast(
-        e instanceof ApiClientError ? (e.message === "操作失败" ? "删除失败" : e.message) : "网络异常，请稍后重试",
+        e instanceof ApiClientError ? (e.message === tr("操作失败") ? tr("删除失败") : e.message) : tr("网络异常，请稍后重试"),
         "err",
       );
       return;
     }
-    toast(`🗑 已删除「${t.title}」`);
+    toast(tpl("🗑 已删除「{title}」", { title: t.title }));
     try {
       await load(view);
     } catch {
       // 刷新列表失败同样只提示，不外抛
-      toast("网络异常，请稍后重试", "err");
+      toast(tr("网络异常，请稍后重试"), "err");
     }
   }
 
@@ -178,7 +179,7 @@ export function useTodoActions(ctx: TodoActionsCtx) {
     } catch (e) {
       // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
       toast(
-        e instanceof ApiClientError ? (e.message === "操作失败" ? "添加失败" : e.message) : "网络异常，请稍后重试",
+        e instanceof ApiClientError ? (e.message === tr("操作失败") ? tr("添加失败") : e.message) : tr("网络异常，请稍后重试"),
         "err",
       );
       setAddingSub(false); // 失败也要复位，否则输入行永久锁死
@@ -189,7 +190,7 @@ export function useTodoActions(ctx: TodoActionsCtx) {
       await load(view);
     } catch {
       // 刷新列表失败同样只提示，不外抛
-      toast("网络异常，请稍后重试", "err");
+      toast(tr("网络异常，请稍后重试"), "err");
     } finally {
       setAddingSub(false);
     }

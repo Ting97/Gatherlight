@@ -15,7 +15,6 @@ export type ThemeMode = "dark" | "light" | "system";
 
 const ORDER: ThemeMode[] = ["dark", "light", "system"];
 const META: Record<ThemeMode, string> = { dark: "#020617", light: "#f1f5f9", system: "#020617" };
-const LABEL: Record<ThemeMode, string> = { dark: "深色", light: "浅色", system: "跟随系统" };
 const ICON: Record<ThemeMode, typeof Moon> = { dark: Moon, light: Sun, system: Monitor };
 
 function readMode(): ThemeMode {
@@ -68,11 +67,22 @@ export default function ThemeToggle() {
   };
 
   const Icon = mounted ? ICON[mode] : Moon; // 未挂载前固定图标，避免 hydration 不匹配
+  // 完整短语作 key（渲染期取 t()，不用模板拼 key——拼出的组合键查不到字典）
+  const TITLE: Record<ThemeMode, string> = {
+    dark: t("主题：深色（点击切换）"),
+    light: t("主题：浅色（点击切换）"),
+    system: t("主题：跟随系统（点击切换）"),
+  };
+  const ARIA: Record<ThemeMode, string> = {
+    dark: t("切换主题，当前深色"),
+    light: t("切换主题，当前浅色"),
+    system: t("切换主题，当前跟随系统"),
+  };
   return (
     <button
       onClick={cycle}
-      title={t(`主题：${LABEL[mode]}（点击切换）`)}
-      aria-label={t(`切换主题，当前${LABEL[mode]}`)}
+      title={TITLE[mode]}
+      aria-label={ARIA[mode]}
       className="tap-lg shrink-0 rounded-full p-2 text-ink-mute transition hover:bg-wash hover:text-accent"
     >
       <Icon className="h-4 w-4" strokeWidth={2} />

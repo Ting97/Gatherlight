@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Check, ChevronRight, Puzzle } from "lucide-react";
 import { TagChip } from "@/components/tag-chip";
+import { t, tpl } from "@/i18n";
 import { PARTITION_META, type DatasetSpec } from "@/components/admin-data-panel/types";
 import { USER_DATA_CAP } from "./use-admin-user-data";
 import type { UserDataEntry } from "./types";
@@ -65,21 +66,21 @@ export default function UserDataSection({
         className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left"
       >
         <span className={`text-ink-faint transition-transform ${open ? "rotate-90" : ""}`}><ChevronRight size={12} /></span>
-        <span className="flex items-center gap-1 text-xs font-medium text-ink"><Puzzle size={12} className="text-ai" aria-hidden /> 个性化注入</span>
-        {userDataDraft.length > 0 && <TagChip label={`${userDataDraft.length}/5 数据集`} tone="violet" size="sm" />}
-        {userDataDirty && <TagChip label="注入配置未保存" tone="amber" size="sm" />}
+        <span className="flex items-center gap-1 text-xs font-medium text-ink"><Puzzle size={12} className="text-ai" aria-hidden /> {t("个性化注入")}</span>
+        {userDataDraft.length > 0 && <TagChip label={tpl("{n}/5 数据集", { n: userDataDraft.length })} tone="violet" size="sm" />}
+        {userDataDirty && <TagChip label={t("注入配置未保存")} tone="amber" size="sm" />}
         <span className="flex-1" />
-        <span className="text-badge text-ink-faint">把你的真实数据块装配进 user 输入</span>
+        <span className="text-badge text-ink-faint">{t("把你的真实数据块装配进 user 输入")}</span>
       </button>
 
       {open && (
         <div className="space-y-2 px-3 pb-3">
           <p className="text-micro text-ink-faint">
-            选择要注入的数据集（仅行为型 / AI 衍生可注入，类别型为维度表；最多 5 个，保存后装配期生效）
+            {t("选择要注入的数据集（仅行为型 / AI 衍生可注入，类别型为维度表；最多 5 个，保存后装配期生效）")}
           </p>
           <div className="flex flex-wrap gap-1.5">
             {!catalogDatasets ? (
-              <span className="text-micro text-ink-faint">{catalogLoading ? "数据目录加载中…" : "（目录暂不可用）"}</span>
+              <span className="text-micro text-ink-faint">{catalogLoading ? t("数据目录加载中…") : t("（目录暂不可用）")}</span>
             ) : (
               catalogDatasets.map((d) => {
                 const on = userDataDraft.some((e) => e.dataset === d.key);
@@ -90,7 +91,7 @@ export default function UserDataSection({
                     key={d.key}
                     disabled={isCategory || full}
                     onClick={() => toggleDataset(d.key)}
-                    title={isCategory ? "类别型数据集为维度表，不参与个性化注入" : full ? "最多选择 5 个数据集" : d.desc}
+                    title={isCategory ? t("类别型数据集为维度表，不参与个性化注入") : full ? t("最多选择 5 个数据集") : d.desc}
                     className={`flex items-center gap-0.5 rounded-full px-2.5 py-1 text-micro transition ${
                       on
                         ? "bg-gradient-to-r from-sky-500 to-indigo-500 font-medium text-white shadow-sm"
@@ -119,20 +120,20 @@ export default function UserDataSection({
                     <TagChip label={d?.name ?? e.dataset} tone={d ? PARTITION_META[d.partition].tone : "slate"} size="sm" />
                     <span className="font-mono text-micro text-ink-faint">{e.dataset}</span>
                     <span className="flex-1" />
-                    <label className="flex items-center gap-1 text-ink-dim" title="时间窗 1~92 天（留空 = 默认 30 天）">
-                      天数
+                    <label className="flex items-center gap-1 text-ink-dim" title={t("时间窗 1~92 天（留空 = 默认 30 天）")}>
+                      {t("天数")}
                       <input
                         type="number"
                         min={1}
                         max={92}
                         value={e.days ?? ""}
-                        placeholder="默认 30"
+                        placeholder={t("默认 30")}
                         onChange={(ev) => patchEntry(e.dataset, { days: clampInt(ev.target.value, 1, 92) })}
                         className="w-14 rounded border border-line bg-surface px-1.5 py-0.5 text-right tabular-nums text-ink outline-none focus:border-sky-500"
                       />
                     </label>
-                    <label className="flex items-center gap-1 text-ink-dim" title="条数上限 1~50（留空 = 服务端默认 10 条）">
-                      条数上限
+                    <label className="flex items-center gap-1 text-ink-dim" title={t("条数上限 1~50（留空 = 服务端默认 10 条）")}>
+                      {t("条数上限")}
                       <input
                         type="number"
                         min={1}
@@ -146,9 +147,9 @@ export default function UserDataSection({
                     <button
                       onClick={() => toggleDataset(e.dataset)}
                       className="rounded px-1.5 py-0.5 text-badge text-ink-mute transition hover:bg-rose-500/10 hover:text-danger"
-                      title="移除该数据集"
+                      title={t("移除该数据集")}
                     >
-                      移除
+                      {t("移除")}
                     </button>
                   </li>
                 );
@@ -157,8 +158,9 @@ export default function UserDataSection({
           )}
 
           <p className={`text-micro ${userDataOverCap ? "text-danger" : "text-ink-faint"}`}>
-            预计注入 ≈ <span className="tabular-nums">{userDataEstChars}</span> / {USER_DATA_CAP} 字符（按 Σ条数上限×120 估算，线上装配超顶会截断）
-            {userDataOverCap && " —— 超出上限，请下调条数或移除数据集（保存已禁用）"}
+            {t("预计注入")} ≈ <span className="tabular-nums">{userDataEstChars}</span> / {USER_DATA_CAP}{" "}
+            {t("字符（按 Σ条数上限×120 估算，线上装配超顶会截断）")}
+            {userDataOverCap && t(" —— 超出上限，请下调条数或移除数据集（保存已禁用）")}
           </p>
         </div>
       )}

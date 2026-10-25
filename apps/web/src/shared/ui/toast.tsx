@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+import { t as tr } from "@/i18n";
 
 export type ToastKind = "ok" | "err" | "info";
 interface ToastItem {
@@ -91,7 +92,7 @@ export function ToastHost() {
             key={t.id}
             type="button"
             onClick={() => remove(t.id)}
-            title="点击关闭"
+            title={tr("点击关闭")}
             className={`msg-banner pointer-events-auto flex w-full max-w-md cursor-pointer items-start gap-2 text-left transition-all duration-200 ${
               t.leaving ? "-translate-y-1 opacity-0" : "fade-up"
             } ${TONE[t.kind]}`}

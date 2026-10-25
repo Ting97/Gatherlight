@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { uploadImages } from "@/lib/image";
+import { t, tpl } from "@/i18n";
 import type { DesktopImage, Notify } from "./types";
 
 /**
@@ -36,15 +37,15 @@ export function useDesktopPublisher({ setMsg, load }: { setMsg: Notify; load: ()
   function addDesktopImages(files: File[]) {
     // 已满 9 张先短路提示：原实现 slice(0,0) 后 imgs 为空，误报「格式不支持」（用户选的明明是图片）
     if (desktopImages.length >= 9) {
-      setMsg({ ok: false, text: "最多添加 9 张，已忽略新选图片" });
+      setMsg({ ok: false, text: t("最多添加 9 张，已忽略新选图片") });
       return;
     }
     const imgs = files
       .filter((f) => /^image\/(jpeg|png|webp|gif)$/.test(f.type))
       .slice(0, 9 - desktopImages.length)
       .map((file) => ({ file, url: URL.createObjectURL(file), status: "ready" as const }));
-    if (files.length && !imgs.length) setMsg({ ok: false, text: "仅支持 jpg/png/webp/gif 图片" });
-    else if (imgs.length < files.length) setMsg({ ok: false, text: "最多添加 9 张，多余图片已忽略" });
+    if (files.length && !imgs.length) setMsg({ ok: false, text: t("仅支持 jpg/png/webp/gif 图片") });
+    else if (imgs.length < files.length) setMsg({ ok: false, text: t("最多添加 9 张，多余图片已忽略") });
     setDesktopImages((prev) => [...prev, ...imgs]);
   }
 
@@ -64,16 +65,16 @@ export function useDesktopPublisher({ setMsg, load }: { setMsg: Notify; load: ()
       const { failed } = await uploadImages(lastEntryId.current, retryFiles);
       if (unmountedRef.current) return; // 卸载后不再提示/刷新
       if (failed.length) {
-        setMsg({ ok: false, text: `仍有 ${failed.length} 张上传失败，请稍后再试` });
+        setMsg({ ok: false, text: tpl("仍有 {n} 张上传失败，请稍后再试", { n: failed.length }) });
         void load();
         return;
       }
       setDesktopImages([]);
-      setMsg({ ok: true, text: "✨ 图片已补传完成" });
+      setMsg({ ok: true, text: t("✨ 图片已补传完成") });
       void load();
     } catch {
       // 兜底：上传异常不抛出点击处理器（裸 rejection 会触发整页刷新）
-      if (!unmountedRef.current) setMsg({ ok: false, text: "网络异常，请稍后重试" });
+      if (!unmountedRef.current) setMsg({ ok: false, text: t("网络异常，请稍后重试") });
     } finally {
       retryingRef.current = false;
     }
@@ -101,14 +102,14 @@ export function useDesktopPublisher({ setMsg, load }: { setMsg: Notify; load: ()
           .filter((i) => !fileSet.has(i.file) || failedSet.has(i.file))
           .map((i) => (fileSet.has(i.file) ? { ...i, status: "error" as const } : i)),
       );
-      setMsg({ ok: false, text: "动态已发布；部分图片上传失败，点缩略图上的「↻ 重试」" });
+      setMsg({ ok: false, text: t("动态已发布；部分图片上传失败，点缩略图上的「↻ 重试」") });
     } else {
       // 只回收本批项的 blob URL，旧 error 项仍在展示中不能 revoke——revoke 在 updater 外（updater 必须纯函数）
       desktopImages.forEach((i) => {
         if (fileSet.has(i.file)) URL.revokeObjectURL(i.url);
       });
       setDesktopImages((prev) => prev.filter((i) => !fileSet.has(i.file)));
-      setMsg({ ok: true, text: "✨ 动态与图片已发布，AI 正在识别…" });
+      setMsg({ ok: true, text: t("✨ 动态与图片已发布，AI 正在识别…") });
     }
     void load();
   }

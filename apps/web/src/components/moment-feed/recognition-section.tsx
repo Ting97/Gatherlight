@@ -15,6 +15,9 @@ import { t } from "@/i18n";
 import { mealLabel } from "@shiguangri/shared/i18n-enum";
 import { getLang } from "@/i18n";
 
+/** 餐次占位值（入库中文枚举放 key 位）：命中则不展示「xx · 」前缀 */
+const PLACEHOLDER_MEALS: Record<string, true> = { 未知: true };
+
 interface RecognitionSectionProps {
   m: FeedMoment;
   activities: Activity[];
@@ -88,7 +91,7 @@ export function RecognitionSection({ m, activities, run, del, delArmed }: Recogn
         >
           <TagChip icon={<Utensils size={12} />} label={t("饮食")} tone="amber" size="sm" className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">
-            {m.diet.meal !== "未知" ? `${mealLabel(m.diet.meal, getLang())} · ` : ""}
+            {!PLACEHOLDER_MEALS[m.diet.meal] ? `${mealLabel(m.diet.meal, getLang())} · ` : ""}
             {(m.diet.items ?? []).map((i) => `${i.name}${i.amount ?? ""}`).join(" + ")}
             {m.diet.totalKcal != null ? ` · ≈${m.diet.totalKcal} kcal` : ""}
           </span>

@@ -3,9 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bjToday } from "@/lib/date";
 import { bjNowMin } from "@/lib/bj-time"; // 实现单源 @shiguangri/shared（UTC+8 推算，禁本地 getter）
+import { durationLabel } from "@shiguangri/shared/i18n-enum";
 import BlockDraftForm, { type BlockDraftValue } from "@/components/block-draft-form";
 import { toast } from "@/shared/ui/toast";
 import { confirmDialog } from "@/shared/ui/confirm";
+import { t, tpl, getLang } from "@/i18n";
 import type { Activity, Block } from "@/lib/types";
 
 const PX_PER_MIN = 0.75; // 一天 1080px，一小时 45px
@@ -103,9 +105,9 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
     //（与「Esc 脏关闭零反馈」同族）；confirmDialog 为全站确认范式（禁原生 window.confirm）
     if (draft && draft.title.trim()) {
       const ok = await confirmDialog({
-        title: "放弃当前补录草稿？",
-        message: "已输入的标题尚未保存，新建补录会将其清空。",
-        confirmText: "放弃并新建",
+        title: t("放弃当前补录草稿？"),
+        message: t("已输入的标题尚未保存，新建补录会将其清空。"),
+        confirmText: t("放弃并新建"),
         danger: false,
       });
       if (!ok) return;
@@ -150,7 +152,7 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
         activityId: draft.activityId,
       });
       if (ok) {
-        if (crossesDay) toast(`已按跨天块创建：${draft.start} → 次日 ${draft.end}`);
+        if (crossesDay) toast(tpl("已按跨天块创建：{start} → 次日 {end}", { start: draft.start, end: draft.end }));
         setDraft(null);
       }
     } finally {
@@ -184,7 +186,7 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
               <span
                 className={`absolute -top-2 left-1.5 text-badge tabular-nums ${h % 3 === 0 ? "text-ink-mute" : "text-ink-faint"}`}
               >
-                {h % 3 === 0 ? `${h}点` : ""}
+                {h % 3 === 0 ? tpl("{h}点", { h }) : ""}
               </span>
             </div>
           ))}
@@ -197,13 +199,13 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
                 const rect = e.currentTarget.getBoundingClientRect();
                 openSlotAt(g.s + (e.clientY - rect.top) / PX_PER_MIN);
               }}
-              title="点击空白处，按整点定位 1 小时补录"
+              title={t("点击空白处，按整点定位 1 小时补录")}
               className="group absolute right-2 w-[calc(100%-3rem)] rounded border border-dashed border-line/60 text-left transition hover:border-amber-500/60 hover:bg-amber-500/5"
               style={{ top: `${g.s * PX_PER_MIN}px`, height: `${Math.max((g.e - g.s) * PX_PER_MIN - 2, 8)}px` }}
             >
               {(g.e - g.s) * PX_PER_MIN >= 22 && (
                 <span className="pointer-events-none absolute inset-0 flex items-center justify-center gap-1 text-badge text-ink-faint group-hover:text-warn/80">
-                  ✦ 未记录 {hmOf(g.s)}–{hmOf(g.e)}（{(g.e - g.s) >= 60 ? `${Math.floor((g.e - g.s) / 60)}小时${(g.e - g.s) % 60 || ""}` : `${g.e - g.s}分钟`}）
+                  {tpl("✦ 未记录 {range}（{dur}）", { range: `${hmOf(g.s)}–${hmOf(g.e)}`, dur: durationLabel(g.e - g.s, getLang()) })}
                 </span>
               )}
             </button>
@@ -220,16 +222,16 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
                   // 草稿脏检查同 openSlotAt（二十轮）：打字中点日程块会打开块编辑器顶掉草稿
                   if (draft && draft.title.trim()) {
                     const ok = await confirmDialog({
-                      title: "放弃当前补录草稿？",
-                      message: "已输入的标题尚未保存，打开日程编辑会将其清空。",
-                      confirmText: "放弃草稿",
+                      title: t("放弃当前补录草稿？"),
+                      message: t("已输入的标题尚未保存，打开日程编辑会将其清空。"),
+                      confirmText: t("放弃草稿"),
                       danger: false,
                     });
                     if (!ok) return;
                   }
                   onEditBlock(b);
                 }}
-                title="点击修改/删除"
+                title={t("点击修改/删除")}
                 className="absolute left-10 right-2 overflow-hidden rounded border-l-4 px-2 text-left transition hover:brightness-125"
                 style={{
                   top: `${s * PX_PER_MIN}px`,
@@ -266,7 +268,7 @@ export default function DayTimeline({ date, blocks, activities, onCreate, onEdit
         </div>
       </div>
       <p className="mt-2 text-badge text-ink-faint">
-        提示：点击彩色块可修改 · 点击空白处自动定位整点 1 小时补录（表单内可调时间）{isToday ? " · 红线为当前时刻" : ""}
+        {t("提示：点击彩色块可修改 · 点击空白处自动定位整点 1 小时补录（表单内可调时间）")}{isToday ? t(" · 红线为当前时刻") : ""}
       </p>
     </div>
   );

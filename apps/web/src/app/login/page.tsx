@@ -5,6 +5,7 @@ import { Check, Eye, EyeOff, X } from "lucide-react";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { t, tpl, useLang } from "@/i18n";
+import LangToggle from "@/components/lang-toggle";
 
 export default function LoginPage() {
   // 订阅语言切换：t() 读模块级 currentLang，切换需触发本组件重渲染
@@ -133,6 +134,10 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 text-ink">
+      {/* 无导航页（nav.tsx NAVLESS_PATHS）的语言切换入口：右上角悬浮 */}
+      <div className="fixed right-4 top-4 z-50">
+        <LangToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
           {/* 品牌 logo：一束光落入承光弧（拾起光阴） */}
@@ -230,7 +235,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPwd((v) => !v)}
-                  title={t(showPwd ? "隐藏密码" : "查看明文")}
+                  title={showPwd ? t("隐藏密码") : t("查看明文")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
                 >
                   {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -253,14 +258,14 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={onEnterSubmit}
-                    type={showPwd ? "text" : "password"}
-                    placeholder={t("设置密码（至少 8 位）")}
-                    className={`${inputCls} pr-11`}
-                  />
+                  type={showPwd ? "text" : "password"}
+                  placeholder={t("设置密码（至少 8 位）")}
+                  className={`${inputCls} pr-11`}
+                />
                   <button
                     type="button"
                     onClick={() => setShowPwd((v) => !v)}
-                    title={t(showPwd ? "隐藏密码" : "查看明文")}
+                    title={showPwd ? t("隐藏密码") : t("查看明文")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim transition hover:text-ink"
                   >
                     {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -279,11 +284,11 @@ export default function LoginPage() {
                     <span className={`absolute right-3 top-1/2 flex -translate-y-1/2 items-center gap-0.5 text-xs ${password2 === password ? "text-success" : "text-danger"}`}>
                       {password2 === password ? (
                         <>
-                          <Check size={12} aria-hidden /> 一致
+                          <Check size={12} aria-hidden /> {t("一致")}
                         </>
                       ) : (
                         <>
-                          <X size={12} aria-hidden /> 不一致
+                          <X size={12} aria-hidden /> {t("不一致")}
                         </>
                       )}
                     </span>

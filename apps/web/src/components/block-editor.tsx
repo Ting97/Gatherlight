@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Activity } from "@/lib/types";
+import { t } from "@/i18n";
 
 export interface BlockDraft {
   id: string;
@@ -55,7 +56,7 @@ export default function BlockEditor({ draft, activities, onChange, onSave, onCan
           onChange={(e) => onChange({ ...draft, title: e.target.value })}
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && onSave()}
           className="min-w-32 flex-1 rounded border border-line-strong bg-surface px-2 py-1 text-sm outline-none focus:border-sky-500"
-          placeholder="标题"
+          placeholder={t("标题")}
         />
         <input
           type="time"
@@ -63,7 +64,7 @@ export default function BlockEditor({ draft, activities, onChange, onSave, onCan
           onChange={(e) => onChange({ ...draft, start: e.target.value })}
           className="rounded border border-line-strong bg-surface px-2 py-1 text-sm tabular-nums outline-none focus:border-sky-500"
         />
-        <span className="text-xs text-ink-dim">至</span>
+        <span className="text-xs text-ink-dim">{t("至")}</span>
         <input
           type="time"
           value={draft.end}
@@ -89,18 +90,18 @@ export default function BlockEditor({ draft, activities, onChange, onSave, onCan
             disabled={deleting}
             className={`rounded px-3 py-1 text-xs transition disabled:opacity-40 ${armDelete ? "bg-danger font-medium text-white hover:bg-danger/80" : "text-danger hover:bg-soft"}`}
           >
-            {deleting ? "删除中…" : armDelete ? "确认删除？" : "删除"}
+            {deleting ? t("删除中…") : armDelete ? t("确认删除？") : t("删除")}
           </button>
         )}
         <button onClick={onCancel} className="rounded px-3 py-1 text-xs text-ink-mute hover:bg-soft">
-          取消
+          {t("取消")}
         </button>
         <button
           onClick={onSave}
           disabled={saving}
           className="rounded bg-sky-600 px-3 py-1 text-xs font-medium hover:bg-sky-500 disabled:opacity-40"
         >
-          {saving ? "保存中…" : "保存"}
+          {saving ? t("保存中…") : t("保存")}
         </button>
       </div>
     </div>

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Mic } from "lucide-react";
 import { createVoiceRecorder, VOICE_MAX_SECONDS, type VoiceRecorderState } from "@/lib/voice-recorder";
+import { t } from "@/i18n";
 
 /**
  * 语音输入按钮（桌面端听写）：**按住说话，松开结束**（微信式长按交互，点击不再触发录音）。
@@ -61,8 +62,8 @@ export default function VoiceButton({
       onPointerUp={() => recRef.current?.release()}
       onPointerCancel={() => recRef.current?.discard()}
       onContextMenu={(e) => e.preventDefault()}
-      title="按住说话，松开结束（最长 30 秒）"
-      aria-label="按住说话，松开结束"
+      title={t("按住说话，松开结束（最长 30 秒）")}
+      aria-label={t("按住说话，松开结束")}
       style={{ touchAction: "none", WebkitTouchCallout: "none" } as React.CSSProperties}
       className={`shrink-0 select-none rounded-full border px-3 py-2 text-sm transition ${
         state === "recording"
@@ -76,7 +77,7 @@ export default function VoiceButton({
           {mmss} / {maxLabel}
         </span>
       ) : state === "transcribing" ? (
-        <span className="text-micro">识别中…</span>
+        <span className="text-micro">{t("识别中…")}</span>
       ) : (
         <Mic size={16} />
       )}

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { t } from "@/i18n";
 import { FilterChip } from "./tag-chip";
 
 export interface SubNavItem {
@@ -22,7 +23,7 @@ export default function SubNav({
   items,
   value,
   onChange,
-  ariaLabel = "子导航",
+  ariaLabel = t("子导航"),
   className = "",
 }: {
   items: SubNavItem[];

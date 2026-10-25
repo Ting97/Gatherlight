@@ -6,6 +6,7 @@ import { FEED_PAGE_SIZE_HINT, zhRecordTime } from "./moment-feed/kit";
 import MomentCard from "./moment-feed/moment-card";
 import type { MomentFeedProps } from "./moment-feed/types";
 import Skeleton from "./skeleton";
+import { t as tr, tpl } from "@/i18n";
 
 // 拆分后保留原有具名导出（entry-menu 等处仍从本路径引用）
 export { COMMON_MOODS, DOMAIN_LABELS, zhRecordTime } from "./moment-feed/kit";
@@ -27,8 +28,8 @@ export default function MomentFeed(props: MomentFeedProps) {
     return (
       <p className="empty-state">
         {props.searching
-          ? `没有找到包含「${props.searchKeyword}」的动态 —— 换个关键词，或点 ✕ 清除搜索`
-          : "还没有动态 —— 随口说一句今天的事、心情或明天的计划试试"}
+          ? tpl("没有找到包含「{kw}」的动态 —— 换个关键词，或点 ✕ 清除搜索", { kw: props.searchKeyword ?? "" })
+          : tr("还没有动态 —— 随口说一句今天的事、心情或明天的计划试试")}
       </p>
     );
   }
@@ -76,12 +77,12 @@ export default function MomentFeed(props: MomentFeedProps) {
             disabled={props.loadingMore}
             className="rounded-full border border-line-soft bg-surface/60 px-5 py-2 text-xs text-accent transition hover:border-sky-500/50 hover:text-accent disabled:opacity-50"
           >
-            {props.loadingMore ? "加载中…" : `加载更多（还有 ${props.moreCount} 条）`}
+            {props.loadingMore ? tr("加载中…") : tpl("加载更多（还有 {n} 条）", { n: props.moreCount ?? 0 })}
           </button>
         </div>
       ) : (
         props.moments.length >= FEED_PAGE_SIZE_HINT && (
-          <p className="pt-1 text-center text-micro text-ink-dim">— 已经到底啦 —</p>
+          <p className="pt-1 text-center text-micro text-ink-dim">{tr("— 已经到底啦 —")}</p>
         )
       )}
     </div>

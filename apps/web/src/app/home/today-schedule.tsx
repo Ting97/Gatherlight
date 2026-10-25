@@ -8,13 +8,14 @@ import { Clock, Pencil, Plus, Trash2, Utensils } from "lucide-react";
 import { TagChip, FilterChip } from "@/components/tag-chip";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
-import { bjToday, zhDuration } from "@/lib/date";
+import { bjToday } from "@/lib/date";
 import { combineHM, combineHmEndCrossDay, bjDateKey } from "@/lib/bj-time";
 import type { Activity, Block } from "@/lib/types";
 import { useArmConfirm } from "@/lib/use-arm-confirm";
 import { zhTime } from "./kit";
 import type { BlockDraft } from "./types";
-import { t, tpl } from "@/i18n";
+import { t, tpl, getLang } from "@/i18n";
+import { durationLabel } from "@shiguangri/shared/i18n-enum";
 
 interface Props {
   blocks: Block[];
@@ -75,7 +76,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
         endAt: crossDay ? combineHmEndCrossDay(startAt, editing.end, b.end_at) : combineHM(b.end_at, editing.end),
         activityId: editing.activityId,
       });
-      if (!storedCrossDay && crossDay) toast(`已按跨天块保存：${editing.start} → 次日 ${editing.end}`);
+      if (!storedCrossDay && crossDay) toast(tpl("已按跨天块保存：{start} → 次日 {end}", { start: editing.start, end: editing.end }));
     } catch (e) {
       toast(e instanceof Error ? e.message : t("保存失败"), "err");
       return;
@@ -95,7 +96,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
       toast(t("删除失败"), "err");
       return;
     }
-    toast(`🗑 已删除「${b.title}」`);
+    toast(tpl("🗑 已删除「{title}」", { title: b.title }));
     await load();
   }
 
@@ -107,7 +108,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
       toast(e instanceof Error ? e.message : t("补录失败"), "err");
       return false;
     }
-    toast(`✍️ 已补录：${payload.title}`);
+    toast(tpl("✍️ 已补录：{title}", { title: payload.title }));
     await load();
     return true;
   }
@@ -188,7 +189,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
           <span className="inline-flex items-center gap-1">
             <Clock size={14} className="text-accent" aria-hidden /> {t("今日日程")}{" "}
             <span className="whitespace-nowrap text-xs font-normal text-ink-dim">
-              {blocks.length} 段 · 共 {zhDuration(blocks.reduce((s, b) => s + b.duration_min, 0))}
+              {tpl("{n} 段 · 共 {dur}", { n: blocks.length, dur: durationLabel(blocks.reduce((s, b) => s + b.duration_min, 0), getLang()) })}
             </span>
           </span>
           {todayKcal > 0 && <TagChip icon={<Utensils size={12} />} label={tpl("今日 ≈{n} kcal", { n: todayKcal })} tone="amber" size="sm" className="whitespace-nowrap" />}
@@ -231,7 +232,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
               onClick={() => setListDraft(nextFreeSlot())}
               className="flex items-center gap-1 rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs text-accent transition hover:border-sky-500/50"
             >
-              <Plus size={12} aria-hidden /> 新增日程
+              <Plus size={12} aria-hidden /> {t("新增日程")}
             </button>
           </div>
           {blocks.length === 0 && (
@@ -257,7 +258,7 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
                       onChange={(e) => setEditing({ ...editing, start: e.target.value })}
                       className="rounded border border-line-strong bg-surface px-2 py-1 text-sm tabular-nums outline-none focus:border-sky-500"
                     />
-                    <span className="text-xs text-ink-dim">至</span>
+                    <span className="text-xs text-ink-dim">{t("至")}</span>
                     <input
                       type="time"
                       value={editing.end}
@@ -281,14 +282,14 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
                       onClick={() => setEditing(null)}
                       className="rounded px-3 py-1 text-xs text-ink-mute hover:bg-soft"
                     >
-                      取消
+                      {t("取消")}
                     </button>
                     <button
                       onClick={saveEdit}
                       disabled={saving}
                       className="rounded bg-sky-600 px-3 py-1 text-xs font-medium hover:bg-sky-500 disabled:opacity-40"
                     >
-                      {saving ? "保存中…" : "保存"}
+                      {saving ? t("保存中…") : t("保存")}
                     </button>
                   </div>
                 </li>
@@ -301,21 +302,21 @@ export default function TodaySchedule({ blocks, activities, todayKcal, load }: P
                   </span>
                   <span className="text-base">{b.icon}</span>
                   <span className="flex-1 truncate text-sm">{b.title}</span>
-                  <span className="shrink-0 text-xs text-ink-dim">{b.duration_min} 分钟</span>
+                  <span className="shrink-0 text-xs text-ink-dim">{durationLabel(b.duration_min, getLang())}</span>
                   <span className="row-actions hidden shrink-0 gap-1 group-hover:flex">
                     <button
                       onClick={() => startEdit(b)}
-                      title="修改"
+                      title={t("修改")}
                       className="rounded px-1.5 py-0.5 text-ink-mute hover:bg-soft hover:text-accent"
                     >
                       <Pencil size={12} />
                     </button>
                     <button
                       onClick={() => removeBlock(b)}
-                      title={armDelete.armedId === b.id ? "3 秒内再点确认删除" : "删除"}
+                      title={armDelete.armedId === b.id ? t("3 秒内再点确认删除") : t("删除")}
                       className={`flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium leading-none ${armDelete.armedId === b.id ? "bg-rose-500/15 text-danger" : "text-ink-mute hover:bg-soft hover:text-danger"}`}
                     >
-                      {armDelete.armedId === b.id ? "确认删除?" : <Trash2 size={12} />}
+                      {armDelete.armedId === b.id ? t("确认删除?") : <Trash2 size={12} />}
                     </button>
                   </span>
                 </li>

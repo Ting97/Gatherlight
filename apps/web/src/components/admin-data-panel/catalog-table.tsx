@@ -1,6 +1,7 @@
 "use client";
 
 import { TagChip } from "@/components/tag-chip";
+import { t } from "@/i18n";
 import { PARTITION_META, type CatalogPayload } from "./types";
 
 /**
@@ -15,11 +16,11 @@ export default function CatalogTable({ catalog }: { catalog: CatalogPayload }) {
           <thead>
             <tr className="border-b border-line-soft bg-elevated/60 text-badge tracking-wide text-ink-faint">
               <th className="px-2.5 py-1.5 font-medium">key</th>
-              <th className="px-2.5 py-1.5 font-medium">名称</th>
-              <th className="px-2.5 py-1.5 font-medium">描述</th>
-              <th className="px-2.5 py-1.5 font-medium">分区</th>
-              <th className="px-2.5 py-1.5 font-medium">时间列</th>
-              <th className="px-2.5 py-1.5 font-medium">关联 prompt</th>
+              <th className="px-2.5 py-1.5 font-medium">{t("名称")}</th>
+              <th className="px-2.5 py-1.5 font-medium">{t("描述")}</th>
+              <th className="px-2.5 py-1.5 font-medium">{t("分区")}</th>
+              <th className="px-2.5 py-1.5 font-medium">{t("时间列")}</th>
+              <th className="px-2.5 py-1.5 font-medium">{t("关联 prompt")}</th>
             </tr>
           </thead>
           <tbody>
@@ -29,13 +30,13 @@ export default function CatalogTable({ catalog }: { catalog: CatalogPayload }) {
                 <td className="whitespace-nowrap px-2.5 py-1.5 font-medium text-ink">{d.name}</td>
                 <td className="px-2.5 py-1.5 text-micro text-ink-dim">{d.desc}</td>
                 <td className="px-2.5 py-1.5">
-                  <TagChip label={PARTITION_META[d.partition].label} tone={PARTITION_META[d.partition].tone} size="sm" />
+                  <TagChip label={PARTITION_META[d.partition].label()} tone={PARTITION_META[d.partition].tone} size="sm" />
                 </td>
                 <td className="px-2.5 py-1.5 font-mono text-badge text-ink-mute">{d.timeCol ?? "—"}</td>
                 <td className="px-2.5 py-1.5">
                   <div className="flex max-w-52 flex-wrap gap-1">
                     {d.promptRefs.length ? (
-                      d.promptRefs.map((p) => <TagChip key={p} label={p} tone="sky" size="sm" title="引用该数据集的 prompt key" />)
+                      d.promptRefs.map((p) => <TagChip key={p} label={p} tone="sky" size="sm" title={t("引用该数据集的 prompt key")} />)
                     ) : (
                       <span className="text-badge text-ink-faint">—</span>
                     )}

@@ -26,6 +26,11 @@ export interface ReminderItem {
   contactId?: string; // 联系人类条目 → 跳 TA 档案
   todoId?: string; // todo 条目 → 锚到工作台 todo 区
   overdue?: boolean;
+  /** 结构化字段（展示层按语言拼装，见 web components/reminders.tsx；label 保留中文兜底） */
+  name?: string;
+  days?: number;
+  title?: string;
+  hm?: string;
   /** 排序权重：越紧迫越小（已过期待办 -1，今天 0，N 天后 N） */
   sort: number;
 }
@@ -49,6 +54,8 @@ export function pickReminders(
         kind: "birthday",
         contactId: c.id,
         sort: bd,
+        name: c.name,
+        days: bd,
         label: bd === 0 ? `今天是 ${c.name} 的生日，记得送上祝福 🎂` : `${c.name} 的生日 ${bd === 1 ? "明天" : `${bd} 天后`}，提前准备一下？`,
       });
     }
@@ -59,6 +66,8 @@ export function pickReminders(
         kind: "anniversary",
         contactId: c.id,
         sort: ad,
+        name: c.name,
+        days: ad,
         label: ad === 0 ? `今天是和 ${c.name} 的纪念日 💞` : `和 ${c.name} 的纪念日 ${ad === 1 ? "明天" : `${ad} 天后`} 💞`,
       });
     }
@@ -85,6 +94,8 @@ export function pickReminders(
       todoId: t.id,
       sort: overdue ? -1 : daysLeft,
       overdue,
+      title: t.title,
+      hm: bjHm ? `${pad(bjHm.getUTCHours())}:${pad(bjHm.getUTCMinutes())}` : "",
       label: `${overdue ? "todo 已过期" : "todo 即将到期"}：${t.title}${hm}`,
     });
   }

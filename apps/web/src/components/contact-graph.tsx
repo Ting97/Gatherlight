@@ -10,6 +10,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Minus, Plus, RotateCcw } from "lucide-react";
 import { buildStarGraph, type GraphContact, type GraphNode } from "@/lib/graph";
+import { t as tr, tpl, getLang } from "@/i18n";
+import { contactGroupLabel } from "@shiguangri/shared/i18n-enum";
 
 type Override = Map<string, { x: number; y: number }>;
 interface View {
@@ -282,7 +284,7 @@ export default function ContactGraph({
                   strokeLinejoin="round"
                   paintOrder="stroke"
                 >
-                  {ring.label}
+                  {tr(ring.label)}
                 </text>
               </g>
             ))}
@@ -377,7 +379,7 @@ export default function ContactGraph({
                 fontSize={16}
                 fontWeight={600}
               >
-                我
+                {tr("我")}
               </text>
             </g>
           </g>
@@ -386,9 +388,21 @@ export default function ContactGraph({
         {/* 缩放控制按钮 */}
         <div className="absolute right-2 top-2 flex flex-col gap-1">
           {[
-            { icon: <Plus size={14} />, title: "放大", fn: () => zoomBy(1.25) },
-            { icon: <Minus size={14} />, title: "缩小", fn: () => zoomBy(1 / 1.25) },
-            { icon: <RotateCcw size={14} />, title: "复位视图", fn: resetView },
+            {
+              icon: <Plus size={14} />,
+              title: tr("放大"),
+              fn: () => zoomBy(1.25),
+            },
+            {
+              icon: <Minus size={14} />,
+              title: tr("缩小"),
+              fn: () => zoomBy(1 / 1.25),
+            },
+            {
+              icon: <RotateCcw size={14} />,
+              title: tr("复位视图"),
+              fn: resetView,
+            },
           ].map((b) => (
             <button
               key={b.title}
@@ -412,10 +426,10 @@ export default function ContactGraph({
           >
             <p className="font-semibold text-ink">
               {hovered.name}
-              <span className="ml-1.5 font-normal text-ink-mute">{hovered.group}</span>
+              <span className="ml-1.5 font-normal text-ink-mute">{contactGroupLabel(hovered.group, getLang())}</span>
             </p>
             <p className="mt-0.5 tabular-nums text-ink-mute">
-              亲密度 {hovered.intimacy} · 往来 {hovered.count} 次
+              {tpl("亲密度 {intimacy} · 往来 {count} 次", { intimacy: hovered.intimacy, count: hovered.count })}
             </p>
           </div>
         )}
@@ -426,12 +440,12 @@ export default function ContactGraph({
         {g.legend.map((l) => (
           <span key={l.tag} className="flex items-center gap-1.5 text-micro text-ink-mute">
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: l.color }} />
-            {l.tag}
+            {contactGroupLabel(l.tag, getLang())}
             <span className="tabular-nums text-ink-dim">{l.count}</span>
           </span>
         ))}
         <span className="text-micro text-ink-faint">
-          距离=重要程度 · 滚轮/双指缩放 · 拖空白平移 · 双击复位 · 拖节点摆位 · 点击看 TA 档案
+          {tr("距离=重要程度 · 滚轮/双指缩放 · 拖空白平移 · 双击复位 · 拖节点摆位 · 点击看 TA 档案")}
         </span>
       </div>
     </div>

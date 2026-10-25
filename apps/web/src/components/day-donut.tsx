@@ -1,6 +1,8 @@
 "use client";
 
 import type { Activity } from "@/lib/types";
+import { activityLabel } from "@shiguangri/shared/i18n-enum";
+import { t, tpl, getLang } from "@/i18n";
 
 interface Props {
   /** activityId → 分钟 */
@@ -47,7 +49,7 @@ export default function DayDonut({ byActivity, activities, size = 120, thickness
         ))}
       </svg>
       <div className="min-w-0 flex-1 space-y-1">
-        {total === 0 && <p className="text-xs text-ink-faint">暂无记录</p>}
+        {total === 0 && <p className="text-xs text-ink-faint">{t("暂无记录")}</p>}
         {segments.slice(0, 5).map((s) => {
           const a = actMap.get(s.id);
           return (
@@ -57,7 +59,7 @@ export default function DayDonut({ byActivity, activities, size = 120, thickness
                 <span className="mr-1 inline-flex h-4 w-4 items-center justify-center rounded bg-sky-500/15 align-[-2px] text-badge leading-none">
                   {a?.icon ?? "📌"}
                 </span>
-                {a?.name ?? "其他"}
+                {activityLabel(a?.name ?? t("其他"), getLang())}
               </span>
               <span className="shrink-0 tabular-nums text-ink-dim">
                 {Math.round((s.min / total) * 100)}%
@@ -66,7 +68,7 @@ export default function DayDonut({ byActivity, activities, size = 120, thickness
           );
         })}
         {segments.length > 5 && (
-          <p className="text-badge text-ink-faint">等 {segments.length - 5} 类未展示</p>
+          <p className="text-badge text-ink-faint">{tpl("等 {n} 类未展示", { n: segments.length - 5 })}</p>
         )}
       </div>
     </div>

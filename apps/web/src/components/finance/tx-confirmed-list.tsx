@@ -8,6 +8,7 @@ import { TagChip } from "@/components/tag-chip";
 import type { Tx } from "./kit";
 import { TxRow } from "./display";
 import { TxForm } from "./forms";
+import { t as tr, tpl } from "@/i18n";
 
 export function ConfirmedTxSection({
   txs,
@@ -37,14 +38,14 @@ export function ConfirmedTxSection({
   return (
     <section className="glass rounded-2xl p-5">
       <h2 className="mb-3 flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
-        <TagChip icon={<Receipt size={12} />} label="流水" tone="slate" />
+        <TagChip icon={<Receipt size={12} />} label={tr("流水")} tone="slate" />
         <span className="text-xs font-normal text-ink-dim">
-          {hasMore ? `${txs.length} / ${total} 笔` : `${txs.length} 笔`}
+          {hasMore ? tpl("{a} / {b} 笔", { a: txs.length, b: total }) : tpl("{n} 笔", { n: txs.length })}
         </span>
       </h2>
       {txs.length === 0 && (
         <p className="py-4 text-center text-xs text-ink-faint">
-          本月还没有流水 —— 说句"打车花了30"，或点「＋ 记一笔」
+          {tr('本月还没有流水 —— 说句"打车花了30"，或点「＋ 记一笔」')}
         </p>
       )}
       <ul className="space-y-1">
@@ -72,7 +73,7 @@ export function ConfirmedTxSection({
           disabled={loadingMore}
           className="mt-3 w-full rounded-xl border border-line-soft py-2 text-xs text-ink-mute transition hover:border-sky-500/50 hover:text-accent disabled:opacity-50"
         >
-          {loadingMore ? "加载中…" : `加载更多 · 还有 ${total - txs.length} 笔`}
+          {loadingMore ? tr("加载中…") : tpl("加载更多 · 还有 {n} 笔", { n: total - txs.length })}
         </button>
       )}
     </section>

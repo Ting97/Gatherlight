@@ -4,6 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type { FeedMoment } from "@/lib/types";
 import { toast } from "@/shared/ui/toast";
 import { Dismissable } from "../dismissable";
+import { t, tpl } from "@/i18n";
 import type { MenuPos } from "./types";
 
 interface RawTextSectionProps {
@@ -38,7 +39,7 @@ export function RawTextSection({
         <Dismissable
           onClose={() => {
             // N3/N3.5：点空白或 Esc 取消编辑；内容有改动则轻提示
-            if (editRaw.trim() !== m.raw_text.trim()) toast("已取消，未保存", "info");
+            if (editRaw.trim() !== m.raw_text.trim()) toast(t("已取消，未保存"), "info");
             setEditRaw(null);
           }}
           className="mt-1.5"
@@ -53,13 +54,13 @@ export function RawTextSection({
           <div className="mt-1.5 flex items-center gap-2">
             <button
               onClick={onSaveRaw}
-              className="rounded-md bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-500"
-            >
-              保存并重新识别
-            </button>
-            <button onClick={() => setEditRaw(null)} className="px-1 text-xs text-ink-mute hover:text-ink">
-              取消
-            </button>
+            className="rounded-md bg-sky-600 px-3 py-1 text-xs font-medium text-white hover:bg-sky-500"
+          >
+            {t("保存并重新识别")}
+          </button>
+          <button onClick={() => setEditRaw(null)} className="px-1 text-xs text-ink-mute hover:text-ink">
+            {t("取消")}
+          </button>
           </div>
         </Dismissable>
       ) : (
@@ -80,7 +81,7 @@ export function RawTextSection({
             setActionsOpen(false);
             setMenuOpen((v) => !v); // 菜单开着时再点=关闭：pointerdown 已被 trigger 豁免，不会先关后开
           }}
-          title="点击打开识别菜单"
+          title={t("点击打开识别菜单")}
           // button 承载点击/键盘双入口（十五轮：纯 onClick p 键盘完全不可达——识别/手动补充/空间归属
           // 是动态卡核心操作）；外观与原 <p> 一致（去默认边框底色，左对齐，多行 pre-wrap）
           className={`mt-1.5 block w-full cursor-pointer appearance-none border-0 bg-transparent p-0 text-left whitespace-pre-wrap break-words text-title leading-relaxed text-ink transition-colors hover:text-accent focus-visible:text-accent ${isLongText && !textExpanded ? "line-clamp-6" : ""}`}
@@ -96,7 +97,7 @@ export function RawTextSection({
           }}
           className="mt-1 text-xs font-medium text-accent hover:underline"
         >
-          {textExpanded ? "收起" : `展开全文（${m.raw_text.length} 字）`}
+          {textExpanded ? t("收起") : tpl("展开全文（{n} 字）", { n: m.raw_text.length })}
         </button>
       )}
     </>

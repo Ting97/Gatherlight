@@ -3,6 +3,7 @@
 /** 空间详情的行操作菜单入口：统一走 components/todo 共享菜单（REQ-009 滚动），
  * 菜单项与日程 todo-board 完全一致（此前缺 每日重复/⭐重要/☀️标记今日，现补齐）。 */
 import { TodoRowMenu } from "@/components/todo";
+import { t } from "@/i18n";
 import type { MenuRowState, Pos } from "./types";
 import type { TodoActions } from "./use-todo-actions";
 
@@ -25,7 +26,8 @@ export default function RowMenuModal(opts: {
       }}
       actions={{
         decomposingId: busyId,
-        patch: (id, body, okText) => patchTodo(id, body, okText ?? "已保存"),
+        patch: (id, body, okText) =>
+          patchTodo(id, body, okText ?? t("已保存")),
         decompose: (_t, isAction, mode) => decompose({ id: row.id, title: row.title, isAction }, mode),
         remove: (_t) => removeTodo(row.id, row.title),
         pendingCount: () => pendingCount(row),

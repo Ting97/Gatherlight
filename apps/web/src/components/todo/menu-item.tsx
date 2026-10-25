@@ -6,6 +6,7 @@
  * 各入口经适配器传入 handlers，缺失的 handler 对应菜单项自动隐藏。
  */
 import { Hourglass } from "lucide-react";
+import { t } from "@/i18n";
 
 export interface TodoMenuTarget {
   id: string;
@@ -81,7 +82,7 @@ export function MenuItem({ closeMenu, icon, label, hint, extra, danger, active, 
         {hint && <span className="block truncate text-badge text-ink-faint">{hint}</span>}
       </span>
       {extra && <span className="shrink-0 text-badge tabular-nums text-success">{extra}</span>}
-      {active && <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-badge text-warn">已开启</span>}
+      {active && <span className="shrink-0 rounded bg-amber-500/20 px-1.5 py-0.5 text-badge text-warn">{t("已开启")}</span>}
     </button>
   );
 }

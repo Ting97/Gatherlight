@@ -11,7 +11,9 @@ import type { Space, SpaceMilestone } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { bjDate, bjToday } from "./kit";
+import { t as tr, tpl } from "@/i18n";
 import type { Msg, Pos } from "./types";
+import { spaceName, spaceDesc } from "@/lib/space-i18n";
 
 /** 阶段目标区（REQ-019 FR-B1）：进行中列表 + 快速新建 + 历史弹层——取代 todo/行动完成率 */
 function MilestoneSection({ id, color, setSpace }: { id: string; color: string; setSpace: Dispatch<SetStateAction<Space | null>> }) {
@@ -75,7 +77,7 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
       syncCounts(r.milestones);
     } catch (e) {
       // 异常收口为失败提示（原 setDraft((v)=>v) 是 no-op，失败零反馈让人以为已保存）
-      toast(e instanceof ApiClientError ? e.message : "阶段目标创建失败，请重试", "err");
+      toast(e instanceof ApiClientError ? e.message : tr("阶段目标创建失败，请重试"), "err");
     } finally {
       setBusy(false);
     }
@@ -93,7 +95,7 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
       return true;
     } catch (e) {
       // 标记达成/放弃/编辑失败必须有反馈（网络/400 时保留原列表但要让用户知道没保存）
-      toast(e instanceof ApiClientError ? e.message : "操作失败，请重试", "err");
+      toast(e instanceof ApiClientError ? e.message : tr("操作失败，请重试"), "err");
       return false;
     } finally {
       setBusy(false);
@@ -106,15 +108,15 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
   return (
     <div className="mt-4">
       <div className="mb-1.5 flex items-center justify-between gap-2">
-        <span className="text-badge text-ink-faint">阶段目标（完成一个阶段推进一程）</span>
+        <span className="text-badge text-ink-faint">{tr("阶段目标（完成一个阶段推进一程）")}</span>
         <span className="flex items-center gap-2 text-badge">
           {(items?.length ?? 0) > 0 && (
             <button className="tap-lg text-ink-mute transition hover:text-accent" onClick={() => setHistoryOpen(true)}>
-              历史 {items!.length} · 达成 {doneCount}
+              {tpl("历史 {n} · 达成 {m}", { n: items!.length, m: doneCount })}
             </button>
           )}
           <button className="tap-lg flex items-center gap-0.5 text-accent transition hover:underline" onClick={() => setAdding((v) => !v)}>
-            <Plus size={11} aria-hidden /> 阶段
+            <Plus size={11} aria-hidden /> {tr("阶段")}
           </button>
         </span>
       </div>
@@ -128,7 +130,7 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.nativeEvent.isComposing) void create();
             }}
-            placeholder="阶段目标（如：完赛首场半马）"
+            placeholder={tr("阶段目标（如：完赛首场半马）")}
             maxLength={80}
             className="min-w-0 flex-1 rounded-lg border border-line-soft bg-surface px-2 py-1 text-xs outline-none focus:border-sky-500"
           />
@@ -137,19 +139,19 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
             value={draftDate}
             onChange={(e) => setDraftDate(e.target.value)}
             className="rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-            title="目标日期（可空）"
+            title={tr("目标日期（可空）")}
           />
           <button className="btn-primary rounded-lg px-2.5 py-1 text-xs disabled:opacity-50" onClick={create} disabled={busy || !draft.trim()}>
-            添加
+            {tr("添加")}
           </button>
         </div>
       )}
 
       {items === null ? (
-        <p className="text-xs text-ink-faint">加载中…</p>
+        <p className="text-xs text-ink-faint">{tr("加载中…")}</p>
       ) : active.length === 0 ? (
         <p className="text-xs text-ink-faint">
-          {items.length === 0 ? "还没有阶段目标——把大目标拆成一段一段的小里程碑。" : "进行中的阶段已清空，开启下一个阶段吧。"}
+          {items.length === 0 ? tr("还没有阶段目标——把大目标拆成一段一段的小里程碑。") : tr("进行中的阶段已清空，开启下一个阶段吧。")}
         </p>
       ) : (
         <ul className="space-y-1.5">
@@ -174,19 +176,19 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                     value={editDate}
                     onChange={(e) => setEditDate(e.target.value)}
                     className="shrink-0 rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-                    title="目标日期（可空）"
+                    title={tr("目标日期（可空）")}
                   />
                   <button
                     onClick={() => saveEdit(m.id)}
                     disabled={busy || !editTitle.trim()}
-                    title="保存"
+                    title={tr("保存")}
                     className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-emerald-500/15 hover:text-success disabled:opacity-40"
                   >
                     <Check size={13} />
                   </button>
                   <button
                     onClick={() => setEditingId(null)}
-                    title="取消"
+                    title={tr("取消")}
                     className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-rose-500/15 hover:text-danger"
                   >
                     <X size={13} />
@@ -197,7 +199,7 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                   <Flag size={12} className="shrink-0" style={{ color }} aria-hidden />
                   <button
                     onClick={() => startEdit(m)}
-                    title="点击编辑阶段目标"
+                    title={tr("点击编辑阶段目标")}
                     className="min-w-0 flex-1 truncate text-left text-xs text-ink transition hover:text-accent"
                   >
                     {m.title}
@@ -209,21 +211,21 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                   )}
                   <button
                     onClick={() => startEdit(m)}
-                    title="编辑"
+                    title={tr("编辑")}
                     className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-soft hover:text-accent"
                   >
                     <Pencil size={12} />
                   </button>
                   <button
                     onClick={() => patch(m.id, { status: "done" })}
-                    title="标记达成"
+                    title={tr("标记达成")}
                     className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-emerald-500/15 hover:text-success"
                   >
                     <Check size={13} />
                   </button>
                   <button
                     onClick={() => patch(m.id, { status: "abandoned" })}
-                    title="放弃"
+                    title={tr("放弃")}
                     className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-rose-500/15 hover:text-danger"
                   >
                     <X size={13} />
@@ -236,7 +238,7 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
       )}
 
       {historyOpen && (
-        <Modal title="阶段目标历史" onClose={() => setHistoryOpen(false)}>
+        <Modal title={tr("阶段目标历史")} onClose={() => setHistoryOpen(false)}>
           <ul className="space-y-2">
             {(items ?? []).map((m) => (
               <li key={m.id} className="rounded-xl border border-line-soft p-2.5">
@@ -258,17 +260,17 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                       value={editDate}
                       onChange={(e) => setEditDate(e.target.value)}
                       className="rounded-lg border border-line-soft bg-surface px-1.5 py-1 text-xs text-ink outline-none"
-                      title="目标日期（可空）"
+                      title={tr("目标日期（可空）")}
                     />
                     <button
                       onClick={() => saveEdit(m.id)}
                       disabled={busy || !editTitle.trim()}
                       className="btn-primary rounded-lg px-2.5 py-1 text-xs disabled:opacity-50"
                     >
-                      保存
+                      {tr("保存")}
                     </button>
                     <button className="rounded-lg px-2 py-1 text-xs text-ink-mute hover:bg-soft" onClick={() => setEditingId(null)}>
-                      取消
+                      {tr("取消")}
                     </button>
                   </div>
                 ) : (
@@ -283,13 +285,13 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                               : "bg-sky-500/15 text-accent"
                         }`}
                       >
-                        {m.status === "done" ? "已达成" : m.status === "abandoned" ? "已放弃" : "进行中"}
+                        {m.status === "done" ? tr("已达成") : m.status === "abandoned" ? tr("已放弃") : tr("进行中")}
                       </span>
                       <span className={`min-w-0 flex-1 truncate text-xs ${m.status === "active" ? "text-ink" : "text-ink-mute"}`}>{m.title}</span>
                       {m.target_date && <span className="shrink-0 text-micro tabular-nums text-ink-faint">{bjDate(m.target_date).slice(5)}</span>}
                       <button
                         onClick={() => startEdit(m)}
-                        title="编辑"
+                        title={tr("编辑")}
                         className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-soft hover:text-accent"
                       >
                         <Pencil size={12} />
@@ -297,19 +299,19 @@ function MilestoneSection({ id, color, setSpace }: { id: string; color: string; 
                       {m.status !== "active" ? (
                         <button
                           onClick={() => patch(m.id, { status: "active" })}
-                          title="重新开启"
+                          title={tr("重新开启")}
                           className="shrink-0 rounded-md p-1 text-ink-faint transition hover:bg-sky-500/15 hover:text-accent"
                         >
                           <Undo2 size={13} />
                         </button>
                       ) : null}
                     </div>
-                    {m.completed_at && <p className="mt-1 text-micro text-ink-faint">达成于 {bjDate(m.completed_at)}</p>}
+                    {m.completed_at && <p className="mt-1 text-micro text-ink-faint">{tpl("达成于 {d}", { d: bjDate(m.completed_at) })}</p>}
                   </>
                 )}
               </li>
             ))}
-            {(items ?? []).length === 0 && <li className="text-xs text-ink-mute">还没有阶段目标。</li>}
+            {(items ?? []).length === 0 && <li className="text-xs text-ink-mute">{tr("还没有阶段目标。")}</li>}
           </ul>
         </Modal>
       )}
@@ -344,28 +346,29 @@ export default function SpaceHeaderCard(opts: {
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold text-ink">
             <InlineRename
-              value={space.name}
+              value={spaceName(space)}
+              disabled={space.kind === "sport"}
               onSave={async (name) => {
                 try {
                   await api<any>(`/api/spaces/${id}`, "PATCH", { name });
                 } catch (e) {
                   if (e instanceof ApiClientError) {
-                    setMsg({ ok: false, text: e.message === "操作失败" ? "重命名失败" : e.message });
+                    setMsg({ ok: false, text: e.message === tr("操作失败") ? tr("重命名失败") : e.message });
                     return false;
                   }
                   // 网络断开等异常收口为提示，不抛出点击处理器（裸 rejection 会触发整页刷新）
-                  setMsg({ ok: false, text: "网络异常，请稍后重试" });
+                  setMsg({ ok: false, text: tr("网络异常，请稍后重试") });
                   return false;
                 }
                 setSpace({ ...space, name });
-                setMsg({ ok: true, text: "已重命名" });
+                setMsg({ ok: true, text: tr("已重命名") });
                 return true;
               }}
             />
           </h1>
-          {space.description && <p className="mt-1 text-xs leading-relaxed text-ink-mute">{space.description}</p>}
+          {spaceDesc(space) && <p className="mt-1 text-xs leading-relaxed text-ink-mute">{spaceDesc(space)}</p>}
           <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-micro text-ink-dim">
-            {space.started_at && <span>{bjDate(space.started_at)} 开始</span>}
+            {space.started_at && <span>{tpl("{d} 开始", { d: bjDate(space.started_at) })}</span>}
             {dateEdit ? (
               <Dismissable onClose={() => setDateEdit(false)} className="inline-flex items-center gap-1.5">
                 <input
@@ -381,7 +384,7 @@ export default function SpaceHeaderCard(opts: {
                   }}
                   className="rounded-lg bg-sky-500/20 px-1.5 py-0.5 text-accent transition hover:bg-sky-500/30"
                 >
-                  保存
+                  {tr("保存")}
                 </button>
                 {space.target_date && (
                   <button
@@ -390,7 +393,7 @@ export default function SpaceHeaderCard(opts: {
                     }}
                     className="rounded-lg px-1.5 py-0.5 text-ink-mute transition hover:bg-soft hover:text-danger"
                   >
-                    清除
+                    {tr("清除")}
                   </button>
                 )}
               </Dismissable>
@@ -401,26 +404,26 @@ export default function SpaceHeaderCard(opts: {
                   setDateEdit(true);
                 }}
                 className="-mx-1 rounded px-1 text-left transition hover:bg-soft hover:text-accent"
-                title={space.target_date ? "点击调整目标到期时间" : "设置目标到期时间"}
+                title={space.target_date ? tr("点击调整目标到期时间") : tr("设置目标到期时间")}
               >
                 {space.target_date ? (
                   <span className={`inline-flex items-center gap-1 ${bjDate(space.target_date) < bjToday() ? "text-danger" : ""}`}>
                     <Hourglass size={11} aria-hidden /> {bjDate(space.target_date)}
-                    {bjDate(space.target_date) < bjToday() && " 已过期"}
+                    {bjDate(space.target_date) < bjToday() && tr(" 已过期")}
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-0.5 text-ink-faint">
-                    <Plus size={11} aria-hidden /> 设目标
+                    <Plus size={11} aria-hidden /> {tr("设目标")}
                   </span>
                 )}
               </button>
             )}
-            {days != null && <span>第 {days} 天</span>}
+            {days != null && <span>{tpl("第 {n} 天", { n: days })}</span>}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Link href="/spaces" className="flex items-center gap-0.5 rounded px-2 py-1 text-xs text-ink-mute transition hover:bg-soft hover:text-accent">
-            <ArrowLeft size={12} aria-hidden /> 列表
+            <ArrowLeft size={12} aria-hidden /> {tr("列表")}
           </Link>
           {/* 内置运动空间菜单只有归档/删除（均被服务端守卫禁止）——不渲染 ⋯ 入口 */}
           {space.kind === "sport" ? null : (
@@ -434,7 +437,7 @@ export default function SpaceHeaderCard(opts: {
                     : null,
                 );
               }}
-              title="更多操作"
+              title={tr("更多操作")}
               className="rounded px-2 py-1 leading-none text-ink-dim transition hover:bg-soft hover:text-ink"
             >
               <Ellipsis size={14} />

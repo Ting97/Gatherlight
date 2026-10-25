@@ -1,7 +1,9 @@
 "use client";
 
 import { Ban } from "lucide-react";
+import { t } from "@/i18n";
 import { useDismiss } from "./dismissable";
+import { spaceName } from "@/lib/space-i18n";
 
 /**
  * N1 空间关联浮层（REQ-002 FR-N1.1/1.2）：列出 active 空间供关联/切换；
@@ -34,7 +36,7 @@ export default function SpacePicker({
       ref={ref}
       className="fixed inset-x-0 bottom-0 z-[61] max-h-[70dvh] overflow-y-auto rounded-t-2xl border border-line-soft bg-elevated p-3 safe-bottom shadow-2xl shadow-scrim/70 sm:inset-x-auto sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:w-64 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-2"
     >
-      <p className="mb-1.5 px-1.5 text-micro font-medium text-ink-dim">关联目标空间</p>
+      <p className="mb-1.5 px-1.5 text-micro font-medium text-ink-dim">{t("关联目标空间")}</p>
       <div className="space-y-0.5">
         {pickable.map((s) => {
           const isCurrent = s.id === currentId;
@@ -53,13 +55,13 @@ export default function SpacePicker({
               >
                 {s.icon}
               </span>
-              <span className="min-w-0 flex-1 truncate">{s.name}</span>
-              {isCurrent && <span className="shrink-0 text-badge">已关联</span>}
+              <span className="min-w-0 flex-1 truncate">{spaceName(s)}</span>
+              {isCurrent && <span className="shrink-0 text-badge">{t("已关联")}</span>}
             </button>
           );
         })}
         {pickable.length === 0 && (
-          <p className="px-1.5 py-2 text-micro text-ink-faint">还没有进行中的空间 —— 先到「目标」页创建</p>
+          <p className="px-1.5 py-2 text-micro text-ink-faint">{t("还没有进行中的空间 —— 先到「目标」页创建")}</p>
         )}
 
         {/* 归档中的当前关联：置灰展示，不可新选（自身已不在 pickable 中） */}
@@ -71,8 +73,8 @@ export default function SpacePicker({
             >
               {current.icon}
             </span>
-            <span className="min-w-0 flex-1 truncate">{current.name}</span>
-            <span className="shrink-0 text-badge text-ink-faint">已归档</span>
+            <span className="min-w-0 flex-1 truncate">{spaceName(current)}</span>
+            <span className="shrink-0 text-badge text-ink-faint">{t("已归档")}</span>
           </div>
         )}
 
@@ -83,7 +85,7 @@ export default function SpacePicker({
             className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-xs text-danger transition hover:bg-rose-500/10 disabled:opacity-40"
           >
             <span className="flex w-6 shrink-0 justify-center"><Ban size={14} /></span>
-            移除关联
+            {t("移除关联")}
           </button>
         )}
       </div>

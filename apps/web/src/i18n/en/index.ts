@@ -10,6 +10,11 @@ import * as home from "./home";
 import * as assistant from "./assistant";
 import * as finance from "./finance";
 import * as pages2 from "./pages2";
+import * as fitness from "./fitness";
+import * as spaces from "./spaces";
+import * as people from "./people";
+import * as todo from "./todo";
+import * as admin from "./admin";
 
 export const EN: Record<string, string> = {
   ...common.EN,
@@ -20,4 +25,9 @@ export const EN: Record<string, string> = {
   ...assistant.EN,
   ...finance.EN,
   ...pages2.EN,
+  ...fitness.EN,
+  ...spaces.EN,
+  ...people.EN,
+  ...todo.EN,
+  ...admin.EN,
 };

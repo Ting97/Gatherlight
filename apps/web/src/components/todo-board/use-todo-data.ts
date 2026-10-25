@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Activity, Space, TodoItem } from "@/lib/types";
+import { t } from "@/i18n";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import type { View } from "./types";
@@ -48,7 +49,7 @@ export function useTodoData(view: View) {
       setCounts(j.counts ?? { today: 0, important: 0, all: 0, done: 0 });
     } catch (e) {
       if (seq !== seqRef.current) return;
-      toast(`加载失败：${e instanceof Error ? e.message : e}`, "err");
+      toast(t("加载失败：") + (e instanceof Error ? e.message : String(e)), "err");
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }

@@ -13,13 +13,25 @@ import MonthReviewCard from "@/app/calendar/month-review-card";
 import YearReviewCard from "@/app/calendar/year-review-card";
 import {
   addDays, bjToday, startOfMonth, startOfWeek, startOfYear,
-  weekName, ymd, zhDate, zhDuration,
+  ymd,
 } from "@/lib/date";
+import { dateLabel, durationLabel, weekName } from "@shiguangri/shared/i18n-enum";
 import type { Activity, Block, DayStat } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { useSession } from "@/shared/session";
 import { bjDateKey, combineHM, combineHmEndCrossDay, zhTime } from "@/lib/bj-time";
+import { t, tpl, getLang } from "@/i18n";
+
+/** 英文月名（ZH 走 tpl 原文数字，EN 传月名变量；纯静态表，渲染期取值） */
+const MONTHS_EN = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+/** YYYY-MM-DD → 周一为 0 的星期序号（UTC 口径，不随宿主时区漂移），供 shared weekName(idx, lang) */
+const dowIdx = (s: string) => (new Date(`${s}T00:00:00Z`).getUTCDay() + 6) % 7;
+/** YYYY-MM-DD → [y, m, d] 元组，供 shared dateLabel(y, m, d, lang) */
+const ymdParts = (s: string): [number, number, number] => {
+  const [y, m, d] = s.split("-").map(Number);
+  return [y, m, d];
+};
 
 /** 日程页 · 日历子页：原 /calendar 页的四视图（日/周/月/年）+ AI 复盘，逻辑不变整体平移 */
 export default function CalendarPanel({ initialAnchor }: { initialAnchor?: string }) {
@@ -138,7 +150,7 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
     const b = blocks.find((x) => x.id === editing.id);
     if (!b) {
       // 块不在当前区间（切换后残留等）：提示并关面板而非静默 return（二十轮，与「菜单删除静默失败」同族收口）
-      toast("该日程不在当前视图内，请返回原日期再编辑");
+      toast(t("该日程不在当前视图内，请返回原日期再编辑"));
       setEditing(null);
       return;
     }
@@ -159,9 +171,9 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
         endAt: crossDay ? combineHmEndCrossDay(startAt, editing.end, b.end_at) : combineHM(b.end_at, editing.end),
         activityId: editing.activityId,
       });
-      if (!storedCrossDay && crossDay) toast(`已按跨天块保存：${editing.start} → 次日 ${editing.end}`);
+      if (!storedCrossDay && crossDay) toast(tpl("已按跨天块保存：{start} → 次日 {end}", { start: editing.start, end: editing.end }));
     } catch (e) {
-      if (e instanceof ApiClientError) { setErr(e.message === "操作失败" ? "保存失败" : e.message); return; }
+      if (e instanceof ApiClientError) { setErr(e.message === t("操作失败") ? t("保存失败") : e.message); return; }
       setErr(e instanceof Error ? e.message : String(e)); // 非接口错误也就地提示，不外抛（外抛会触发整页自愈刷新）
       return;
     } finally {
@@ -178,7 +190,7 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
       await api<any>(`/api/blocks/${editing.id}`, "DELETE");
     } catch (e) {
       // 原 fetch 版不解析响应体，任何失败统一「删除失败」
-      if (e instanceof ApiClientError) { setErr("删除失败"); return; }
+      if (e instanceof ApiClientError) { setErr(t("删除失败")); return; }
       setErr(e instanceof Error ? e.message : String(e)); // 同上：不外抛
       return;
     } finally {
@@ -192,8 +204,8 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
       await api<any>("/api/blocks", "POST", payload);
     } catch (e) {
       // 与 saveEdit 同口径：非接口错误（断网等）也就地提示，不外抛（外抛会经 unhandledrejection 触发整页自愈刷新，丢表单输入）
-      if (e instanceof ApiClientError) { setErr(e.message === "操作失败" ? "补录失败" : e.message); return false; }
-      setErr("网络异常，请稍后重试");
+      if (e instanceof ApiClientError) { setErr(e.message === t("操作失败") ? t("补录失败") : e.message); return false; }
+      setErr(t("网络异常，请稍后重试"));
       return false;
     }
     await load();
@@ -221,11 +233,14 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
     return Array.from({ length: 7 }, (_, i) => addDays(from, i));
   }, [anchor]);
 
+  // 四视图标题（双语：zh 原文 tpl key 直出；en 由字典模板重排 + shared dateLabel/weekName）
+  const lang = getLang();
+  const mNum = Number(anchor.slice(5, 7));
   const title =
-    view === "day" ? `${anchor.slice(0, 4)}年${zhDate(anchor)} ${weekName(anchor)}` :
-    view === "week" ? `${range.from.slice(0, 4)}年${zhDate(range.from)} – ${zhDate(range.to)}` :
-    view === "month" ? `${anchor.slice(0, 4)}年${Number(anchor.slice(5, 7))}月` :
-    `${anchor.slice(0, 4)}年`;
+    view === "day" ? tpl("{y}年{date} {week}", { y: anchor.slice(0, 4), date: dateLabel(...ymdParts(anchor), lang), week: weekName(dowIdx(anchor), lang) }) :
+    view === "week" ? tpl("{y}年{start} – {end}", { y: range.from.slice(0, 4), start: dateLabel(...ymdParts(range.from), lang), end: dateLabel(...ymdParts(range.to), lang) }) :
+    view === "month" ? tpl("{y}年{m}月", { y: anchor.slice(0, 4), m: lang === "en" ? MONTHS_EN[mNum - 1] : mNum }) :
+    tpl("{y}年", { y: anchor.slice(0, 4) });
 
   if (!mounted) {
     return (
@@ -246,10 +261,16 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
           <button onClick={() => shift(-1)} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-sm transition hover:border-sky-500/50 hover:bg-elevated/80">‹</button>
           <h2 className="text-gradient min-w-44 text-center text-lg font-semibold">{title}</h2>
           <button onClick={() => shift(1)} className="rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-sm transition hover:border-sky-500/50 hover:bg-elevated/80">›</button>
-          <button onClick={() => setAnchor(bjToday())} className="ml-1 whitespace-nowrap rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs text-ink-soft transition hover:border-sky-500/50 hover:bg-elevated/80">今天</button>
+          <button onClick={() => setAnchor(bjToday())} className="ml-1 whitespace-nowrap rounded-lg border border-line-soft bg-surface/60 px-3 py-1.5 text-xs text-ink-soft transition hover:border-sky-500/50 hover:bg-elevated/80">{t("今天")}</button>
         </div>
         <div className="flex rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs">
-          {([["day", "日"], ["week", "周"], ["month", "月"], ["year", "年"]] as [typeof view, string][]).map(([v, label]) => (
+          {/* 「年」不走字典（home.ts 的「年」是跨年日前缀 key），en 直取 Year、zh 借 t() 回原文 */}
+          {([
+            ["day", t("日")],
+            ["week", t("周")],
+            ["month", t("月")],
+            ["year", lang === "en" ? "Year" : t("年")],
+          ] as [typeof view, string][]).map(([v, label]) => (
             <button
               key={v}
               onClick={() => setView(v)}
@@ -268,16 +289,16 @@ export default function CalendarPanel({ initialAnchor }: { initialAnchor?: strin
       {err && (
         <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-danger">{err}</div>
       )}
-      {loading && <p className="py-8 text-center text-xs text-ink-dim">加载中…</p>}
+      {loading && <p className="py-8 text-center text-xs text-ink-dim">{t("加载中…")}</p>}
 
       {!loading && view === "day" && (
         <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
           {/* 移动端把当日结构与 AI 小结排在时间轴前（order-first），不再被 480px 时间轴压在下面 */}
           <aside className="glass order-first mb-0 rounded-2xl p-4 lg:order-none lg:mb-0">
-            <h3 className="mb-3 text-sm font-semibold text-ink-soft">当日结构</h3>
+            <h3 className="mb-3 text-sm font-semibold text-ink-soft">{t("当日结构")}</h3>
             <DayDonut byActivity={dayStat} activities={activities} size={100} thickness={12} />
             <div className="mt-4 border-t border-line-soft pt-3 text-xs text-ink-dim">
-              共 {dayBlocks.length} 段 · {zhDuration(dayBlocks.reduce((s, b) => s + dayClampedMin(b), 0))}
+              {tpl("共 {n} 段 · {dur}", { n: dayBlocks.length, dur: durationLabel(dayBlocks.reduce((s, b) => s + dayClampedMin(b), 0), lang) })}
             </div>
             {insightOn && <DayReviewCard key={`day-${anchor}`} date={anchor} hasRecords={dayBlocks.length > 0 || hasExtras} notify={setErr} />}
           </aside>

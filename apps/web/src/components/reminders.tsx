@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { AlarmClock, Bell, Cake, Check, ClipboardList, Heart, Sun, X } from "lucide-react";
 import type { ReminderItem } from "@/lib/reminders";
 import { bjToday } from "@shiguangri/shared/date";
+import { t, tpl } from "@/i18n";
 import { TagChip } from "./tag-chip";
 
 /**
@@ -34,6 +35,27 @@ export default function Reminders({
 
   if (items.length === 0 || dismissed) return null;
 
+  // shared 产出的 label 是中文兜底；展示层用结构化字段按当前语言拼装（ZH 输出与原文逐字一致）
+  const labelOf = (it: ReminderItem): string => {
+    if (it.kind === "todo" && it.title != null) {
+      return tpl(it.overdue ? "todo 已过期：{title}{hm}" : "todo 即将到期：{title}{hm}", {
+        title: it.title,
+        hm: it.hm ? tpl("（{hm}）", { hm: it.hm }) : "",
+      });
+    }
+    if ((it.kind === "birthday" || it.kind === "anniversary") && it.name != null && it.days != null) {
+      const when = it.days === 1 ? t("明天") : tpl("{n} 天后", { n: it.days });
+      return it.kind === "birthday"
+        ? it.days === 0
+          ? tpl("今天是 {name} 的生日，记得送上祝福 🎂", { name: it.name })
+          : tpl("{name} 的生日 {when}，提前准备一下？", { name: it.name, when })
+        : it.days === 0
+          ? tpl("今天是和 {name} 的纪念日 💞", { name: it.name })
+          : tpl("和 {name} 的纪念日 {when} 💞", { name: it.name, when });
+    }
+    return it.label;
+  };
+
   async function markToday(it: ReminderItem) {
     if (!it.todoId || marked.has(it.todoId)) return;
     const todoId = it.todoId;
@@ -53,11 +75,11 @@ export default function Reminders({
 
   return (
     <section
-      aria-label="提醒"
+      aria-label={t("提醒")}
       className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-warn"
     >
       <div className="flex items-center gap-2">
-        <TagChip icon={<Bell size={12} />} label="提醒" tone="amber" className="shrink-0" />
+        <TagChip icon={<Bell size={12} />} label={t("提醒")} tone="amber" className="shrink-0" />
         <span className="flex-1" />
         <button
           onClick={() => {
@@ -66,10 +88,10 @@ export default function Reminders({
             } catch {}
             setDismissed(true);
           }}
-          title="今天不再展示"
+          title={t("今天不再展示")}
           className="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-micro text-warn/70 transition hover:bg-amber-500/15 hover:text-warn"
         >
-          知道了 <X size={11} aria-hidden />
+          {t("知道了")} <X size={11} aria-hidden />
         </button>
       </div>
       <ul className="mt-1.5 space-y-1">
@@ -83,28 +105,28 @@ export default function Reminders({
                 href={`/contacts/${it.contactId}`}
                 className={it.overdue ? "text-danger underline-offset-2 hover:underline" : "underline-offset-2 hover:underline"}
               >
-                {it.label}
+                {labelOf(it)}
               </Link>
             ) : (
               <>
                 {/* 目标区是 actions-today 的 id="actions"（原 #todos 指向不存在的锚点） */}
                 <a href="#actions" className={it.overdue ? "text-danger underline-offset-2 hover:underline" : "underline-offset-2 hover:underline"}>
-                  {it.label}
+                  {labelOf(it)}
                 </a>
                 {it.todoId && onMarkToday && (
                   <button
                     onClick={() => markToday(it)}
                     disabled={marked.has(it.todoId!)}
-                    title="加入今日 todo（跨零点自动失效）"
+                    title={t("加入今日 todo（跨零点自动失效）")}
                     className="mt-px flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-amber-500/40 px-2.5 py-1 text-micro text-warn transition hover:bg-amber-500/20 disabled:opacity-50"
                   >
                     {marked.has(it.todoId!) ? (
                       <>
-                        已加入 <Check size={11} aria-hidden />
+                        {t("已加入")} <Check size={11} aria-hidden />
                       </>
                     ) : (
                       <>
-                        <Sun size={11} aria-hidden /> 今日
+                        <Sun size={11} aria-hidden /> {t("今日")}
                       </>
                     )}
                   </button>

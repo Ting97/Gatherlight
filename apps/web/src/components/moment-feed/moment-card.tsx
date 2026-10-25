@@ -19,7 +19,22 @@ import { RecognitionSection } from "./recognition-section";
 import { PendingConfirms } from "./pending-confirms";
 import type { Activity } from "@/lib/types";
 import type { IntentTag, MenuPos } from "./types";
-import { t } from "@/i18n";
+import { t, getLang } from "@/i18n";
+
+/** 服务端落库的 reason 是识别时刻的中文串（服务端无语言态）：EN 模式对已知模板做展示层翻译，未匹配原样返回 */
+function reasonLocal(reason: string): string {
+  if (getLang() !== "en") return reason;
+  return reason
+    .replace(
+      /识别到日程「(.+?)」（(.+?)），与已有日程「(.+?)」（(.+?)）时间冲突，一个时刻只能做一件事，请调整时间或先处理原日程/,
+      'Detected schedule "$1" ($2), but it conflicts with existing "$3" ($4) — one time slot, one activity. Adjust the time or handle the original first',
+    )
+    .replace(/未来计划不占时间轴/, "Future plans don't occupy the timeline");
+}
+
+
+/** 服务端日程冲突 reason 关键词（中文入库值放 key 位）：reason 命中任一即按冲突降级展示 */
+const CONFLICT_REASON_KEYS: Record<string, true> = { 已有日程: true, 时间冲突: true };
 
 /** 单条动态卡片：原文 + 心情 + AI 识别产物（日程/待办/金额/人物，均可修改/删除） */
 // memo：首页搜索框每键入会页级重渲染，卡片 50+ 时每键全量 reconcile——
@@ -40,12 +55,12 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
   const emoji = moodEmoji(m.mood);
   const intent: IntentTag =
     m.todos.length > 0
-      ? { icon: <ClipboardList size={14} />, label: "todo", tone: "sky" as const }
+      ? { label: "todo", icon: <ClipboardList size={14} />, tone: "sky" as const }
       : m.blocks.length > 0
-        ? { icon: <Clock size={14} />, label: t("日程"), tone: "sky" as const }
+        ? { label: t("日程"), icon: <Clock size={14} />, tone: "sky" as const }
         : m.mood
-          ? { icon: <Sparkles size={14} />, label: t("心情"), tone: "violet" as const }
-          : { icon: <NotebookPen size={14} />, label: t("动态"), tone: "slate" as const };
+          ? { label: t("心情"), icon: <Sparkles size={14} />, tone: "violet" as const }
+          : { label: t("动态"), icon: <NotebookPen size={14} />, tone: "slate" as const };
 
   // 卡内操作反馈 + 提交逻辑（识别/手动添加/删除），由 useCardActions 提供
   const { busyDomain, run, recognizeDomain, manualAdd, del, delArmed } = useCardActions(m, onRefresh);
@@ -181,17 +196,17 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
         {m.analyzed_at &&
           m.recognitions?.schedule?.status === "none" &&
           !m.recognitions.schedule.reasonDismissed &&
-          (m.recognitions.schedule.reason?.includes("已有日程") || m.recognitions.schedule.reason?.includes("时间冲突")) && (
+          Object.keys(CONFLICT_REASON_KEYS).some((k) => m.recognitions.schedule?.reason?.includes(k)) && (
             <div className="mt-1.5 flex items-start gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-micro text-warn/90">
               <TriangleAlert size={12} className="mt-0.5 shrink-0" aria-hidden />
-              <span className="min-w-0 flex-1">{t("未生成日程：")}{m.recognitions.schedule.reason}</span>
+              <span className="min-w-0 flex-1">{t("未生成日程：")}{reasonLocal(m.recognitions.schedule.reason ?? "")}</span>
               {/* 就地给出处理入口：跳日程页对应日（按记录时刻的北京日期，跨天冲突需自行翻页） */}
               <a
                 href={`/schedule?date=${bjYmd(m.created_at)}`}
                 className="flex shrink-0 items-center gap-0.5 whitespace-nowrap font-medium text-warn underline decoration-warn/40 underline-offset-2 transition hover:decoration-warn"
                 title={t("打开日程页调整时间")}
               >
-                去调整 <ArrowRight size={11} aria-hidden />
+                {t("去调整")} <ArrowRight size={11} aria-hidden />
               </a>
               <button
                 onClick={() =>
@@ -220,7 +235,7 @@ function MomentCard({ m, activities, onRefresh }: { m: FeedMoment; activities: A
         {/* 交互提示：点原文打开识别菜单（六域 AI 识别 / 手动补充) */}
         {!menuOpen && (
           <p className="mt-2 border-t border-line-soft/60 pt-2 text-badge text-ink-faint">
-            点击动态内容 → 打开识别菜单（AI 识别 / 手动补充六类信息）
+            {t("点击动态内容 → 打开识别菜单（AI 识别 / 手动补充六类信息）")}
           </p>
         )}
       </div>

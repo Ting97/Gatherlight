@@ -2,6 +2,7 @@
 
 import { Compass } from "lucide-react";
 import { TagChip } from "@/components/tag-chip";
+import { t, tpl } from "@/i18n";
 import { MODE_META } from "./kit";
 import type { EngineMode } from "./types";
 
@@ -17,10 +18,10 @@ export default function EngineModeCard({ mode: engineMode, envDefault: engineEnv
   return (
     <div className="glass mb-4 rounded-2xl p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Compass size={14} className="text-accent" aria-hidden /> 调用引擎模式</h3>
-        <TagChip label="Jev 影子观察期" tone="amber" size="sm" />
+        <h3 className="flex items-center gap-1.5 text-sm font-semibold text-ink"><Compass size={14} className="text-accent" aria-hidden /> {t("调用引擎模式")}</h3>
+        <TagChip label={t("Jev 影子观察期")} tone="amber" size="sm" />
         <span className="flex-1" />
-        <span className="text-badge text-ink-faint">服务器 env 默认：{MODE_META[engineEnvDefault].label}</span>
+        <span className="text-badge text-ink-faint">{tpl("服务器 env 默认：{mode}", { mode: MODE_META[engineEnvDefault].label() })}</span>
       </div>
       <div className="grid gap-2 md:grid-cols-3">
         {(Object.keys(MODE_META) as EngineMode[]).map((m) => {
@@ -30,7 +31,7 @@ export default function EngineModeCard({ mode: engineMode, envDefault: engineEnv
               key={m}
               onClick={() => onSwitch(m)}
               disabled={engineSaving}
-              title="点击切换，立即生效"
+              title={t("点击切换，立即生效")}
               className={`rounded-xl border p-3 text-left transition disabled:cursor-not-allowed ${
                 active
                   ? "border-sky-500/60 bg-sky-500/10"
@@ -38,11 +39,11 @@ export default function EngineModeCard({ mode: engineMode, envDefault: engineEnv
               }`}
             >
               <span className={`flex items-center gap-1.5 text-xs font-medium ${active ? "text-accent" : "text-ink"}`}>
-                {MODE_META[m].label}
-                {active && <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-micro text-accent">生效中</span>}
-                {engineSaving && <span className="text-micro text-ink-faint">切换中…</span>}
+                {MODE_META[m].label()}
+                {active && <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-micro text-accent">{t("生效中")}</span>}
+                {engineSaving && <span className="text-micro text-ink-faint">{t("切换中…")}</span>}
               </span>
-              <span className="mt-1 block text-badge leading-relaxed text-ink-dim">{MODE_META[m].desc}</span>
+              <span className="mt-1 block text-badge leading-relaxed text-ink-dim">{MODE_META[m].desc()}</span>
             </button>
           );
         })}

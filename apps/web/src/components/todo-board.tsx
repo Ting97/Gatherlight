@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { TodoRow } from "@/lib/types";
+import { t } from "@/i18n";
 import { toast } from "@/shared/ui/toast";
 import { useDismiss } from "./dismissable";
 import SpacePicker from "./space-picker";
 import { AddTodoRow } from "./todo-board/add-todo-row";
-import { EMPTY_DRAFT, EMPTY_TEXT } from "./todo-board/kit";
+import { EMPTY_DRAFT, emptyText } from "./todo-board/kit";
 import { RowMenu } from "./todo-board/row-menu";
 import { TodoCard } from "./todo-board/todo-card";
 import type { Draft, MenuRowInfo, SubtaskCtl, View } from "./todo-board/types";
@@ -34,7 +35,7 @@ export default function TodoBoard() {
   // N3：添加行展开后点空白收起；有未提交标题则轻提示
   const addRowRef = useDismiss<HTMLDivElement>(() => {
     if (!draftOpen) return;
-    if (draft.title.trim()) toast("已取消，未保存", "info");
+    if (draft.title.trim()) toast(t("已取消，未保存"), "info");
     setDraftOpen(false);
     setDraft((d) => ({ ...EMPTY_DRAFT, activityId: d.activityId }));
   }, draftOpen);
@@ -147,9 +148,9 @@ export default function TodoBoard() {
           )}
 
           {loading ? (
-            <p className="py-10 text-center text-xs text-ink-dim">加载中…</p>
+            <p className="py-10 text-center text-xs text-ink-dim">{t("加载中…")}</p>
           ) : todos.length === 0 ? (
-            <div className="empty-state py-8 text-xs">{EMPTY_TEXT[view]}</div>
+            <div className="empty-state py-8 text-xs">{emptyText(view)}</div>
           ) : (
             <ul className="space-y-1">
               {todos.map((t) => (
@@ -168,7 +169,7 @@ export default function TodoBoard() {
                 />
               ))}
               {view === "done" && (
-                <li className="px-2 pt-3 text-center text-micro text-ink-faint">最多显示最近 200 条已完成的顶层 todo</li>
+                <li className="px-2 pt-3 text-center text-micro text-ink-faint">{t("最多显示最近 200 条已完成的顶层 todo")}</li>
               )}
             </ul>
           )}
@@ -211,11 +212,11 @@ export default function TodoBoard() {
             busy={false}
             onPick={async (sid) => {
               setPickerRow(null);
-              await patchTodo(pickerRow.id, { spaceId: sid }, "🎯 已关联空间");
+              await patchTodo(pickerRow.id, { spaceId: sid }, t("🎯 已关联空间"));
             }}
             onRemove={async () => {
               setPickerRow(null);
-              await patchTodo(pickerRow.id, { spaceId: null }, "已移除空间归属");
+              await patchTodo(pickerRow.id, { spaceId: null }, t("已移除空间归属"));
             }}
             onClose={() => setPickerRow(null)}
           />,

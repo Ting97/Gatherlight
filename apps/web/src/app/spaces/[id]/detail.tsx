@@ -9,6 +9,7 @@ import ReflectionEditor from "@/components/reflection-editor";
 import SpacePicker from "@/components/space-picker";
 import { useSession } from "@/shared/session";
 import { FilterChip } from "@/components/tag-chip";
+import { t } from "@/i18n";
 import HeaderCard from "./detail/header-card";
 import LinkPickerModal from "./detail/link-picker-modal";
 import MomentsSection from "./detail/moments-section";
@@ -66,9 +67,9 @@ export default function Detail() {
         <div className="mx-auto max-w-6xl px-5 pb-16 pt-8">
           <div className="glass mt-10 rounded-2xl p-10 text-center">
             <p className="text-4xl">🎯</p>
-            <p className="mt-3 text-sm">空间不存在或已删除</p>
+            <p className="mt-3 text-sm">{t("空间不存在或已删除")}</p>
             <Link href="/spaces" className="btn-primary mt-4 inline-block rounded-xl px-5 py-2 text-sm">
-              返回目标列表
+              {t("返回目标列表")}
             </Link>
           </div>
         </div>
@@ -82,7 +83,7 @@ export default function Detail() {
         <div className="mx-auto max-w-6xl px-5 pb-16 pt-8">
           {loadErr ? (
             <div className="py-10 text-center">
-              <p className="text-sm text-danger">加载失败：{loadErr}</p>
+              <p className="text-sm text-danger">{t("加载失败：")}{loadErr}</p>
               <button
                 onClick={() => {
                   setSpace(null);
@@ -90,11 +91,11 @@ export default function Detail() {
                 }}
                 className="btn-primary mt-3 rounded-xl px-5 py-2 text-xs"
               >
-                重试
+                {t("重试")}
               </button>
             </div>
           ) : (
-            <p className="py-10 text-center text-xs text-ink-dim">加载中…</p>
+            <p className="py-10 text-center text-xs text-ink-dim">{t("加载中…")}</p>
           )}
         </div>
       </main>
@@ -122,11 +123,11 @@ export default function Detail() {
 
         {/* 分区 tab（REQ-002 N2）：TODO·行动 / 感悟 / 动态；内置运动空间首位多一栏「训练」（REQ-018） */}
         <div className="scrollbar-none mb-3 flex gap-1.5 overflow-x-auto pb-1">
-          {space.kind === "sport" && fitnessOn && <FilterChip label="训练" active={activeTab === "fitness"} onClick={() => setTab("fitness")} />}
-          <FilterChip label="TODO·行动" count={todos.length} active={activeTab === "todo"} onClick={() => setTab("todo")} />
-          <FilterChip label="感悟" count={space.reflection_count ?? 0} active={activeTab === "reflection"} onClick={() => setTab("reflection")} />
+          {space.kind === "sport" && fitnessOn && <FilterChip label={t("训练")} active={activeTab === "fitness"} onClick={() => setTab("fitness")} />}
+          <FilterChip label={t("TODO·行动")} count={todos.length} active={activeTab === "todo"} onClick={() => setTab("todo")} />
+          <FilterChip label={t("感悟")} count={space.reflection_count ?? 0} active={activeTab === "reflection"} onClick={() => setTab("reflection")} />
           {/* 动态计数用 feed total（未被 limit=20 封顶）；接口未带 total 时回退 header-card 的 entry_count 保持口径一致 */}
-          <FilterChip label="动态" count={momentsTotal ?? space.entry_count ?? 0} active={activeTab === "moments"} onClick={() => setTab("moments")} />
+          <FilterChip label={t("动态")} count={momentsTotal ?? space.entry_count ?? 0} active={activeTab === "moments"} onClick={() => setTab("moments")} />
         </div>
 
         {/* 训练栏（REQ-018）：健身面板整体嵌入——今日/计划/趋势/目标&档案 */}

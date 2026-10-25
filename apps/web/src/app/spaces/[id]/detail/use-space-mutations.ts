@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { Space } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
 import { confirmDialog } from "@/shared/ui/confirm";
+import { t, tpl } from "@/i18n";
 import type { Msg } from "./types";
 
 /** 空间级变更（自 detail.tsx 拆出）：目标到期时间就地保存 / 归档·恢复 / 删除 */
@@ -34,12 +35,12 @@ export function useSpaceMutations(opts: {
       await api<any>(`/api/spaces/${id}`, "PATCH", { targetDate: v });
     } catch (e) {
       // 含网络错误就地消化：外抛会经 unhandledrejection 触发 ChunkErrorReloader 整页刷新
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "网络异常，请稍后重试" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== t("操作失败") ? e.message : t("网络异常，请稍后重试") });
       return false;
     }
     setSpace((s) => (s ? { ...s, target_date: v } : s));
     setAllSpaces((list) => list.map((x) => (x.id === id ? { ...x, target_date: v } : x)));
-    setMsg({ ok: true, text: v ? `⏳ 目标到期时间已调整为 ${v}` : "目标到期时间已清除" });
+    setMsg({ ok: true, text: v ? tpl("⏳ 目标到期时间已调整为 {v}", { v }) : t("目标到期时间已清除") });
     return true;
   }
 
@@ -48,9 +49,16 @@ export function useSpaceMutations(opts: {
     // 确认弹窗（9-B）：独立渲染树单次点击确认——规避 008 实测 portal 菜单内二次点击丢失问题
     const refN = space.reflection_count ?? 0;
     const ok = await confirmDialog({
-      title: "删除空间",
-      message: `确定删除「${space.name}」？\n含 ${refN} 篇感悟（将一并删除）；${space.todo_total ?? 0} 条关联 todo、${space.entry_count ?? 0} 条动态仅解除归属。`,
-      confirmText: "删除",
+      title: t("删除空间"),
+      message:
+        tpl("确定删除「{name}」？", { name: space.name }) +
+        "\n" +
+        tpl("含 {n} 篇感悟（将一并删除）；{todos} 条关联 todo、{entries} 条动态仅解除归属。", {
+          n: refN,
+          todos: space.todo_total ?? 0,
+          entries: space.entry_count ?? 0,
+        }),
+      confirmText: t("删除"),
     });
     if (!ok) return;
     try {

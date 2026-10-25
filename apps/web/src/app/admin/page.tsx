@@ -35,10 +35,10 @@ export default function AdminPage() {
         {me && !me.isAdmin ? (
           <div className="glass mt-10 rounded-2xl p-10 text-center">
             <p className="text-4xl">🔒</p>
-            <h1 className="mt-3 text-lg font-bold">需要管理员权限</h1>
-            <p className="mt-1 text-xs text-ink-dim">此页面仅超级管理员可见</p>
+            <h1 className="mt-3 text-lg font-bold">{t("需要管理员权限")}</h1>
+            <p className="mt-1 text-xs text-ink-dim">{t("此页面仅超级管理员可见")}</p>
             <a href="/" className="btn-primary mt-5 inline-block rounded-xl px-5 py-2 text-sm font-medium">
-              返回首页
+              {t("返回首页")}
             </a>
           </div>
         ) : (
@@ -46,9 +46,9 @@ export default function AdminPage() {
             {/* 模块头 */}
             <div className="glass mb-5 flex flex-col gap-3 rounded-2xl px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <h1 className="text-gradient text-xl font-bold tracking-wide">
-                后台管理
+                {t("后台管理")}
                 <span className="ml-2 align-middle text-xs font-normal tracking-normal text-ink-dim">
-                  AI prompt 在线调优 · 营销集中 · 数据面
+                  {t("AI prompt 在线调优 · 营销集中 · 数据面")}
                 </span>
               </h1>
               <div className="flex rounded-full border border-line-soft bg-bg/50 p-0.5 text-xs sm:w-auto">
@@ -68,7 +68,7 @@ export default function AdminPage() {
               <section className="glass rounded-2xl p-5">
                 <p className="mb-4 flex items-center gap-1.5 text-micro text-ink-dim">
                   <TagChip icon={<Lightbulb size={12} />} label={t("保存即生效")} tone="amber" size="sm" />
-                  改坏可回滚版本历史或秒切代码默认；AI 优化只出建议稿，采纳后仍需手动保存
+                  {t("改坏可回滚版本历史或秒切代码默认；AI 优化只出建议稿，采纳后仍需手动保存")}
                 </p>
                 <AdminAiPanel notify={notify} />
               </section>

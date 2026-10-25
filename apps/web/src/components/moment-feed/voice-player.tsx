@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Mic, Pause, Play } from "lucide-react";
+import { t } from "@/i18n";
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -114,12 +115,12 @@ export default function VoicePlayer({ storageKey }: { storageKey: string }) {
   return (
     <div className="mt-1.5 flex w-full items-center gap-2.5 rounded-xl border border-sky-500/25 bg-gradient-to-r from-sky-500/[0.08] to-indigo-500/[0.06] px-2.5 py-1.5 sm:w-[300px]">
       {err ? (
-        <p className="min-w-0 flex-1 text-micro text-ink-faint">🎤 语音加载失败（文件可能已过期）</p>
+        <p className="min-w-0 flex-1 text-micro text-ink-faint">{t("🎤 语音加载失败（文件可能已过期）")}</p>
       ) : (
         <>
           <button
             onClick={toggle}
-            aria-label={playing ? "暂停语音" : "播放语音"}
+            aria-label={playing ? t("暂停语音") : t("播放语音")}
             className="press flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-white shadow-md shadow-sky-500/25"
           >
             {playing ? <Pause size={13} /> : <Play size={13} className="ml-0.5" />}
@@ -140,7 +141,7 @@ export default function VoicePlayer({ storageKey }: { storageKey: string }) {
           <div
             ref={trackRef}
             role="slider"
-            aria-label="播放进度"
+            aria-label={t("播放进度")}
             aria-valuemin={0}
             aria-valuemax={Math.round(dur)}
             aria-valuenow={Math.round(cur)}

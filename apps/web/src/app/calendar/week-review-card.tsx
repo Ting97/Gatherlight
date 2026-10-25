@@ -5,6 +5,7 @@ import { Lightbulb, Sparkles } from "lucide-react";
 import { useCachedReview } from "./use-cached-review";
 import { TagChip } from "@/components/tag-chip";
 import { api } from "@/shared/api";
+import { t } from "@/i18n";
 
 /** AI 周报（review v3）：挂载时展示上次持久化的小结；点按钮生成/重新生成 */
 export default function WeekReviewCard({ weekStart, weekEnd, hasRecords, notify }: {
@@ -29,7 +30,7 @@ export default function WeekReviewCard({ weekStart, weekEnd, hasRecords, notify 
       setReview(j.review);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      notify(/timed out|timeout|aborted/i.test(msg) ? "生成超时：内容较多时需要 1~3 分钟，请再试一次" : msg);
+      notify(/timed out|timeout|aborted/i.test(msg) ? t("生成超时：内容较多时需要 1~3 分钟，请再试一次") : msg);
     } finally {
       setBusy(false);
     }
@@ -39,22 +40,22 @@ export default function WeekReviewCard({ weekStart, weekEnd, hasRecords, notify 
     <div className="glass mt-4 rounded-2xl p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">
-          <TagChip icon={<Sparkles size={12} />} label="AI 周报" tone="violet" size="sm" />
+          <TagChip icon={<Sparkles size={12} />} label={t("AI 周报")} tone="violet" size="sm" />
           <span className="ml-2 text-micro font-normal text-ink-dim">{weekStart} – {weekEnd}</span>
         </h2>
         <button
           onClick={generate}
           disabled={busy || !hasRecords}
-          title={hasRecords ? "基于本周真实记录生成" : "本周还没有记录"}
+          title={hasRecords ? t("基于本周真实记录生成") : t("本周还没有记录")}
           className="rounded-lg border border-purple-500/40 bg-purple-500/10 px-3 py-1.5 text-xs text-ai transition hover:bg-purple-500/20 disabled:opacity-40"
         >
-          {busy ? "解读中…" : shown ? "重新生成" : "生成本周小结"}
+          {busy ? t("解读中…") : shown ? t("重新生成") : t("生成本周小结")}
         </button>
       </div>
-      {busy && <p className="mt-3 animate-pulse text-xs text-ai/80">正在通读本周的时间/todo/收支/人际…</p>}
-      {!busy && !shown && !hasRecords && <p className="mt-3 text-xs text-ink-faint">本周还没有记录</p>}
+      {busy && <p className="mt-3 animate-pulse text-xs text-ai/80">{t("正在通读本周的时间/todo/收支/人际…")}</p>}
+      {!busy && !shown && !hasRecords && <p className="mt-3 text-xs text-ink-faint">{t("本周还没有记录")}</p>}
       {!busy && !shown && hasRecords && (
-        <p className="mt-3 text-xs text-ink-faint">让 AI 通读本周的时间投入/todo/收支/人际，总结这一周</p>
+        <p className="mt-3 text-xs text-ink-faint">{t("让 AI 通读本周的时间投入/todo/收支/人际，总结这一周")}</p>
       )}
       {!busy && shown && (
         <div className="mt-3 space-y-2">

@@ -1,4 +1,5 @@
 import type { EngineMode } from "./types";
+import { t as tr } from "@/i18n"; // 局部变量 t（zhTime 内）遮蔽默认名，此处用 tr
 
 /** /admin · AI 管理模块小工具与展示用常量 */
 
@@ -20,8 +21,9 @@ export function validateTpl(tpl: string, placeholders: string[]): { missing: str
   return { missing: placeholders.filter((p) => !found.has(p)), unknown: [...found].filter((p) => !known.has(p)) };
 }
 
-export const MODE_META: Record<EngineMode, { label: string; desc: string }> = {
-  off: { label: "关闭", desc: "全部走 GLM，Jev 不参与" },
-  shadow: { label: "影子对照", desc: "GLM 行为不变；每次识别后台同题调 Jev，只写一致率审计" },
-  on: { label: "实时接管", desc: "闭集判断与空间归属切 Jev，开放词汇由 GLM 瘦身提取；Jev 失败自动回落全量 GLM" },
+/** 引擎模式展示元数据：label/desc 为惰性 t()（模块顶层禁止 import 期调 t() 定格语言），渲染处 label()/desc() 取当前语言 */
+export const MODE_META: Record<EngineMode, { label: () => string; desc: () => string }> = {
+  off: { label: () => tr("关闭"), desc: () => tr("全部走 GLM，Jev 不参与") },
+  shadow: { label: () => tr("影子对照"), desc: () => tr("GLM 行为不变；每次识别后台同题调 Jev，只写一致率审计") },
+  on: { label: () => tr("实时接管"), desc: () => tr("闭集判断与空间归属切 Jev，开放词汇由 GLM 瘦身提取；Jev 失败自动回落全量 GLM") },
 };

@@ -232,10 +232,10 @@ export default function FinancePage() {
           <div className="mb-4 flex items-center gap-1.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-warn">
             <Download size={13} className="shrink-0" aria-hidden />
             <span>
-              有 <span className="font-bold">{drafts.length}</span> 笔动态识别的流水待确认
+              {tr("有")} <span className="font-bold">{drafts.length}</span> {tr("笔动态识别的流水待确认")}
             </span>
             <button onClick={() => document.getElementById("draft-area")?.scrollIntoView({ behavior: "smooth" })} className="ml-2 underline underline-offset-2 hover:text-warn">
-              去确认
+              {tr("去确认")}
             </button>
           </div>
         )}

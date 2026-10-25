@@ -6,6 +6,7 @@ import type { TodoItem, TodoRow } from "@/lib/types";
 import { api, ApiClientError } from "@/shared/api";
 import { confirmDialog } from "@/shared/ui/confirm";
 import { isoToLocalInput, localInputToIso } from "@/components/todo-bits";
+import { t as tr, tpl } from "@/i18n";
 import type { MenuRowState, Msg, Pos } from "./types";
 
 /**
@@ -64,7 +65,7 @@ export function useTodoActions(opts: {
       await api<any>("/api/todos", "POST", { title: t, spaceId: id });
     } catch (e) {
       // 失败要报错（含网络错误就地消化，避免 unhandled rejection 触发整页刷新）
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "添加失败" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== tr("操作失败") ? e.message : tr("添加失败") });
       return;
     } finally {
       setAddingTodo(false);
@@ -82,7 +83,7 @@ export function useTodoActions(opts: {
       return true;
     } catch (e) {
       // 含网络错误就地消化：外抛会经 unhandledrejection 触发 ChunkErrorReloader 整页刷新，丢展开态与输入
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "网络异常，请稍后重试" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== tr("操作失败") ? e.message : tr("网络异常，请稍后重试") });
       return false;
     } finally {
       setBusyId(null);
@@ -92,9 +93,9 @@ export function useTodoActions(opts: {
   async function removeTodo(todoId: string, title: string) {
     // 确认弹窗（9-B）：独立渲染树单次点击确认——规避 008 实测 portal 菜单内二次点击丢失问题
     const ok = await confirmDialog({
-      title: "删除 todo",
-      message: `删除「${title}」？\n其下行动会一并删除。`,
-      confirmText: "删除",
+      title: tr("删除 todo"),
+      message: tpl("删除「{title}」？", { title }) + "\n" + tpl("其下行动会一并删除。", {}),
+      confirmText: tr("删除"),
     });
     if (!ok) return;
     try {
@@ -104,7 +105,7 @@ export function useTodoActions(opts: {
       setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
       return;
     }
-    setMsg({ ok: true, text: "已删除" });
+    setMsg({ ok: true, text: tr("已删除") });
     await load();
   }
 
@@ -134,18 +135,18 @@ export function useTodoActions(opts: {
         // 含网络错误就地消化（外抛会经 unhandledrejection 触发整页刷新）；
         // 409=已有未完成行动需显式选模式——真实文案代替「AI 拆解失败」兜底
         if (e instanceof ApiClientError && e.status === 409) {
-          setMsg({ ok: false, text: "已有未完成的行动：请在 ✨ 菜单选择「追加」或「重新生成」" });
+          setMsg({ ok: false, text: tr("已有未完成的行动：请在 ✨ 菜单选择「追加」或「重新生成」") });
           return;
         }
-        setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "AI 拆解失败，请稍后重试" });
+        setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== tr("操作失败") ? e.message : tr("AI 拆解失败，请稍后重试") });
         return;
       }
       // 响应形状防御：约定形状之外的 2xx（代理/网关注入）直接裸取会 TypeError → unhandledrejection 整页刷新
       if (!Array.isArray(j?.actions)) {
-        setMsg({ ok: false, text: "服务异常，请稍后重试" });
+        setMsg({ ok: false, text: tr("服务异常，请稍后重试") });
         return;
       }
-      setMsg({ ok: true, text: `✨ AI 拆出 ${j.actions.length} 个行动${t.isAction ? "，已插入原行动之后" : ""}` });
+      setMsg({ ok: true, text: tpl("✨ AI 拆出 {n} 个行动", { n: j.actions.length }) + (t.isAction ? tr("，已插入原行动之后") : "") });
       await load();
     } finally {
       setBusyId(null);
@@ -162,14 +163,14 @@ export function useTodoActions(opts: {
 
   async function saveEdit(): Promise<boolean> {
     if (!editingId || !editTitle.trim()) {
-      setMsg({ ok: false, text: "标题不能为空" });
+      setMsg({ ok: false, text: tr("标题不能为空") });
       return false;
     }
     const ok = await patchTodo(editingId, {
       title: editTitle.trim(),
       dueAt: localInputToIso(editDue),
       activityId: editActivity,
-    }, "💾 已保存");
+    }, tr("💾 已保存"));
     if (ok) setEditingId(null);
     return ok;
   }
@@ -186,7 +187,7 @@ export function useTodoActions(opts: {
 
   async function saveNote(): Promise<boolean> {
     if (!noteOpen || !noteTitle.trim()) {
-      setMsg({ ok: false, text: "标题不能为空" });
+      setMsg({ ok: false, text: tr("标题不能为空") });
       return false;
     }
     const ok = await patchTodo(noteOpen, {
@@ -194,7 +195,7 @@ export function useTodoActions(opts: {
       note: noteText.trim() ? noteText.trim() : null,
       dueAt: localInputToIso(noteDue),
       repeatDaily: noteRepeat,
-    }, "💾 行动已保存");
+    }, tr("💾 行动已保存"));
     if (ok) setNoteOpen(null);
     return ok;
   }
@@ -208,7 +209,7 @@ export function useTodoActions(opts: {
       setLinkQuery("");
       setLinkOpen(true);
     } catch {
-      setMsg({ ok: false, text: "加载失败，请稍后再试" });
+      setMsg({ ok: false, text: tr("加载失败，请稍后再试") });
     } finally {
       setLinkLoading(false);
     }
@@ -216,7 +217,7 @@ export function useTodoActions(opts: {
 
   /** 浮层内关联一条到本空间（成功后从浮层移除，可连续关联多条） */
   async function linkExisting(todoId: string) {
-    const ok = await patchTodo(todoId, { spaceId: id }, "🎯 已关联到本空间");
+    const ok = await patchTodo(todoId, { spaceId: id }, tr("🎯 已关联到本空间"));
     if (ok) setLinkItems((list) => list.filter((x) => x.id !== todoId));
   }
 
@@ -229,13 +230,13 @@ export function useTodoActions(opts: {
       await api<any>("/api/todos", "POST", { title, parentId: t.id });
     } catch (e) {
       // 失败要报错（含网络错误就地消化，避免 unhandled rejection 触发整页刷新）
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "添加失败" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== tr("操作失败") ? e.message : tr("添加失败") });
       return;
     } finally {
       setAddingAction(false);
     }
     setActionDrafts((d) => ({ ...d, [t.id]: "" }));
-    setMsg({ ok: true, text: "📌 行动已添加" });
+    setMsg({ ok: true, text: tr("📌 行动已添加") });
     await load();
   }
 
@@ -246,10 +247,10 @@ export function useTodoActions(opts: {
       await api<any>(`/api/todos/${todoId}`, "PATCH", { spaceId: target });
     } catch (e) {
       // 含网络错误就地消化（同 patchTodo：外抛会触发整页刷新）
-      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== "操作失败" ? e.message : "网络异常，请稍后重试" });
+      setMsg({ ok: false, text: e instanceof ApiClientError && e.message !== tr("操作失败") ? e.message : tr("网络异常，请稍后重试") });
       return;
     }
-    setMsg({ ok: true, text: target ? "🎯 已关联空间" : "已移除空间归属" });
+    setMsg({ ok: true, text: target ? tr("🎯 已关联空间") : tr("已移除空间归属") });
     await load();
   }
 

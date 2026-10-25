@@ -188,7 +188,7 @@ export default function PublishSheet({
             .filter((i) => !retrySet.has(i.file) || failedSet.has(i.file))
             .map((i) => (retrySet.has(i.file) ? { ...i, status: "error" as const } : i)),
         );
-        setSheetMsg(`仍有 ${failed.length} 张上传失败，请稍后再试`);
+        setSheetMsg(tpl("仍有 {n} 张上传失败，请稍后再试", { n: failed.length }));
         return;
       }
       setSheetMsg(null);
@@ -267,7 +267,7 @@ export default function PublishSheet({
                     onClick={() => void retryUpload()}
                     className="absolute inset-0 flex items-center justify-center gap-0.5 bg-black/50 text-xs text-white"
                   >
-                    <RefreshCw size={11} aria-hidden /> 重试
+                    <RefreshCw size={11} aria-hidden /> {t("重试")}
                   </button>
                 ) : (
                   <button
@@ -314,7 +314,7 @@ export default function PublishSheet({
             </label>
             {canCapture && (
               <label
-                title="拍照"
+                title={t("拍照")}
                 className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl border border-line-soft bg-surface/60 text-ink-dim transition active:border-sky-500/60"
               >
                 <Camera size={16} aria-hidden />
@@ -331,7 +331,7 @@ export default function PublishSheet({
                 />
               </label>
             )}
-            <span className="text-micro text-ink-faint">发布后 AI 自动识别</span>
+            <span className="text-micro text-ink-faint">{t("发布后 AI 自动识别")}</span>
           </div>
           <button
             type="button"
@@ -344,12 +344,12 @@ export default function PublishSheet({
             className="btn-primary rounded-xl px-7 py-2 text-sm font-medium"
           >
             {busy
-              ? "识别中…"
+              ? t("识别中…")
               : uploading
-                ? "上传中…"
+                ? t("上传中…")
                 : lastEntryId.current && images.some((i) => i.status === "error")
-                  ? "重传失败图片"
-                  : "发布"}
+                  ? t("重传失败图片")
+                  : t("发布")}
           </button>
         </div>
       </div>

@@ -4,19 +4,20 @@
 import { CreditCard, TriangleAlert } from "lucide-react";
 import { TagChip } from "@/components/tag-chip";
 import { type Account, fmtMoney } from "./kit";
+import { t } from "@/i18n";
 
 export function AccountsCard({ accounts, onManage }: { accounts: Account[]; onManage: () => void }) {
   return (
     <section className="glass mb-4 rounded-2xl p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink-soft">
-          <TagChip icon={<CreditCard size={12} />} label="账户" tone="sky" />
+          <TagChip icon={<CreditCard size={12} />} label={t("账户")} tone="sky" />
           <span className="text-xs font-normal text-ink-dim">
-            合计 {fmtMoney(accounts.reduce((s, a) => s + a.balanceCents, 0))}
+            {t("合计")} {fmtMoney(accounts.reduce((s, a) => s + a.balanceCents, 0))}
           </span>
         </h2>
         <button onClick={onManage} className="text-xs text-ink-mute hover:text-accent">
-          管理
+          {t("管理")}
         </button>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -25,7 +26,7 @@ export function AccountsCard({ accounts, onManage }: { accounts: Account[]; onMa
             <p className="mx-auto mb-1 flex h-7 w-7 items-center justify-center rounded-full bg-sky-500/15 text-base leading-none">{a.icon}</p>
             <p className="truncate text-micro text-ink-mute">{a.name}</p>
             {a.balanceCents < 0 ? (
-              <p className="flex items-center justify-center gap-0.5 text-sm font-semibold tabular-nums text-danger" title="余额为负——流水大于期初，点「管理」调整期初余额">
+              <p className="flex items-center justify-center gap-0.5 text-sm font-semibold tabular-nums text-danger" title={t("余额为负——流水大于期初，点「管理」调整期初余额")}>
                 {fmtMoney(a.balanceCents)} <TriangleAlert size={11} aria-hidden />
               </p>
             ) : (
@@ -35,7 +36,7 @@ export function AccountsCard({ accounts, onManage }: { accounts: Account[]; onMa
         ))}
         {accounts.length === 0 && (
           <p className="col-span-full py-3 text-center text-xs text-ink-faint">
-            还没有账户 —— 点「管理」添加现金/支付宝等
+            {t("还没有账户 —— 点「管理」添加现金/支付宝等")}
           </p>
         )}
       </div>

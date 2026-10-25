@@ -17,7 +17,8 @@ export type { CapSpec, CtxConfig, InjectSpec, RegistrySpec, UserDataEntry };
 export interface PromptItem {
   key: string;
   title: string;
-  category: "识别" | "复盘" | "目标" | "系统" | "助手";
+  /** 服务端 PROMPT_META 下发的中文分类（识别/复盘/目标/系统/助手），展示处经 t() 翻译 */
+  category: string;
   enabled: boolean;
   overridden: boolean;
   dbContent: string | null;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/shared/api";
 import { useSession } from "@/shared/session";
+import { t } from "@/i18n";
 import { pickReminders, type ReminderContact, type ReminderItem, type ReminderTodo } from "@/lib/reminders";
 import type { Activity, Block, FeedMoment, Space, TodoItem, TodoRow } from "@/lib/types";
 
@@ -144,7 +145,7 @@ export function useHomeData(opts?: { notify?: (text: string) => void }) {
     try {
       const r = await load();
       // stale = 本次请求已被新请求/卸载取代（非错误），只有真失败才提示
-      if (r === "error") notifyError?.("加载更多失败，请稍后重试");
+      if (r === "error") notifyError?.(t("加载更多失败，请稍后重试"));
     } finally {
       loadingMoreRef.current = false;
       setLoadingMore(false);

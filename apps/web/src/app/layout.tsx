@@ -7,13 +7,15 @@ import Providers from "@/shared/providers";
 import "./globals.css";
 
 export const metadata = {
-  title: "拾光 Shiguang — Personal Life OS",
+  // metadata 在静态导出时构建期固化（SSR HTML 为构建态英文），无法运行期双语——
+  // 与 description 同口径取纯英文，品牌名用罗马字 Shiguang（i18n 全覆盖约定）
+  title: "Shiguang — Personal Life OS",
   description: "Capture life in one sentence — AI organizes your schedule, todos, finance, mood & diet. Self-hosted, your data stays yours.",
   // PWA（REQ-009 FR-B8）：此前 manifest.json 存在但从未挂载——应用根本不可安装
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    title: "拾光",
+    title: "Shiguang",
     statusBarStyle: "black-translucent" as const,
   },
   icons: {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Pencil, Trash2 } from "lucide-react";
 import { Dismissable } from "@/components/dismissable";
+import { t } from "@/i18n";
 
 /** 触摸端识别行操作菜单：图标默认隐藏（触摸无 hover，RowAction 不渲染），点行弹出。
  * 删除沿用两步确认：第一次点变「确认删除?」（同时 arm 上层的 delArmed），第二次点执行。 */
@@ -67,7 +68,7 @@ export function RowActionMenu({ menu, onClose }: { menu: RowMenuState | null; on
           className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs text-ink transition hover:bg-wash"
         >
           <Pencil size={13} className="text-accent" />
-          编辑
+          {t("编辑")}
         </button>
       )}
       <button
@@ -81,7 +82,7 @@ export function RowActionMenu({ menu, onClose }: { menu: RowMenuState | null; on
         }`}
       >
         <Trash2 size={13} className="text-danger" />
-        {armed ? "确认删除?" : "删除"}
+        {armed ? t("确认删除?") : t("删除")}
       </button>
     </Dismissable>,
     document.body,

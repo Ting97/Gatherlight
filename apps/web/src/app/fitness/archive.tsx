@@ -9,6 +9,8 @@ import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { api } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
+import { t, tpl, getLang } from "@/i18n";
+import { moduleLabel } from "@shiguangri/shared/i18n-enum";
 import type { FitnessExercise, FitnessGoal, FitnessModule, FitnessProfile } from "@shiguangri/shared/fitness-types";
 
 function GoalCard({
@@ -49,7 +51,7 @@ function GoalCard({
           targetDate: targetDate || null,
         });
       }
-      toast(goal ? "✅ 目标已更新" : `✅ 已创建 ${mod.name}目标`);
+      toast(goal ? t("✅ 目标已更新") : tpl("✅ 已创建 {name}目标", { name: moduleLabel(mod.name, getLang()) }));
       setEditing(false);
       onSaved();
     } catch (e) {
@@ -64,7 +66,7 @@ function GoalCard({
     setBusy(true);
     try {
       await api(`/api/fitness/goals/${goal.id}`, "PATCH", { status: "archived" });
-      toast("已归档目标");
+      toast(t("已归档目标"));
       onSaved();
     } catch (e) {
       toast(e instanceof Error ? e.message : String(e), "err");
@@ -77,38 +79,38 @@ function GoalCard({
     <section className="rounded-2xl border border-line-soft bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h3 className="text-sm font-medium">
-          {mod.icon} {mod.name}
+          {mod.icon} {moduleLabel(mod.name, getLang())}
         </h3>
         <button className="tap-lg inline-block py-1 text-xs text-accent hover:underline" onClick={openEdit}>
-          {goal ? "编辑" : "+ 设定目标"}
+          {goal ? t("编辑") : t("+ 设定目标")}
         </button>
       </div>
       {goal ? (
         <div className="space-y-2">
           <p className="text-sm">
             <span className="font-medium">{goal.title}</span>
-            {goal.target_date ? <span className="ml-2 text-xs text-ink-mute">目标日 {goal.target_date}</span> : null}
+            {goal.target_date ? <span className="ml-2 text-xs text-ink-mute">{t("目标日")} {goal.target_date}</span> : null}
           </p>
-          {goal.status !== "active" && <p className="text-xs text-ink-mute">（{goal.status === "archived" ? "已归档" : "已达成"}）</p>}
+          {goal.status !== "active" && <p className="text-xs text-ink-mute">（{goal.status === "archived" ? t("已归档") : t("已达成")}）</p>}
         </div>
       ) : (
-        <p className="text-xs text-ink-mute">还没有活跃目标——设定后助手会结合你的目标与执行记录编排训练。</p>
+        <p className="text-xs text-ink-mute">{t("还没有活跃目标——设定后助手会结合你的目标与执行记录编排训练。")}</p>
       )}
       {editing && (
-        <Modal title={`${mod.name}目标`} onClose={() => setEditing(false)}>
+        <Modal title={tpl("{name}目标", { name: moduleLabel(mod.name, getLang()) })} onClose={() => setEditing(false)}>
           <div className="space-y-3">
             <label className="block text-xs text-ink-mute">
-              目标标题
+              {t("目标标题")}
               <input
                 className="input-glow mt-1 w-full"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder={mod.code === "run" ? "珠海半马破 2" : "薄肌 60-62kg · 体脂 13-15%"}
+                placeholder={mod.code === "run" ? t("珠海半马破 2") : t("薄肌 60-62kg · 体脂 13-15%")}
                 maxLength={60}
               />
             </label>
             <label className="block text-xs text-ink-mute">
-              目标日期
+              {t("目标日期")}
               <input
                 type="date"
                 className="input-glow mt-1 w-full"
@@ -119,17 +121,17 @@ function GoalCard({
             <div className="flex items-center justify-between gap-2">
               {goal ? (
                 <button className="tap-lg inline-block py-1 text-xs text-danger hover:underline disabled:opacity-50" onClick={archive} disabled={busy}>
-                  归档
+                  {t("归档")}
                 </button>
               ) : (
                 <span />
               )}
               <div className="flex gap-2">
                 <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setEditing(false)}>
-                  取消
+                  {t("取消")}
                 </button>
                 <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" onClick={save} disabled={busy || !title.trim()}>
-                  保存
+                  {t("保存")}
                 </button>
               </div>
             </div>
@@ -156,13 +158,13 @@ function ProfileForm({ profile, onSaved }: { profile: FitnessProfile | null; onS
     if (height) {
       const h = Number(height);
       if (!Number.isFinite(h) || !Number.isInteger(h) || h < 50 || h > 260) {
-        toast("身高需为 50~260 的整数（厘米）", "err");
+        toast(t("身高需为 50~260 的整数（厘米）"), "err");
         return;
       }
     }
     const equipList = equipment ? equipment.split(/[,，、\s]+/).filter(Boolean) : [];
     if (equipList.some((e) => e.length > 30) || equipList.length > 10) {
-      toast("器械每项最长 30 字，最多 10 项", "err");
+      toast(t("器械每项最长 30 字，最多 10 项"), "err");
       return;
     }
     setBusy(true);
@@ -174,7 +176,7 @@ function ProfileForm({ profile, onSaved }: { profile: FitnessProfile | null; onS
         weeklyDays: weeklyDays || null,
         constraints: constraints || null,
       });
-      toast("✅ 基本情况已保存");
+      toast(t("✅ 基本情况已保存"));
       setOpen(false);
       onSaved();
     } catch (e) {
@@ -187,51 +189,51 @@ function ProfileForm({ profile, onSaved }: { profile: FitnessProfile | null; onS
   return (
     <section className="rounded-2xl border border-line-soft bg-surface p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium">🧍 基本情况</h3>
+        <h3 className="text-sm font-medium">{t("🧍 基本情况")}</h3>
         <button className="tap-lg inline-block py-1 text-xs text-accent hover:underline" onClick={() => setOpen(true)}>
-          {profile ? "编辑" : "+ 填写"}
+          {profile ? t("编辑") : t("+ 填写")}
         </button>
       </div>
       {profile ? (
         <div className="space-y-1 text-xs text-ink-mute">
-          {profile.height_cm ? <p>身高 {profile.height_cm}cm</p> : null}
-          {profile.experience ? <p>经验：{profile.experience}</p> : null}
-          {profile.equipment?.length ? <p>器械：{profile.equipment.join("、")}</p> : null}
-          {profile.weekly_days ? <p>每周安排：{profile.weekly_days}</p> : null}
-          {profile.constraints ? <p>约束：{profile.constraints}</p> : null}
+          {profile.height_cm ? <p>{t("身高")} {profile.height_cm}cm</p> : null}
+          {profile.experience ? <p>{t("经验：")}{profile.experience}</p> : null}
+          {profile.equipment?.length ? <p>{t("器械：")}{profile.equipment.join("、")}</p> : null}
+          {profile.weekly_days ? <p>{t("每周安排：")}{profile.weekly_days}</p> : null}
+          {profile.constraints ? <p>{t("约束：")}{profile.constraints}</p> : null}
         </div>
       ) : (
-        <p className="text-xs text-ink-mute">填写身高/经验/器械/每周安排——AI 生成计划的基本输入。</p>
+        <p className="text-xs text-ink-mute">{t("填写身高/经验/器械/每周安排——AI 生成计划的基本输入。")}</p>
       )}
       {open && (
-        <Modal title="基本情况" onClose={() => setOpen(false)}>
+        <Modal title={t("基本情况")} onClose={() => setOpen(false)}>
           <div className="space-y-3">
             <label className="block text-xs text-ink-mute">
-              身高（cm）
+              {t("身高（cm）")}
               <input className="input-glow mt-1 w-full" inputMode="numeric" value={height} onChange={(e) => setHeight(e.target.value)} placeholder="168" />
             </label>
             <label className="block text-xs text-ink-mute">
-              训练经验
-              <input className="input-glow mt-1 w-full" value={experience} onChange={(e) => setExperience(e.target.value)} placeholder="力量零基础，跑步有基础" maxLength={60} />
+              {t("训练经验")}
+              <input className="input-glow mt-1 w-full" value={experience} onChange={(e) => setExperience(e.target.value)} placeholder={t("力量零基础，跑步有基础")} maxLength={60} />
             </label>
             <label className="block text-xs text-ink-mute">
-              器械条件（顿号分隔）
-              <input className="input-glow mt-1 w-full" value={equipment} onChange={(e) => setEquipment(e.target.value)} placeholder="健身房、哑铃、杠铃、器械" />
+              {t("器械条件（顿号分隔）")}
+              <input className="input-glow mt-1 w-full" value={equipment} onChange={(e) => setEquipment(e.target.value)} placeholder={t("健身房、哑铃、杠铃、器械")} />
             </label>
             <label className="block text-xs text-ink-mute">
-              每周安排
-              <input className="input-glow mt-1 w-full" value={weeklyDays} onChange={(e) => setWeeklyDays(e.target.value)} placeholder="周中 3 练力量 + 跑步按佳明" maxLength={60} />
+              {t("每周安排")}
+              <input className="input-glow mt-1 w-full" value={weeklyDays} onChange={(e) => setWeeklyDays(e.target.value)} placeholder={t("周中 3 练力量 + 跑步按佳明")} maxLength={60} />
             </label>
             <label className="block text-xs text-ink-mute">
-              约束 / 伤病
-              <input className="input-glow mt-1 w-full" value={constraints} onChange={(e) => setConstraints(e.target.value)} placeholder="膝盖上楼偶有不适" maxLength={200} />
+              {t("约束 / 伤病")}
+              <input className="input-glow mt-1 w-full" value={constraints} onChange={(e) => setConstraints(e.target.value)} placeholder={t("膝盖上楼偶有不适")} maxLength={200} />
             </label>
             <div className="flex justify-end gap-2">
               <button className="btn-ghost px-3 py-1.5 text-sm" onClick={() => setOpen(false)}>
-                取消
+                {t("取消")}
               </button>
               <button className="btn-primary px-4 py-1.5 text-sm disabled:opacity-50" onClick={save} disabled={busy}>
-                保存
+                {t("保存")}
               </button>
             </div>
           </div>
@@ -271,11 +273,11 @@ export default function FitnessArchive({
 
       <section className="rounded-2xl border border-line-soft bg-surface p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-medium">📚 动作库</h3>
+          <h3 className="text-sm font-medium">{t("📚 动作库")}</h3>
           <div className="flex gap-1">
             {[
-              { k: "all", label: "全部" },
-              ...modules.map((m) => ({ k: m.code, label: m.name })),
+              { k: "all", label: t("全部") },
+              ...modules.map((m) => ({ k: m.code, label: moduleLabel(m.name, getLang()) })),
             ].map((f) => (
               <button
                 key={f.k}
@@ -297,8 +299,8 @@ export default function FitnessArchive({
                 <span className="ml-2 text-[10px] text-ink-mute">{e.equipment ?? ""}</span>
               </p>
               <p className="mt-0.5 text-[11px] text-ink-mute">
-                主练：{e.muscle_primary.join("、")}
-                {e.muscle_secondary.length ? ` · 兼带：${e.muscle_secondary.join("、")}` : ""}
+                {t("主练：")}{e.muscle_primary.join("、")}
+                {e.muscle_secondary.length ? tpl(" · 兼带：{list}", { list: e.muscle_secondary.join("、") }) : ""}
               </p>
               <p className="mt-1 text-xs leading-relaxed">{e.benefit}</p>
             </div>
