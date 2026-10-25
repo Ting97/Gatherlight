@@ -7,7 +7,7 @@ C) t()/tpl() 的 key 不含中文（纯英文 key）→ ZH 模式显示英文
 """
 import re, os, glob, subprocess
 
-ROOT = "/Users/chenlt/Documents/Work/xujianshiguang"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 WEB = os.path.join(ROOT, "apps/web/src")
 CJK = re.compile(r"[\u4e00-\u9fff]")
 

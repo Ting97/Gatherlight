@@ -1,6 +1,6 @@
 **English** | [中文](./README.zh-CN.md)
 
-# xujianshiguang (叙间拾光)
+# Gatherlight (叙间拾光)
 
 > **Your life, your data, your AI** — a self-hosted life assistant powered by NVIDIA Nemotron on Nebius Token Factory.
 
@@ -17,7 +17,7 @@ This repository is our entry for the [Nebius x NVIDIA Global AI Hackathon 2026](
 
 ## What it is
 
-xujianshiguang is a **self-hosted personal life OS**. Type one casual sentence into the moment feed — *"Morning run 40 minutes, feeling great, lunch with Emma cost 260"* — and the AI extracts 🕒 schedule blocks, 📋 todos, 💰 transactions, 😊 mood and 🍽 meals into the right modules. Low-confidence extractions land in a **pending-confirmation** area: nothing is recorded until a human approves it.
+Gatherlight is a **self-hosted personal life OS**. Type one casual sentence into the moment feed — *"Morning run 40 minutes, feeling great, lunch with Emma cost 260"* — and the AI extracts 🕒 schedule blocks, 📋 todos, 💰 transactions, 😊 mood and 🍽 meals into the right modules. Low-confidence extractions land in a **pending-confirmation** area: nothing is recorded until a human approves it.
 
 Six domain AI assistants (global / goals / time / people / finance / fitness) answer questions **from your own structured data** through read-only query tools. When an assistant wants to change something, it files a proposal card that you approve — the AI never writes business data directly.
 

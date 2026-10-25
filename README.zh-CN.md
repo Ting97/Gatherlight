@@ -1,6 +1,6 @@
 [English](./README.md) | **中文**
 
-# xujianshiguang（叙间拾光）
+# Gatherlight（叙间拾光）
 
 > **Your life, your data, your AI** — a self-hosted life assistant powered by NVIDIA Nemotron on Nebius Token Factory.
 
