@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Check, Eye, EyeOff, X } from "lucide-react";
-import { api, ApiClientError } from "@/shared/api";
+import { api, ApiClientError, errorMessage } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { t, tpl, useLang } from "@/i18n";
 import LangToggle from "@/components/lang-toggle";
@@ -72,7 +72,7 @@ export default function LoginPage() {
       startCountdown();
     } catch (e) {
       if (!aliveRef.current) return;
-      const text = e instanceof Error ? e.message : String(e);
+      const text = errorMessage(e, t("验证码发送失败"));
       // 邮件通道未配置（503）：注册免验证码可直接提交；验证码登录则不可用
       if (isRegister && e instanceof ApiClientError && e.status === 503) {
         toast(tpl("{text}（当前注册无需验证码，可留空直接注册）", { text }), "err");
@@ -117,7 +117,7 @@ export default function LoginPage() {
       }
       location.href = "/";
     } catch (e) {
-      toast(e instanceof Error ? e.message : String(e), "err");
+      toast(errorMessage(e, t("登录失败")), "err");
     } finally {
       setBusy(false);
     }

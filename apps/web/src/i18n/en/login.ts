@@ -32,4 +32,6 @@ export const EN: Record<string, string> = {
   "两次输入的密码不一致": "Passwords do not match",
   "验证码已发送，5 分钟内有效": "Code sent — valid for 5 minutes",
   "{text}（当前注册无需验证码，可留空直接注册）": "{text} (sign-up needs no code right now — just leave it empty)",
+  "登录失败": "Sign-in failed",
+  "验证码发送失败": "Failed to send verification code",
 };

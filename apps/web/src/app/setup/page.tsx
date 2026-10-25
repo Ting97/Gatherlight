@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { api, ApiClientError } from "@/shared/api";
+import { api, ApiClientError, errorMessage } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 import { t } from "@/i18n";
 import LangToggle from "@/components/lang-toggle";
@@ -58,13 +58,14 @@ export default function SetupPage() {
       );
       location.href = "/";
       } catch (e) {
-        if (e instanceof ApiClientError && e.status === 403 && e.message.includes(t("管理员已存在"))) {
+        // 服务端 message 恒为中文原文：子串判定用原文常量而非 t()（EN 模式 t() 返回英文，永远匹配不上）
+        if (e instanceof ApiClientError && e.status === 403 && e.message.includes("管理员已存在")) {
           toast(t("管理员已存在，即将跳转登录页…"), "err");
           // 登记到 ref 并在卸载时清除：跳转等待期手动导航他页会被强拉回 /login
           redirectTimer.current = setTimeout(() => (location.href = "/login"), 1200);
           return;
         }
-      toast(e instanceof Error ? e.message : String(e), "err");
+      toast(errorMessage(e, t("初始化失败")));
     } finally {
       setBusy(false);
     }

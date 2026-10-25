@@ -9,15 +9,19 @@
  */
 import { api as baseApi, apiForm as baseApiForm, apiBase as baseApiBase, ApiClientError } from "@shiguangri/shared/client-api";
 import { getLang } from "@/i18n";
-import { CODE_MESSAGES } from "@/i18n/en/errors";
+import { CODE_MESSAGES, MESSAGE_EN } from "@/i18n/en/errors";
 
 const NO_REDIRECT_PATHS = ["/login", "/setup"];
 export { NO_REDIRECT_PATHS };
 
-/** 错误文案翻译：en 模式优先按稳定 code 映射，无 code 回退服务端原始 message（中文） */
+/** 错误文案翻译：en 模式先按服务端原文精确映射（语义正确），再按稳定 code 映射，
+ * 均未命中回退服务端原始 message（中文） */
 export function errorMessage(e: unknown, fallback = "操作失败"): string {
   if (e instanceof ApiClientError) {
-    if (getLang() === "en" && e.code && CODE_MESSAGES[e.code]) return CODE_MESSAGES[e.code];
+    if (getLang() === "en") {
+      if (MESSAGE_EN[e.message]) return MESSAGE_EN[e.message];
+      if (e.code && CODE_MESSAGES[e.code]) return CODE_MESSAGES[e.code];
+    }
     return e.message;
   }
   return e instanceof Error ? e.message : String(e ?? fallback);

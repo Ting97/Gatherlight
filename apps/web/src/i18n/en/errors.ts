@@ -27,3 +27,24 @@ export const CODE_MESSAGES: Record<string, string> = {
   upstream: "Upstream service error",
   locked: "Too many attempts, try later",
 };
+
+/** 服务端中文原文 → 英文（精确匹配层）：业务 message 的 code 粒度太粗（如 401 既有"未登录"
+ * 也有"邮箱或密码不正确"），语义正确的翻译按原文映射；errorMessage 优先查本表 */
+export const MESSAGE_EN: Record<string, string> = {
+  "邮箱或密码不正确": "Incorrect email or password",
+  "该邮箱已注册，请直接登录": "This email is already registered — sign in instead",
+  "管理员已存在，请直接登录": "Admin account already exists — sign in instead",
+  "验证码错误或已过期": "Verification code is invalid or expired",
+  "请填写邮箱验证码": "Enter the email verification code",
+  "请填写正确的邮箱地址": "Enter a valid email address",
+  "密码需为 8~128 位": "Password must be 8–128 characters",
+  "新密码需为 8~128 位": "New password must be 8–128 characters",
+  "当前密码不正确": "Current password is incorrect",
+  "昵称需为 1~20 个字符": "Nickname must be 1–20 characters",
+  "请填写昵称（1-20 个字符）": "Enter a nickname (1–20 characters)",
+  "请填写昵称和正确的邮箱": "Enter a nickname and a valid email",
+  "初始化失败": "Setup failed",
+  "尝试次数过多，请稍后再试": "Too many attempts — try again later",
+  "操作过于频繁，请稍后再试": "Too frequent — try again later",
+  "邮箱通道未配置，请使用密码登录": "Email delivery is not configured — sign in with password",
+};

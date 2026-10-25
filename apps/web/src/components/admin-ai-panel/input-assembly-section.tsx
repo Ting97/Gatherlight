@@ -151,13 +151,13 @@ export default function InputAssemblySection({
               />
               <span className="min-w-0 flex-1">
                 <span className={`text-xs font-medium ${locked ? "text-ink-dim" : on ? "text-ink" : "text-ink-faint"}`}>
-                  {i.label}
+                  {t(i.label)}
                   {locked && <span className="ml-1.5 rounded bg-amber-500/15 px-1 py-0.5 text-micro text-warn">{t("必需")}</span>}
                   {!on && !locked && <span className="ml-1.5 text-micro text-ink-faint">{t("已关闭")}</span>}
                 </span>
-                <span className="block truncate text-badge text-ink-faint" title={i.desc}>{i.desc}</span>
+                <span className="block truncate text-badge text-ink-faint" title={t(i.desc)}>{t(i.desc)}</span>
               </span>
-              <span className="shrink-0 text-micro text-ink-faint" title={i.source}>{i.source}</span>
+              <span className="shrink-0 text-micro text-ink-faint" title={t(i.source)}>{t(i.source)}</span>
             </li>
           );
         })}
@@ -170,7 +170,7 @@ export default function InputAssemblySection({
           <div className="flex flex-wrap gap-2">
             {sel.registry.caps.map((c) => (
               <label key={c.key} className="flex items-center gap-1.5 rounded-lg border border-line-soft bg-bg/30 px-2.5 py-1.5 text-micro text-ink-dim">
-                {c.label}
+                {t(c.label)}
                 <input
                   type="number"
                   min={c.min}
