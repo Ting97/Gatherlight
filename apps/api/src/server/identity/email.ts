@@ -29,8 +29,11 @@ export interface EmailSendResult {
   error?: string;
 }
 
+/** 邮件语言（X-Lang 跟随界面语言）：主题与正文双语模板 */
+export type EmailLang = "zh" | "en";
+
 /** 发送验证码：限流（同邮箱 60s/次、日 10 条）→ 落库（存 hash）→ SMTP 发送 */
-export async function sendEmailCode(email: string, purpose: "login" | "bind"): Promise<EmailSendResult> {
+export async function sendEmailCode(email: string, purpose: "login" | "bind", lang: EmailLang = "zh"): Promise<EmailSendResult> {
   // 同 sms 口径：advisory lock 串行化同邮箱并发后再判定（check-then-insert 并发穿透封堵）
   const code = generateNumericCode();
   const client = await pool.connect();
@@ -80,7 +83,7 @@ export async function sendEmailCode(email: string, purpose: "login" | "bind"): P
   }
 
   try {
-    await smtpSend(email, code);
+    await smtpSend(email, code, lang);
     return { ok: true, status: 200 };
   } catch (e) {
     await pool.query(`delete from email_codes where id = $1`, [codeId]);
@@ -126,13 +129,22 @@ function getTransporter(): Promise<MailTransporter> {
   return transporterCache;
 }
 
-async function smtpSend(email: string, code: string): Promise<void> {
+async function smtpSend(email: string, code: string, lang: EmailLang): Promise<void> {
   const smtp = loadConfig().smtp!;
   const transporter = await getTransporter();
+  const content =
+    lang === "en"
+      ? {
+          subject: "Gatherlight · Sign-in code",
+          text: `Your verification code is ${code}. It is valid for 10 minutes. If you did not request it, please ignore this email.`,
+        }
+      : {
+          subject: "拾光 · 登录验证码",
+          text: `你的验证码是 ${code}，10 分钟内有效。若非本人操作请忽略本邮件。`,
+        };
   await transporter.sendMail({
     from: smtp.from,
     to: email,
-    subject: "拾光 · 登录验证码",
-    text: `你的验证码是 ${code}，10 分钟内有效。若非本人操作请忽略本邮件。`,
+    ...content,
   });
 }

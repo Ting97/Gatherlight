@@ -47,4 +47,7 @@ export const MESSAGE_EN: Record<string, string> = {
   "尝试次数过多，请稍后再试": "Too many attempts — try again later",
   "操作过于频繁，请稍后再试": "Too frequent — try again later",
   "邮箱通道未配置，请使用密码登录": "Email delivery is not configured — sign in with password",
+  "发送太频繁，请 1 分钟后再试": "Too frequent — try again in 1 minute",
+  "今日发送次数已达上限": "Daily sending limit reached",
+  "发送失败": "Failed to send",
 };

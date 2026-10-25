@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { withSchema } from "@/server/platform/http/route";
+import { withSchema, reqLang } from "@/server/platform/http/route";
 import { z } from "zod";
 import { sendEmail } from "@/server/identity";
 import { clientIp } from "@/server/platform/security/login-guard";
@@ -13,7 +13,7 @@ const schema = z.object({
   purpose: z.enum(["login", "bind"]).default("login"),
 });
 
-/** POST /api/auth/email/send —— {email, purpose?} 发送邮箱验证码 */
+/** POST /api/auth/email/send —— {email, purpose?} 发送邮箱验证码（邮件模板语言跟随 X-Lang） */
 export const POST = withSchema(schema, async (req, { valid }) => {
   // IP 层限流：身份（号码/邮箱）维度之外的第二层——否则持号码字典可对各号各打满日额度，形成短信/邮件轰炸
   const ip = clientIp(req);
@@ -21,5 +21,5 @@ export const POST = withSchema(schema, async (req, { valid }) => {
   if (rl.blocked) {
     return NextResponse.json({ error: "操作过于频繁，请稍后再试" }, { status: 429 });
   }
-  return NextResponse.json(await sendEmail(valid));
+  return NextResponse.json(await sendEmail(valid, reqLang(req)));
 });

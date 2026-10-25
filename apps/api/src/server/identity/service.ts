@@ -373,11 +373,11 @@ export async function register(input: RegisterInput) {
   }
 }
 
-/** 发送邮箱验证码 */
-export async function sendEmail(input: { email?: string; purpose?: string }) {
+/** 发送邮箱验证码（lang 跟随界面语言：邮件主题/正文双语模板） */
+export async function sendEmail(input: { email?: string; purpose?: string }, lang: "zh" | "en" = "zh") {
   if (!input.email || !isValidEmail(input.email)) throw ApiError.badRequest("请填写正确的邮箱地址");
   const purpose = input.purpose === "bind" ? "bind" : "login";
-  const r = await sendEmailCode(input.email.trim().toLowerCase(), purpose);
+  const r = await sendEmailCode(input.email.trim().toLowerCase(), purpose, lang);
   if (!r.ok) throw new ApiError(r.status, "upstream", r.error ?? "发送失败");
   return { ok: true as const };
 }
