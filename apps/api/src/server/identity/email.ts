@@ -1,14 +1,19 @@
 /**
- * 邮箱验证码：SMTP 发送（nodemailer 懒加载，避免纯静态引入）+ 校验；与短信链路（lib/sms.ts）同构。
+ * 邮箱验证码：SMTP 发送（nodemailer 懒加载，避免纯静态引入）+ 校验。
  * 未配置 EMAIL_SMTP_* 环境变量时 send 返回 503 语义（通道未开通），不影响邮箱密码登录。
  */
+import { randomBytes } from "node:crypto";
 import { pool } from "@/server/platform/db";
 import { loadConfig } from "@/server/platform/config";
-import { generateSmsCode, hashToken } from "@/server/identity/auth-crypto";
+import { hashToken } from "@/server/identity/auth-crypto";
 import { verifyCode } from "@/server/identity/verify-code";
 
 const CODE_TTL_MS = 10 * 60_000;
 const DAILY_LIMIT = 10;
+
+/** 6 位数字验证码 */
+const generateNumericCode = (): string =>
+  String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
 
 export function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);
@@ -27,7 +32,7 @@ export interface EmailSendResult {
 /** 发送验证码：限流（同邮箱 60s/次、日 10 条）→ 落库（存 hash）→ SMTP 发送 */
 export async function sendEmailCode(email: string, purpose: "login" | "bind"): Promise<EmailSendResult> {
   // 同 sms 口径：advisory lock 串行化同邮箱并发后再判定（check-then-insert 并发穿透封堵）
-  const code = generateSmsCode();
+  const code = generateNumericCode();
   const client = await pool.connect();
   let codeId: string | null = null;
   try {

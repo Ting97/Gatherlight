@@ -7,21 +7,16 @@ const emailField = z.string().max(254).optional();
 
 export const loginSchema = z
   .object({
-    phone: z.string().optional(),
     email: emailField,
     // 上限 128（对齐 updateProfile）：多 MB 密码串直进 scryptSync 是未认证 CPU/内存放大面
     password: z.string().max(128).optional(),
-    smsCode: z.string().optional(),
     emailCode: z.string().optional(),
   })
-  .refine((v) => Boolean(v.phone || v.email), { message: "手机号或邮箱必填" });
+  .refine((v) => Boolean(v.email), { message: "邮箱必填" });
 
 export const registerSchema = z.object({
-  phone: z.string().optional(),
   email: emailField,
   password: z.string().min(1).max(128).optional(),
-  inviteCode: z.string().optional(),
-  smsCode: z.string().optional(),
   emailCode: z.string().optional(),
   nickname: z.string().optional(),
 });
@@ -38,7 +33,7 @@ export const profileSchema = z
 
 export const setupSchema = z.object({
   nickname: z.string().optional(),
-  phone: z.string().optional(),
+  email: emailField,
   password: z.string().optional(),
   setupToken: z.string().optional(),
 });

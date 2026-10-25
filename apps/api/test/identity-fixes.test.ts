@@ -1,9 +1,9 @@
 /**
- * identity 域修复回归（4-F）：
- * P1 register 邀请码竞态：已用码二次注册被拒；并发复用同一码仅一端建号（事务核销守卫）。
- * P2 verifyCode 一次性原子核销：并发仅一端通过、错码计数、错 5 次作废、过期拒绝、双通道同构。
+ * identity 域修复回归（4-F，邮箱身份契约）：
+ * P1 开放注册（免邀请码）：建号 + 事务内自动生成邀请码绑定新用户（created_by=used_by=新用户）+ 预设播种原子落库；重复邮箱拒绝。
+ * P2 verifyCode 一次性原子核销（邮箱链路）：重放/并发核销、purpose 隔离、通道未配置降级。
  * 与 services-smoke 同约定：SHIGUANGRI_TEST_DB 显式指定才动库（不可达整组 skip）；
- * 测试用户/数据用 22260000-… UUID 与 1382226xx/fix2226 专名前缀，幂等清理，可并发重跑。
+ * 测试用户/数据用 22260000-… UUID 与 fix2226xxxx@test.dev 专名邮箱前缀，幂等清理，可并发重跑。
  * 注意：register 成功路径末尾 createSession 依赖 Next 请求作用域（cookies()），进程内直调
  * 会在「事务已提交后」抛非 ApiError——本文件据此验证提交语义，不视其为失败。
  */
@@ -22,9 +22,8 @@ async function ensureLoaded() {
   // 安全护栏：未显式指定测试库时不动真实数据库（整组 skip）
   if (!process.env.SHIGUANGRI_TEST_DB) return;
   process.env.DATABASE_URL = process.env.SHIGUANGRI_TEST_DB;
-  // 验证码通道/令牌一律未配置：走「邀请码即凭证」确定性分支（零网络；config getter 实时读，删 env 即降级）
+  // 邮箱验证码通道/初始化令牌一律未配置：开放注册走免验证码确定性分支（零网络；config getter 实时读，删 env 即降级）
   for (const k of [
-    "TENCENT_SMS_SECRET_ID", "TENCENT_SMS_SECRET_KEY", "TENCENT_SMS_SDK_APP_ID", "TENCENT_SMS_SIGN", "TENCENT_SMS_TEMPLATE_ID",
     "EMAIL_SMTP_HOST", "EMAIL_SMTP_PORT", "EMAIL_SMTP_USER", "EMAIL_SMTP_PASS", "EMAIL_FROM",
     "SETUP_TOKEN",
   ]) delete process.env[k];
@@ -45,132 +44,82 @@ async function upsertUser(id: string, nickname: string, role = "user") {
   );
 }
 
-/** 幂等清理本文件全部测试数据（profiles 级联 sessions/activities） */
+/** 幂等清理本文件全部测试数据（profiles 级联 sessions/activities；invite_codes 无级联，须先按测试用户清） */
 async function cleanup() {
-  await pool.query(`delete from invite_codes where code like 'FIX2226%'`, []);
-  await pool.query(`delete from sms_codes where phone like '1382226%'`, []);
-  await pool.query(`delete from email_codes where email like '%fix2226%'`, []);
-  await pool.query(`delete from profiles where phone like '1382226%' or id = $1 or id::text like '22260000-2226-4226-8226-2226000011%'`, [UA]);
-}
-
-const isInviteApiError = (e: any) =>
-  e?.name === "ApiError" && e?.status === 400 && /邀请码/.test(String(e?.message));
-
-/* ---------- P1：register 邀请码核销原子性 ---------- */
-
-test("identity-fix：register 邀请码一次核销 + 已用码二次注册被拒 + 播种随事务落库", async (t) => {
-  await ensureLoaded();
-  if (!dbReady) return t.skip("测试库不可达");
-  await cleanup();
-  await upsertUser(UA, "fix测试A");
-  const { register } = await import("../src/server/identity");
-  await pool.query(`insert into invite_codes (code, created_by) values ('FIX2226AA', $1)`, [UA]);
-
-  // 首次注册：事务提交后 createSession 因无请求作用域抛错（预期内），但核销/建号/播种已原子落库
-  await assert.rejects(
-    () => register({ nickname: "fix一号", phone: "13822260001", password: "password-8", inviteCode: "fix2226aa" }),
-    (e: any) => !isInviteApiError(e),
-    "首次注册不应在邀请码环节失败",
-  );
-  const claimed = await pool.query(`select used_by from invite_codes where code = 'FIX2226AA'`);
-  assert.ok(claimed.rows[0]?.used_by, "首次注册应已核销邀请码");
-  const p1 = await pool.query(`select id from profiles where phone = '13822260001'`);
-  assert.equal(p1.rows.length, 1, "首次注册应建号");
-  const acts = await pool.query(`select count(*)::int as n from activities where user_id = $1`, [p1.rows[0].id]);
-  assert.equal(acts.rows[0].n, 9, "九大预设分类应随同一事务播种");
-
-  // 二次注册同码（无论大小写）→ 前置快查 + 事务守卫双重拦截，且不得建号
-  await assert.rejects(
-    () => register({ nickname: "fix二号", phone: "13822260002", password: "password-8", inviteCode: "FIX2226AA" }),
-    isInviteApiError,
-    "已用码二次注册应 400 邀请码错误",
-  );
-  const p2 = await pool.query(`select id from profiles where phone = '13822260002'`);
-  assert.equal(p2.rows.length, 0, "被拒注册不得留下建号半成品");
-});
-
-test("identity-fix：并发复用同一邀请码仅一端建号（事务核销守卫）", async (t) => {
-  await ensureLoaded();
-  if (!dbReady) return t.skip("测试库不可达");
-  await cleanup();
-  await upsertUser(UA, "fix测试A");
-  const { register } = await import("../src/server/identity");
+  const testUsers = `select id from profiles where email like '%fix2226%' or id = $1 or id::text like '22260000-2226-4226-8226-2226000011%'`;
   await pool.query(
-    `insert into invite_codes (code, created_by) values ('FIX2226CC', $1)
-     on conflict (code) do update set used_by = null, used_at = null`,
+    `delete from invite_codes where created_by in (${testUsers}) or used_by in (${testUsers})`,
     [UA],
   );
+  await pool.query(`delete from email_codes where email like '%fix2226%'`, []);
+  await pool.query(`delete from profiles where email like '%fix2226%' or id = $1 or id::text like '22260000-2226-4226-8226-2226000011%'`, [UA]);
+}
 
-  // 同码双端并发：两事务都过前置快查，带 used_by is null 守卫的核销只放行一端
-  const settled = await Promise.allSettled([
-    register({ nickname: "fix并发甲", phone: "13822260003", password: "password-8", inviteCode: "FIX2226CC" }),
-    register({ nickname: "fix并发乙", phone: "13822260004", password: "password-8", inviteCode: "FIX2226CC" }),
-  ]);
-  const reasons = settled.map((r) => (r.status === "rejected" ? r.reason : null));
-  assert.ok(
-    reasons.some((e) => isInviteApiError(e)),
-    "输家应以 ApiError（邀请码已用）回滚",
-  );
+/* ---------- P1：开放注册（免邀请码）建号 + 自动邀请码 + 重复邮箱拒绝 ---------- */
 
-  const code = await pool.query(`select used_by from invite_codes where code = 'FIX2226CC'`);
-  const p3 = await pool.query(`select id from profiles where phone = '13822260003'`);
-  const p4 = await pool.query(`select id from profiles where phone = '13822260004'`);
-  const createdCount = p3.rows.length + p4.rows.length;
-  assert.equal(createdCount, 1, `并发复用同一码至多一端建号（实际 ${createdCount}）`);
-  assert.ok(code.rows[0]?.used_by, "邀请码应被核销");
-  assert.equal(
-    code.rows[0].used_by,
-    (p3.rows[0] ?? p4.rows[0]).id,
-    "核销归属应与实际建号一致",
-  );
-});
-
-/* ---------- P2：verifyCode 一次性原子核销 ---------- */
-
-test("identity-fix：verifySmsCode 一次性语义（重放/并发/错码计数/锁定/过期）", async (t) => {
+test("identity-fix：开放注册免邀请码建号 + 自动绑定邀请码 + 播种随事务落库", async (t) => {
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
-  const { verifySmsCode } = await import("../src/server/identity/sms");
-  const { hashToken } = await import("../src/server/identity/auth-crypto");
-  const phone = "13822260005";
-  await pool.query(`delete from sms_codes where phone = $1`, [phone]);
-  const seedCode = async (code: string, opts: { attempts?: number; expired?: boolean } = {}) => {
-    await pool.query(
-      `insert into sms_codes (phone, code_hash, purpose, expires_at, attempts) values ($1,$2,'login',$3,$4)`,
-      [phone, hashToken(code), opts.expired ? new Date(Date.now() - 1000) : new Date(Date.now() + 600_000), opts.attempts ?? 0],
-    );
-  };
+  await cleanup();
+  const { register } = await import("../src/server/identity");
 
-  // 正确 → true；立即重放 → false（行已删，一次性）
-  await seedCode("135790");
-  assert.equal(await verifySmsCode(phone, "login", "135790"), true, "正确码应通过");
-  assert.equal(await verifySmsCode(phone, "login", "135790"), false, "重放同码应失败（一次性）");
+  // 免邀请码注册：事务提交后 createSession 因无请求作用域抛非 ApiError（预期内），建号/自动邀请码/播种已原子落库
+  await assert.rejects(
+    () => register({ nickname: "fix一号", email: "fix22260001@test.dev", password: "password-8" }),
+    (e: any) => e?.name !== "ApiError",
+    "免邀请码注册不应在业务校验环节失败",
+  );
+  const p1 = await pool.query(`select id from profiles where email = 'fix22260001@test.dev'`);
+  assert.equal(p1.rows.length, 1, "免邀请码注册应建号");
+  const uid = p1.rows[0].id;
+  const acts = await pool.query(`select count(*)::int as n from activities where user_id = $1`, [uid]);
+  assert.equal(acts.rows[0].n, 9, "九大预设分类应随同一事务播种");
+  // 注册事务自动生成一枚邀请码绑定新用户（created_by=used_by=新用户 id，admin 后台可追溯每个注册）
+  const inv = await pool.query(`select created_by, used_by from invite_codes where used_by = $1`, [uid]);
+  assert.equal(inv.rows.length, 1, "应自动生成恰好一枚邀请码");
+  assert.equal(inv.rows[0].created_by, uid, "自动邀请码 created_by 应为新用户自身");
 
-  // 并发重放：多端同时提交正确码 → 仅一端通过（原子核销）
-  await seedCode("246810");
-  const race = await Promise.all([
-    verifySmsCode(phone, "login", "246810"),
-    verifySmsCode(phone, "login", "246810"),
-    verifySmsCode(phone, "login", "246810"),
-  ]);
-  assert.equal(race.filter(Boolean).length, 1, `并发校验仅一端通过（实际 ${race.filter(Boolean).length}）`);
-
-  // 错码 → false 且累计失败次数；满 5 次后正确码也作废
-  await seedCode("111111");
-  assert.equal(await verifySmsCode(phone, "login", "999999"), false, "错码应失败");
-  const bumped = await pool.query(`select attempts from sms_codes where phone = $1`, [phone]);
-  assert.equal(bumped.rows[0].attempts, 1, "错码应累计 attempts");
-  await pool.query(`update sms_codes set attempts = 5 where phone = $1`, [phone]);
-  assert.equal(await verifySmsCode(phone, "login", "111111"), false, "错 5 次后正确码也应作废");
-
-  // 过期 → 拒绝
-  await seedCode("222222", { expired: true });
-  assert.equal(await verifySmsCode(phone, "login", "222222"), false, "过期码应拒绝");
-
-  await pool.query(`delete from sms_codes where phone = $1`, [phone]);
+  // 同邮箱重复注册 → 前置快查拦截，且不得再建号
+  await assert.rejects(
+    () => register({ nickname: "fix一号重复", email: "fix22260001@test.dev", password: "password-8" }),
+    (e: any) => e?.name === "ApiError" && /该邮箱已注册/.test(String(e?.message)),
+    "重复邮箱注册应 400",
+  );
+  const again = await pool.query(`select count(*)::int as n from profiles where email = 'fix22260001@test.dev'`);
+  assert.equal(again.rows[0].n, 1, "重复注册不得再建号");
 });
 
-test("identity-fix：verifyEmailCode 与短信链路同构（一次性 + purpose 隔离）", async (t) => {
+test("identity-fix：并发开放注册各自建号、自动邀请码互不串号", async (t) => {
+  await ensureLoaded();
+  if (!dbReady) return t.skip("测试库不可达");
+  await cleanup();
+  const { register } = await import("../src/server/identity");
+
+  // 双端并发注册（不同邮箱）：开放注册无共享凭证，两端应各自完整落库
+  const settled = await Promise.allSettled([
+    register({ nickname: "fix并发甲", email: "fix22260003@test.dev", password: "password-8" }),
+    register({ nickname: "fix并发乙", email: "fix22260004@test.dev", password: "password-8" }),
+  ]);
+  const reasons = settled.map((r) => (r.status === "rejected" ? r.reason : null));
+  for (const e of reasons) {
+    assert.ok(e, "进程内直调必在 createSession 处抛（请求作用域）");
+    assert.notEqual(e?.name, "ApiError", "并发注册不应在业务校验环节失败");
+  }
+
+  const p3 = await pool.query(`select id from profiles where email = 'fix22260003@test.dev'`);
+  const p4 = await pool.query(`select id from profiles where email = 'fix22260004@test.dev'`);
+  assert.equal(p3.rows.length, 1, "并发端甲应建号");
+  assert.equal(p4.rows.length, 1, "并发端乙应建号");
+  for (const p of [p3, p4]) {
+    const inv = await pool.query(`select created_by, used_by from invite_codes where used_by = $1`, [p.rows[0].id]);
+    assert.equal(inv.rows.length, 1, "各自应自动生成恰好一枚邀请码");
+    assert.equal(inv.rows[0].created_by, p.rows[0].id, "自动邀请码绑定各自注册用户");
+  }
+});
+
+/* ---------- P2：verifyCode 一次性原子核销（邮箱链路） ---------- */
+
+test("identity-fix：verifyEmailCode 一次性语义（重放拒绝 + purpose 隔离）", async (t) => {
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
   const { verifyEmailCode } = await import("../src/server/identity/email");
@@ -188,10 +137,8 @@ test("identity-fix：verifyEmailCode 与短信链路同构（一次性 + purpose
   const left = await pool.query(`select id from email_codes where email = $1`, [email]);
   assert.equal(left.rows.length, 0, "核销后不留残留行");
 
-  // 通道未配置降级语义保持：configured() = config 通道字段非空（本测试环境删尽了 SMTP/SMS env）
-  const { smsConfigured } = await import("../src/server/identity/sms");
+  // 通道未配置降级语义保持：configured() = config 通道字段非空（本测试环境删尽了 SMTP env）
   const { emailConfigured } = await import("../src/server/identity/email");
-  assert.equal(smsConfigured(), false, "无 TENCENT_SMS_* 时短信通道应降级为未配置");
   assert.equal(emailConfigured(), false, "无 EMAIL_SMTP_* 时邮箱通道应降级为未配置");
 });
 
@@ -203,18 +150,18 @@ test("identity-r16：setup 在已初始化的库上一律 403（带密码管理�
   await cleanup();
   await upsertUser(UA, "fix测试A");
   const identity: any = await import("../src/server/identity");
-  // 带密码的管理员在场（hasAdminAccount 新守卫的目标形态；本测试库另有手机号账号，双守卫任一命中皆应拒）
+  // 带密码的管理员在场（hasAdminAccount 新守卫的目标形态；本测试库可能另有邮箱账号，双守卫任一命中皆应拒）
   await pool.query(
     `insert into profiles (id, nickname, role, password_hash) values ($1,'fix管理员R16','admin',$2)
      on conflict (id) do update set role='admin', password_hash=excluded.password_hash`,
     ["22260000-2226-4226-8226-222600001166", identity.hashPassword("password-8")],
   );
   await assert.rejects(
-    () => identity.setup({ nickname: "r16偷渡者", phone: "13822260009", password: "password-8" }, null),
+    () => identity.setup({ nickname: "r16偷渡者", email: "fix22260009@test.dev", password: "password-8" }, null),
     (e: any) => e?.name === "ApiError" && e?.status === 403 && /管理员已存在/.test(String(e?.message)),
     "已存在带密码管理员时 setup 应 403 且不得认领/建号",
   );
-  const leaked = await pool.query(`select id from profiles where phone = '13822260009'`);
+  const leaked = await pool.query(`select id from profiles where email = 'fix22260009@test.dev'`);
   assert.equal(leaked.rows.length, 0, "被拒 setup 不得留下半成品");
   // hasAdminAccount 单元：上面插入的带密码 admin 应被识别（旧守卫只看手机号，全邮箱库会漏）
   const { profilesRepo } = await import("../src/server/identity/repo");

@@ -191,7 +191,7 @@ export default function InvitesPanel() {
     <section className="glass mb-5 rounded-2xl p-5">
       <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink-soft"><Megaphone size={14} className="text-warn" aria-hidden /> 邀请管理</h2>
       <p className="mt-1 text-xs text-ink-dim">
-        新用户凭邀请码注册（一码一人）；生成后把码发给对方，对方在登录页点「凭邀请码注册」
+        注册已开放，无需邀请码；邀请码仅作注册来源记录（一码一人），生成后可发给对方留档
       </p>
 
       {/* Token 消耗（管理员视角：自己 + 被邀请人） */}
@@ -272,7 +272,7 @@ export default function InvitesPanel() {
               <p className="mb-1.5 text-micro text-ink-dim">被邀请人（{usage.invitees.length} 人）</p>
               {usage.invitees.length === 0 ? (
                 <p className="rounded-xl border border-dashed border-line px-3 py-3 text-center text-micro text-ink-dim">
-                  还没有通过邀请码注册的用户
+                  还没有带邀请记录的用户
                 </p>
               ) : (
                 <ul className="space-y-1">

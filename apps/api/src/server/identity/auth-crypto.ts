@@ -7,11 +7,6 @@ import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypt
 const SCRYPT_N = 16384;
 const SCRYPT_KEYLEN = 64;
 
-/** 手机号格式（中国大陆） */
-export function isValidPhone(phone: string): boolean {
-  return /^1[3-9]\d{9}$/.test(phone);
-}
-
 /** 密码哈希：格式 scrypt$N$saltHex$hashHex */
 export function hashPassword(password: string): string {
   const salt = randomBytes(16);
@@ -38,11 +33,6 @@ export function generateSessionToken(): string {
 /** token/验证码入库前的 sha256 */
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
-}
-
-/** 6 位短信验证码 */
-export function generateSmsCode(): string {
-  return String(100000 + (randomBytes(4).readUInt32BE(0) % 900000));
 }
 
 /** 邀请码：8 位易读字符集（去掉 0/O/1/I） */

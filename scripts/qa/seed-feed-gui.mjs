@@ -7,20 +7,20 @@
  */
 /* global FormData, Blob */
 const BASE = process.env.BASE_URL || "http://127.0.0.1:3100";
-// 远程/演示环境：BASE_URL 指定目标，SEED_PHONE/SEED_PASSWORD 提供则先登录拿会话 cookie
+// 远程/演示环境：BASE_URL 指定目标，SEED_EMAIL/SEED_PASSWORD 提供则先登录拿会话 cookie
 let COOKIE = "";
-if (process.env.SEED_PHONE) {
+if (process.env.SEED_EMAIL) {
   const r = await fetch(BASE + "/api/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ phone: process.env.SEED_PHONE, password: process.env.SEED_PASSWORD || "" }),
+    body: JSON.stringify({ email: process.env.SEED_EMAIL, password: process.env.SEED_PASSWORD || "" }),
   });
   COOKIE = (r.headers.get("set-cookie") || "").split(";")[0];
   if (!COOKIE) {
-    console.error("[seed] 登录失败——检查 SEED_PHONE/SEED_PASSWORD");
+    console.error("[seed] 登录失败——检查 SEED_EMAIL/SEED_PASSWORD");
     process.exit(1);
   }
-  console.log("[seed] 已登录", process.env.SEED_PHONE);
+  console.log("[seed] 已登录", process.env.SEED_EMAIL);
 }
 
 

@@ -163,9 +163,9 @@ test("identity：validateRegisterIdentity 与 setup 令牌门禁", async (t) => 
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
   const { validateRegisterIdentity, assertSetupToken } = await import("../src/server/identity");
-  assert.throws(() => validateRegisterIdentity({ phone: "123" }), /手机号/);
+  assert.throws(() => validateRegisterIdentity({ email: "123" }), /邮箱/);
   assert.throws(() => validateRegisterIdentity({ email: "bad" }), /邮箱/);
-  assert.equal(validateRegisterIdentity({ phone: "13800001234" }), false, "手机号通道");
+  assert.throws(() => validateRegisterIdentity({ phone: "13800001234" } as any), /邮箱/, "手机号通道已下线：缺 email 一律邮箱校验失败");
   assert.equal(validateRegisterIdentity({ email: "a@b.co" }), true, "邮箱通道");
   // 未配置 SETUP_TOKEN：门禁直通；配置后错误令牌被拒（FR-C2.3 语义）
   delete process.env.SETUP_TOKEN;
@@ -199,17 +199,16 @@ test("identity：me 模块授权聚合与 updateProfile 改密链路", async (t)
   assert.ok(crypto.scryptSync("new-password-8", Buffer.from(s, "hex"), 64, { N: Number(n) }).toString("hex") === h, "新密码应可验证");
 });
 
-test("identity：register 邀请码链路（无效/有效→建号→重复拒绝）", async (t) => {
+test("identity：register 前置校验（昵称/邮箱/密码；开放注册免邀请码）", async (t) => {
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
   const { register } = await import("../src/server/identity");
-  // 无 KEY 环境：验证码通道未开通 → smsCode 可空（凭邀请码注册）。
+  // 开放注册：无 inviteCode 字段（传入亦被忽略），前置校验全部先于写库。
   // 注意：register 成功路径内部 createSession 依赖 Next 请求作用域（cookies()），进程内只能测前置校验；
-  // 成功建号链路由 test:routes 的 E2E 冒烟覆盖。
-  await assert.rejects(() => register({ nickname: "", phone: "13800001234", password: "password-8", inviteCode: "X" } as any), /昵称/);
-  await assert.rejects(() => register({ nickname: "svc", phone: "13800001234", password: "short", inviteCode: "X" } as any), /密码/);
-  await assert.rejects(() => register({ nickname: "svc", phone: "13800001234", password: "password-8", inviteCode: "" } as any), /邀请码/);
-  await assert.rejects(() => register({ nickname: "svc", phone: "13800001234", password: "password-8", inviteCode: "BADCODE" } as any), /邀请码/);
+  // 成功建号链路由 identity-fixes（事务落库语义）与 test:routes 的 E2E 冒烟覆盖。
+  await assert.rejects(() => register({ nickname: "", email: "svc-smoke@test.dev", password: "password-8" }), /昵称/);
+  await assert.rejects(() => register({ nickname: "svc", email: "not-an-email", password: "password-8" }), /邮箱/);
+  await assert.rejects(() => register({ nickname: "svc", email: "svc-smoke@test.dev", password: "short" }), /密码/);
 });
 
 test("timeline：appendManual 手动补录域与非法域", async (t) => {
@@ -230,11 +229,10 @@ test("timeline：appendManual 手动补录域与非法域", async (t) => {
   await deleteFeed(UA, entry.id);
 });
 
-test("identity：验证码通道未配置时的错误语义", async (t) => {
+test("identity：邮箱验证码通道未配置时的错误语义", async (t) => {
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
-  const { sendSms, sendEmail } = await import("../src/server/identity");
-  await assert.rejects(() => sendSms({ phone: "13800001234" }), /发送失败|通道|未配置/);
+  const { sendEmail } = await import("../src/server/identity");
   await assert.rejects(() => sendEmail({ email: "a@b.co" }), /发送失败|通道|未配置/);
 });
 

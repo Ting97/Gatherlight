@@ -6,7 +6,7 @@ import { toast } from "@/shared/ui/toast";
 
 export default function SetupPage() {
   const [nickname, setNickname] = useState("");
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [setupToken, setSetupToken] = useState("");
@@ -27,9 +27,13 @@ export default function SetupPage() {
 
   async function submit() {
     if (busy) return;
-    if (!nickname.trim() || !phone.trim()) {
+    if (!nickname.trim() || !email.trim()) {
       // 账号信息必填：空值直接提交会被服务端 422 拒绝，这里先行拦截给出可读提示
-      toast("请先填写昵称与手机号", "err");
+      toast("请先填写昵称与邮箱", "err");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      toast("请先填写正确的邮箱地址", "err");
       return;
     }
     if (password.length < 8) {
@@ -47,7 +51,7 @@ export default function SetupPage() {
       await api(
         "/api/auth/setup",
         "POST",
-        { nickname, phone, password },
+        { nickname, email, password },
         setupToken.trim() ? { "x-setup-token": setupToken.trim() } : undefined,
       );
       location.href = "/";
@@ -91,12 +95,11 @@ export default function SetupPage() {
               className={inputCls}
             />
             <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
               onKeyDown={onEnterSubmit}
-              maxLength={11}
-              inputMode="numeric"
-              placeholder="手机号"
+              type="email"
+              placeholder="邮箱"
               className={inputCls}
             />
             <input
@@ -127,7 +130,7 @@ export default function SetupPage() {
             </button>
           </div>
           <p className="mt-4 text-micro leading-relaxed text-ink-faint">
-            管理员将接管本站全部既有记录；此后其他账号凭管理员生成的邀请码注册，数据互相隔离。
+            管理员将接管本站全部既有记录；此后其他账号可直接注册，数据互相隔离。
           </p>
         </div>
       </div>

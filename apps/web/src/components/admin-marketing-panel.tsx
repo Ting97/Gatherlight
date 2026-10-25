@@ -34,7 +34,7 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
   interface AdminUser {
     id: string;
     nickname: string | null;
-    phone: string | null;
+    email: string | null;
     plan: string;
     planExpiresAt: string | null;
     used30d: number;
@@ -189,7 +189,7 @@ export default function AdminMarketingPanel({ notify }: { notify: (text: string,
                   <tr key={u.id} className="border-t border-line-soft/60">
                     <td className="sticky left-0 z-10 max-w-[9rem] truncate bg-surface/95 px-2 py-1.5 backdrop-blur">
                       <span className="text-ink">{u.nickname ?? "未命名"}</span>
-                      <span className="ml-1 text-ink-faint">{u.phone ?? ""}</span>
+                      <span className="ml-1 text-ink-faint">{u.email ?? ""}</span>
                     </td>
                     {MATRIX_MODULES.map((m) => {
                       const ov = overrides[u.id]?.[m.key];

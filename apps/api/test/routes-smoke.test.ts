@@ -435,11 +435,11 @@ test("正常层：流水列表分页（limit/offset + total；无 limit 全量�
 test("正常层：登录接口真实报错（DB 链路通 + 模糊文案）", async (t) => {
   await ensureLoaded();
   if (!dbReady) return t.skip("测试库不可达");
-  const { status, json } = await call("POST", "/api/auth/login", { body: { phone: "13800009999", password: "wrong-password" },
+  const { status, json } = await call("POST", "/api/auth/login", { body: { email: "smoke-401@test.dev", password: "wrong-password" },
   });
   assert.equal(status, 401, "错误密码应 401");
   assert.ok(json.error, "应有模糊错误文案");
-  assert.ok(!JSON.stringify(json).includes("13800009999"), "不应回显账号");
+  assert.ok(!JSON.stringify(json).includes("smoke-401@test.dev"), "不应回显账号");
 });
 
 test("teardown: 清理测试用户（级联清数据与会话）", async (t) => {

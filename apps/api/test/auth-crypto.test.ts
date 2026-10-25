@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   hashPassword, verifyPassword, generateSessionToken, hashToken,
-  generateSmsCode, generateInviteCode, isValidPhone,
+  generateInviteCode,
 } from "../src/server/identity/auth-crypto.js";
 
 test("密码哈希：正确密码通过、错误密码拒绝", () => {
@@ -40,23 +40,10 @@ test("token 哈希：确定性、不可逆推原文长度", () => {
   assert.equal(hashToken("abc").length, 64);
 });
 
-test("短信验证码：6 位数字", () => {
-  for (let i = 0; i < 20; i++) assert.match(generateSmsCode(), /^\d{6}$/);
-});
-
 test("邀请码：8 位、字符集不含易混淆字符", () => {
   for (let i = 0; i < 20; i++) {
     const code = generateInviteCode();
     assert.equal(code.length, 8);
     assert.match(code, /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{8}$/);
   }
-});
-
-test("手机号校验", () => {
-  assert.equal(isValidPhone("13812345678"), true);
-  assert.equal(isValidPhone("19912345678"), true);
-  assert.equal(isValidPhone("12812345678"), false);
-  assert.equal(isValidPhone("1381234567"), false);
-  assert.equal(isValidPhone("138123456789"), false);
-  assert.equal(isValidPhone(""), false);
 });

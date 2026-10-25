@@ -7,9 +7,8 @@ import { assertLoginAllowed, LoginLockedError, recordLoginAttempt, clientIp } fr
 import { timingSafeEqual } from "node:crypto";
 import { loadConfig } from "@/server/platform/config";
 import { createSession, destroySession } from "@/server/identity/auth";
-import { verifyPassword, hashPassword, isValidPhone, generateInviteCode } from "@/server/identity/auth-crypto";
+import { verifyPassword, hashPassword, generateInviteCode } from "@/server/identity/auth-crypto";
 import { isValidEmail, verifyEmailCode, emailConfigured, sendEmailCode } from "@/server/identity/email";
-import { verifySmsCode, smsConfigured, sendSmsCode } from "@/server/identity/sms";
 import { PRESET_ACTIVITIES } from "@/server/time/seed";
 import { pool } from "@/server/platform/db";
 import { hashToken } from "@/server/identity/auth-crypto";
@@ -28,26 +27,20 @@ const noteAttempt = (identity: string, ip: string, ok: boolean) =>
 const DUMMY_PASSWORD_HASH = hashPassword("shiguangri-timing-equalizer-dummy");
 
 export interface LoginInput {
-  phone?: string;
   email?: string;
   password?: string;
-  smsCode?: string;
   emailCode?: string;
   /** 请求派生（限流/审计用） */
   ip: string;
   userAgent?: string | null;
 }
 
-/** 登录：双身份 + 三凭证。成功返回 {token,user}；失败抛 ApiError（文案模糊，不暴露账号存在性）。 */
+/** 登录：邮箱 + 密码/验证码。成功返回 {token,user}；失败抛 ApiError（文案模糊，不暴露账号存在性）。 */
 export async function login(input: LoginInput) {
-  const byEmail = !input.phone && !!input.email;
-  if (!byEmail && (!input.phone || !isValidPhone(input.phone))) {
-    throw ApiError.badRequest("请填写正确的手机号");
-  }
-  if (byEmail && (!input.email || !isValidEmail(input.email))) {
+  if (!input.email || !isValidEmail(input.email)) {
     throw ApiError.badRequest("请填写正确的邮箱地址");
   }
-  const identity = byEmail ? input.email!.trim().toLowerCase() : input.phone!;
+  const identity = input.email.trim().toLowerCase();
 
   try {
     await assertLoginAllowed(identity, input.ip);
@@ -60,10 +53,9 @@ export async function login(input: LoginInput) {
     throw e;
   }
 
-  const { rows } = await profilesRepo.byIdentity(identity, byEmail);
+  const { rows } = await profilesRepo.byIdentity(identity);
   const user = rows[0];
-  const fuzzyFail = () =>
-    ApiError.unauthorized(byEmail ? "邮箱或密码不正确" : "手机号或密码不正确");
+  const fuzzyFail = () => ApiError.unauthorized("邮箱或密码不正确");
 
   if (!user) {
     void noteAttempt(identity, input.ip, false);
@@ -87,7 +79,7 @@ export async function login(input: LoginInput) {
       void noteAttempt(identity, input.ip, false);
       throw fuzzyFail();
     }
-  } else if (byEmail) {
+  } else {
     // 未验证态不得用专属文案暴露「账号存在且未验证」（违背本文件「不暴露账号存在性」口径），
     // 且必须计入失败尝试：收敛为与验证码错误一致的模糊响应
     if (!user.email_verified) {
@@ -95,15 +87,6 @@ export async function login(input: LoginInput) {
       throw ApiError.unauthorized("验证码错误或已过期");
     }
     if (!input.emailCode || !(await verifyEmailCode(identity, "login", input.emailCode))) {
-      void noteAttempt(identity, input.ip, false);
-      throw ApiError.unauthorized("验证码错误或已过期");
-    }
-  } else {
-    if (!user.phone_verified) {
-      void noteAttempt(identity, input.ip, false);
-      throw ApiError.unauthorized("验证码错误或已过期");
-    }
-    if (!input.smsCode || !(await verifySmsCode(identity, "login", input.smsCode))) {
       void noteAttempt(identity, input.ip, false);
       throw ApiError.unauthorized("验证码错误或已过期");
     }
@@ -221,16 +204,12 @@ export async function updateProfile(userId: string, body: ProfileInput, opts?: {
   return { ok: true as const, nickname, message };
 }
 
-/** 注册（邀请码）：完整实现保留在路由编排（含通道验证/预设播种），此处做参数校验面 */
-export function validateRegisterIdentity(input: { phone?: string; email?: string }) {
-  const byEmail = !input.phone && !!input.email;
-  if (!byEmail && (!input.phone || !isValidPhone(input.phone))) {
-    throw ApiError.badRequest("请填写正确的手机号");
-  }
-  if (byEmail && (!input.email || !isValidEmail(input.email))) {
+/** 注册（开放注册，邮箱身份）：完整实现保留在路由编排（含通道验证/预设播种），此处做参数校验面 */
+export function validateRegisterIdentity(input: { email?: string }) {
+  if (!input.email || !isValidEmail(input.email)) {
     throw ApiError.badRequest("请填写正确的邮箱地址");
   }
-  return byEmail;
+  return true;
 }
 
 /**
@@ -262,16 +241,16 @@ async function consumeSetupToken() {
 }
 
 /** 初始化管理员（一次性令牌校验 + 抢占防护） */
-export async function setup(input: { nickname?: string; phone?: string; password?: string }, tokenHeader: string | null, userAgent?: string | null) {
+export async function setup(input: { nickname?: string; email?: string; password?: string }, tokenHeader: string | null, userAgent?: string | null) {
   // 先完成全部入参/前置校验，最后一步才消费一次性令牌（否则畸形请求也会烧掉令牌）
-  if (!input.nickname?.trim() || !input.phone || !isValidPhone(input.phone)) {
-    throw ApiError.badRequest("请填写昵称和正确的手机号");
+  if (!input.nickname?.trim() || !input.email || !isValidEmail(input.email)) {
+    throw ApiError.badRequest("请填写昵称和正确的邮箱");
   }
   // 上限与 login/register/updateProfile 同口径（128）：scryptSync 大密码放大内存面（本文件 ：179 注释）
   if (!input.password || input.password.length < 8 || input.password.length > 128) {
     throw ApiError.badRequest("密码需为 8~128 位");
   }
-  const existing = await profilesRepo.hasPhoneAccount();
+  const existing = await profilesRepo.hasEmailAccount();
   if (existing.rows.length > 0) {
     throw ApiError.forbidden("管理员已存在，请直接登录");
   }
@@ -284,15 +263,15 @@ export async function setup(input: { nickname?: string; phone?: string; password
   await assertSetupToken(tokenHeader);
   // 先完成最后一个可能失败的写步骤，成功后才消费一次性令牌：
   // 旧序 consume 在 claimDevAdmin 之前，种子行缺失（update 0 行）报「初始化失败」时令牌已被烧掉
-  // （认领语句带 phone is null 条件：两个并发 setup 双双通过上方守卫时，只有一个能认领成功）
-  const { rows } = await profilesRepo.claimDevAdmin(input.nickname.trim(), input.phone, hashPassword(input.password));
+  // （认领语句带 email is null 条件：两个并发 setup 双双通过上方守卫时，只有一个能认领成功）
+  const { rows } = await profilesRepo.claimDevAdmin(input.nickname.trim(), input.email.trim().toLowerCase(), hashPassword(input.password));
   if (!rows[0]) throw ApiError.upstream("初始化失败");
   await consumeSetupToken();
   const token = await createSession(rows[0].id, userAgent ?? undefined);
   return { ok: true as const, token, user: rows[0] };
 }
 
-export { isValidPhone, hashPassword, clientIp };
+export { hashPassword, clientIp };
 
 /** 邀请码管理实现（GET/POST 由 /api/admin/invites 与旧地址 /api/auth/invites 共用，防双份漂移） */
 export async function listInvites() {
@@ -318,83 +297,53 @@ export async function createInvite(userId: string, days: number) {
 }
 
 export interface RegisterInput {
-  phone?: string;
   email?: string;
   password?: string;
-  inviteCode?: string;
-  smsCode?: string;
   emailCode?: string;
   nickname?: string;
   userAgent?: string | null;
 }
 
-/** 注册（邀请码，双身份二选一）：通道已配置须验证码；未配置邀请码即凭证。迁移自 auth/register 路由。 */
+/** 注册（开放注册，邮箱身份）：免邀请码——注册事务内自动生成一枚邀请码绑定到新用户，
+ *  保持 invite_codes 对每个注册用户的记录链（审计可见）。通道已配置时须邮箱验证码。 */
 export async function register(input: RegisterInput) {
   const { nickname: nicknameRaw } = input;
   const nickname = nicknameRaw?.trim();
   if (!nickname || nickname.length > 20) throw ApiError.badRequest("请填写昵称（1-20 个字符）");
-  const byEmail = validateRegisterIdentity(input);
+  validateRegisterIdentity(input);
   if (!input.password || input.password.length < 8 || input.password.length > 128)
     throw ApiError.badRequest("密码需为 8~128 位");
-  if (!input.inviteCode?.trim()) throw ApiError.badRequest("请填写邀请码");
 
-  const code = input.inviteCode.trim().toUpperCase();
-  // 前置快查（友好 400，早于通道验证）；真正的并发安全由下方事务内带守卫的核销保证
-  const invite = await pool.query(
-    `select code from invite_codes
-     where code = $1 and used_by is null and (expires_at is null or expires_at > now())`,
-    [code],
-  );
-  if (invite.rows.length === 0) throw ApiError.badRequest("邀请码无效或已被使用");
-
-  const emailNorm = byEmail ? input.email!.trim().toLowerCase() : null;
-  const phone = input.phone;
-  const dup = await pool.query(`select phone, email from profiles where phone = $1 or email = $2`, [
-    byEmail ? null : phone,
-    emailNorm,
-  ]);
+  const emailNorm = input.email!.trim().toLowerCase();
+  const dup = await pool.query(`select email from profiles where email = $1`, [emailNorm]);
   if (dup.rows.length > 0) {
-    const hit = byEmail ? dup.rows[0].email : dup.rows[0].phone;
-    if (byEmail && hit) throw ApiError.badRequest("该邮箱已注册，请直接登录");
-    if (!byEmail && hit) throw ApiError.badRequest("该手机号已注册，请直接登录");
+    throw ApiError.badRequest("该邮箱已注册，请直接登录");
   }
 
-  let phoneVerified = false;
   let emailVerified = false;
-  if (byEmail) {
-    if (emailConfigured()) {
-      if (!input.emailCode) throw ApiError.badRequest("请填写邮箱验证码");
-      if (!(await verifyEmailCode(emailNorm!, "login", input.emailCode))) {
-        throw ApiError.badRequest("验证码错误或已过期");
-      }
-      emailVerified = true;
-    }
-  } else if (smsConfigured()) {
-    if (!input.smsCode) throw ApiError.badRequest("请填写短信验证码");
-    if (!(await verifySmsCode(phone!, "login", input.smsCode))) {
+  if (emailConfigured()) {
+    if (!input.emailCode) throw ApiError.badRequest("请填写邮箱验证码");
+    if (!(await verifyEmailCode(emailNorm, "login", input.emailCode))) {
       throw ApiError.badRequest("验证码错误或已过期");
     }
-    phoneVerified = true;
+    emailVerified = true;
   }
 
-  // 事务（4-F P1）：建号 + 邀请码核销 + 预设播种 原子完成，中途失败整体回滚不留半成品；
-  // 核销带 used_by is null 守卫，并发复用同一邀请码时仅一端成功，另一端回滚并拒绝
+  // 事务（4-F P1）：建号 + 邀请码自动绑定 + 预设播种 原子完成，中途失败整体回滚不留半成品
   const client = await pool.connect();
   try {
     await client.query("begin");
     const { rows } = await client.query(
-      `insert into profiles (nickname, phone, email, phone_verified, email_verified, password_hash, last_login_at)
-       values ($1, $2, $3, $4, $5, $6, now()) returning id, nickname`,
-      [nickname, byEmail ? null : phone, emailNorm, phoneVerified, emailVerified, hashPassword(input.password)],
+      `insert into profiles (nickname, email, email_verified, password_hash, last_login_at)
+       values ($1, $2, $3, $4, now()) returning id, nickname`,
+      [nickname, emailNorm, emailVerified, hashPassword(input.password)],
     );
     const user = rows[0];
-    const claimed = await client.query(
-      `update invite_codes set used_by = $1, used_at = now()
-       where code = $2 and used_by is null and (expires_at is null or expires_at > now())
-       returning code`,
-      [user.id, code],
+    // 开放注册的邀请码记录：自生成自绑定（created_by=used_by=新用户），admin 后台邀请码列表可追溯每个注册
+    await client.query(
+      `insert into invite_codes (code, created_by, used_by, used_at) values ($1, $2, $2, now())`,
+      [generateInviteCode(), user.id],
     );
-    if (claimed.rows.length === 0) throw ApiError.badRequest("邀请码无效或已被使用");
     // 九大预设分类：新用户开箱即用（与 seed.ts 同构；须在本事务同连接执行，
     // 走独立连接会因 FK 等待未提交的建号行而挂起）
     for (const a of PRESET_ACTIVITIES) {
@@ -414,23 +363,14 @@ export async function register(input: RegisterInput) {
     } catch {
       // 连接已不可用：释放即可
     }
-    // 并发注册同一手机号/邮箱：快查双双通过后唯一约束兜底，转友好提示而非 500
+    // 并发注册同一邮箱：快查双双通过后唯一约束兜底，转友好提示而非 500
     if ((e as { code?: string }).code === "23505") {
-      throw ApiError.conflict("该手机号/邮箱已注册，请直接登录");
+      throw ApiError.conflict("该邮箱已注册，请直接登录");
     }
     throw e;
   } finally {
     client.release();
   }
-}
-
-/** 发送短信验证码（同号 60s/次、日 10 条策略在通道层） */
-export async function sendSms(input: { phone?: string; purpose?: string }) {
-  if (!input.phone || !isValidPhone(input.phone)) throw ApiError.badRequest("请填写正确的手机号");
-  const purpose = input.purpose === "bind" ? "bind" : "login";
-  const r = await sendSmsCode(input.phone, purpose);
-  if (!r.ok) throw new ApiError(r.status, "upstream", r.error ?? "发送失败");
-  return { ok: true as const };
 }
 
 /** 发送邮箱验证码 */
@@ -442,24 +382,3 @@ export async function sendEmail(input: { email?: string; purpose?: string }) {
   return { ok: true as const };
 }
 
-/** 已登录账号绑定手机号（纯验证码账号补绑）：短信 purpose=bind 核销后落 phone+verified。
- *  profiles.phone 全局唯一：被其他账号占用时 409（老账号仍可密码登录，不受影响）。 */
-export async function bindPhoneBySession(input: { userId: string; phone: string; smsCode: string }) {
-  if (!isValidPhone(input.phone)) throw ApiError.badRequest("请填写正确的手机号");
-  if (!input.smsCode.trim()) throw ApiError.badRequest("请填写短信验证码");
-  if (!(await verifySmsCode(input.phone, "bind", input.smsCode))) {
-    throw ApiError.unauthorized("验证码错误或已过期");
-  }
-  try {
-    await pool.query(`update profiles set phone = $1, phone_verified = true where id = $2`, [
-      input.phone,
-      input.userId,
-    ]);
-    return { ok: true as const };
-  } catch (e) {
-    if ((e as { code?: string }).code === "23505") {
-      throw ApiError.conflict("该手机号已被其他账号使用");
-    }
-    throw e;
-  }
-}

@@ -6,12 +6,11 @@ import { api, ApiClientError } from "@/shared/api";
 import { toast } from "@/shared/ui/toast";
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<"password" | "sms">("password"); // 登录方式：密码/验证码
+  const [mode, setMode] = useState<"password" | "code">("password"); // 登录方式：密码/邮箱验证码
   const [isRegister, setIsRegister] = useState(false);
-  const [account, setAccount] = useState(""); // 手机号或邮箱（含 @ 自动识别）
+  const [email, setEmail] = useState(""); // 登录/注册身份：仅邮箱
   const [password, setPassword] = useState("");
-  const [smsCode, setSmsCode] = useState("");
-  const [invite, setInvite] = useState("");
+  const [emailCode, setEmailCode] = useState("");
   const [nickname, setNickname] = useState(""); // 注册必填
   const [password2, setPassword2] = useState(""); // 注册：确认密码
   const [showPwd, setShowPwd] = useState(false); // 明文切换
@@ -57,24 +56,22 @@ export default function LoginPage() {
 
   async function sendCode() {
     if (sending) return; // 请求飞行中忽略再次点击，防重复发送
-    const isEmail = account.includes("@");
-    if (isEmail ? !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(account) : !/^1[3-9]\d{9}$/.test(account)) {
-      toast(isEmail ? "请先填写正确的邮箱地址" : "请先填写正确的手机号", "err");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      toast("请先填写正确的邮箱地址", "err");
       return;
     }
     setSending(true);
     try {
-      const body = isEmail ? { email: account, purpose: "login" } : { phone: account, purpose: "login" };
-      await api(isEmail ? "/api/auth/email/send" : "/api/auth/sms/send", "POST", body);
+      await api("/api/auth/email/send", "POST", { email, purpose: "login" });
       if (!aliveRef.current) return; // 卸载后到达：不弹提示也不建倒计时
       toast("验证码已发送，5 分钟内有效");
       startCountdown();
     } catch (e) {
       if (!aliveRef.current) return;
       const text = e instanceof Error ? e.message : String(e);
-      // 通道未开通：注册场景下邀请码即凭证，可不填验证码
+      // 邮件通道未配置（503）：注册免验证码可直接提交；验证码登录则不可用
       if (isRegister && e instanceof ApiClientError && e.status === 503) {
-        toast(`${text}（当前注册凭邀请码即可，验证码可留空）`, "err");
+        toast(`${text}（当前注册无需验证码，可留空直接注册）`, "err");
       } else {
         toast(text, "err");
       }
@@ -85,9 +82,9 @@ export default function LoginPage() {
 
   async function submit() {
     if (busy) return;
-    if (!account.trim()) {
-      // 账号必填：空账号直接登录会被服务端 422 拒绝，这里先行拦截给出可读提示
-      toast("请先填写手机号 / 邮箱", "err");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+      // 邮箱必填且校验格式：空值/格式错会被服务端 422 拒绝，这里先行拦截给出可读提示
+      toast("请先填写正确的邮箱地址", "err");
       return;
     }
     if (isRegister && password.length < 8) {
@@ -103,19 +100,16 @@ export default function LoginPage() {
     setBusy(true);
     try {
       if (isRegister) {
-        await api("/api/auth/register", "POST",
-          account.includes("@")
-            ? { email: account, password, emailCode: smsCode || undefined, inviteCode: invite, nickname: nickname.trim() || undefined }
-            : { phone: account, password, smsCode: smsCode || undefined, inviteCode: invite, nickname: nickname.trim() || undefined },
-        );
+        await api("/api/auth/register", "POST", {
+          email,
+          password,
+          emailCode: emailCode || undefined,
+          nickname: nickname.trim() || undefined,
+        });
       } else if (mode === "password") {
-        await api("/api/auth/login", "POST",
-          account.includes("@") ? { email: account, password } : { phone: account, password },
-        );
+        await api("/api/auth/login", "POST", { email, password });
       } else {
-        await api("/api/auth/login", "POST",
-          account.includes("@") ? { email: account, emailCode: smsCode } : { phone: account, smsCode },
-        );
+        await api("/api/auth/login", "POST", { email, emailCode });
       }
       location.href = "/";
     } catch (e) {
@@ -161,7 +155,7 @@ export default function LoginPage() {
             <circle cx="120" cy="150" r="5" fill="#fff7e0" />
           </svg>
           <h1 className="text-gradient text-3xl font-bold">拾光</h1>
-          <p className="mt-1 text-xs text-ink-dim">拾起光阴，记录今日 · {isRegister ? "凭邀请码注册" : "登录后继续"}</p>
+          <p className="mt-1 text-xs text-ink-dim">拾起光阴，记录今日 · {isRegister ? "注册账号" : "登录后继续"}</p>
         </div>
 
         <div className="glass rounded-2xl p-5">
@@ -179,9 +173,9 @@ export default function LoginPage() {
                 密码登录
               </button>
               <button
-                onClick={() => setMode("sms")}
+                onClick={() => setMode("code")}
                 className={`flex-1 rounded-full px-3 py-1.5 transition-all ${
-                  mode === "sms"
+                  mode === "code"
                     ? "bg-gradient-to-r from-sky-500 to-indigo-500 font-medium text-white"
                     : "text-ink-mute hover:text-ink"
                 }`}
@@ -193,22 +187,23 @@ export default function LoginPage() {
 
           <div className="space-y-3">
             <input
-              value={account}
-              onChange={(e) => setAccount(e.target.value.trim())}
+              value={email}
+              onChange={(e) => setEmail(e.target.value.trim())}
               onKeyDown={onEnterSubmit}
-              placeholder="手机号 / 邮箱"
+              type="email"
+              placeholder="邮箱"
               className={inputCls}
             />
 
-            {isRegister || mode === "sms" ? (
+            {isRegister || mode === "code" ? (
               <div className="flex gap-2">
                 <input
-                  value={smsCode}
-                  onChange={(e) => setSmsCode(e.target.value)}
+                  value={emailCode}
+                  onChange={(e) => setEmailCode(e.target.value)}
                   onKeyDown={onEnterSubmit}
                   maxLength={6}
                   inputMode="numeric"
-                  placeholder={isRegister ? "邮箱/短信验证码（未开通可留空）" : "6 位验证码"}
+                  placeholder={isRegister ? "邮箱验证码（未开通可留空）" : "6 位验证码"}
                   className={`${inputCls} flex-1`}
                 />
                 <button
@@ -291,13 +286,6 @@ export default function LoginPage() {
                     </span>
                   )}
                 </div>
-                <input
-                  value={invite}
-                  onChange={(e) => setInvite(e.target.value.toUpperCase())}
-                  onKeyDown={onEnterSubmit}
-                  placeholder="邀请码"
-                  className={`${inputCls} uppercase`}
-                />
               </>
             )}
 
@@ -314,7 +302,7 @@ export default function LoginPage() {
               }}
               className="ml-1 text-accent hover:underline"
             >
-              {isRegister ? "去登录" : "凭邀请码注册"}
+              {isRegister ? "去登录" : "直接注册"}
             </button>
           </p>
         </div>

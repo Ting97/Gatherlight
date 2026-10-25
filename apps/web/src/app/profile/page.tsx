@@ -129,20 +129,6 @@ export default function ProfilePage() {
                 <div className="text-sm">
                   <p className="font-medium">{savedNick || "未设置昵称"}</p>
                   <p className="mt-0.5 flex items-center gap-2 text-xs text-ink-dim">
-                    {me.phone ? (
-                      <>
-                        {me.phone.replace(/(\d{3})\d{4}(\d{4})/, "$1****$2")}
-                        <span
-                          className={`rounded px-1.5 py-0.5 text-badge ${
-                            me.phoneVerified ? "bg-emerald-500/10 text-success" : "bg-elevated text-ink-mute"
-                          }`}
-                        >
-                          {me.phoneVerified ? "已验证" : "未验证"}
-                        </span>
-                      </>
-                    ) : (
-                      "未绑定手机号"
-                    )}
                     {me.isAdmin && (
                       <span className="rounded bg-gradient-to-r from-sky-500/20 to-indigo-500/20 px-1.5 py-0.5 text-badge text-accent">
                         管理员

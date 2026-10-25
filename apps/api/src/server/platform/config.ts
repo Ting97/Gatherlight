@@ -15,15 +15,6 @@ export interface SmtpConfig {
   from: string;
 }
 
-/** 腾讯云 SMS 通道（TENCENT_SMS_* 五项任缺视为通道未开通，业务侧降级） */
-export interface SmsConfig {
-  secretId: string;
-  secretKey: string;
-  sdkAppId: string;
-  sign: string;
-  templateId: string;
-}
-
 export interface AppConfig {
   env: "development" | "production" | "test";
   isProd: boolean;
@@ -53,8 +44,6 @@ export interface AppConfig {
   readonly secureCookie: boolean;
   /** SMTP 通道，未配置 = null */
   readonly smtp: SmtpConfig | null;
-  /** 腾讯云 SMS 通道，未配置 = null */
-  readonly sms: SmsConfig | null;
   /** 上游凭据加密密钥（训记 apiKey 等）；未配置 = 绑定端点 503 */
   readonly exchangeEncKey: string | null;
   /** 训记（SynFit）Open API key（REQ-017；App 内申请，格式 xjllm_...；null = 功能未配置） */
@@ -139,12 +128,6 @@ export function loadConfig(): AppConfig {
       const { EMAIL_SMTP_HOST, EMAIL_SMTP_PORT, EMAIL_SMTP_USER, EMAIL_SMTP_PASS, EMAIL_FROM } = process.env;
       return EMAIL_SMTP_HOST && EMAIL_SMTP_PORT && EMAIL_SMTP_USER && EMAIL_SMTP_PASS && EMAIL_FROM
         ? { host: EMAIL_SMTP_HOST, port: Number(EMAIL_SMTP_PORT), user: EMAIL_SMTP_USER, pass: EMAIL_SMTP_PASS, from: EMAIL_FROM }
-        : null;
-    },
-    get sms(): SmsConfig | null {
-      const { TENCENT_SMS_SECRET_ID, TENCENT_SMS_SECRET_KEY, TENCENT_SMS_SDK_APP_ID, TENCENT_SMS_SIGN, TENCENT_SMS_TEMPLATE_ID } = process.env;
-      return TENCENT_SMS_SECRET_ID && TENCENT_SMS_SECRET_KEY && TENCENT_SMS_SDK_APP_ID && TENCENT_SMS_SIGN && TENCENT_SMS_TEMPLATE_ID
-        ? { secretId: TENCENT_SMS_SECRET_ID, secretKey: TENCENT_SMS_SECRET_KEY, sdkAppId: TENCENT_SMS_SDK_APP_ID, sign: TENCENT_SMS_SIGN, templateId: TENCENT_SMS_TEMPLATE_ID }
         : null;
     },
     /** 上游凭据加密密钥（训记 apiKey 等）；未配置 = 绑定端点 503 */

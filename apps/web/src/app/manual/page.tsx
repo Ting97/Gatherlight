@@ -96,7 +96,7 @@ const SECTIONS: Section[] = [
     h: "账户与设置",
     img: "/manual/web-profile.png",
     rows: [
-      "登录：手机号/邮箱 + 密码。",
+      "登录：邮箱 + 密码。",
       "个人设置：改昵称、改密码、主题切换（深色/浅色/跟随系统）、导出数据（JSON / Markdown）、全端登出。",
     ],
   },

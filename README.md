@@ -16,7 +16,7 @@
 - **健身与睡眠**：训练计划与记录、每日睡眠与感受得分，支持对接训记（SynFit）Open API 同步
 - **分域 AI 助手**：全局/目标/日程/人际/财务/健身六个域助手，20 个只读查询工具 + 提案确认卡（AI 不直接写业务数据，提案经你确认生效）
 - **模块开关**：子模块可按用户粒度开启/关闭；管理员后台支持提示词热更、AI 审计与配额
-- **数据自主**：自建账号体系（手机号/邮箱 + 密码 + 邀请码）、数据导出（JSON / Markdown）、全端登出
+- **数据自主**：自建账号体系（邮箱 + 密码，开放注册）、数据导出（JSON / Markdown）、全端登出
 
 ## 技术栈
 
@@ -52,6 +52,7 @@ set -a && source .env && set +a && PORT=3100 node apps/api/.next/standalone/apps
 | `DATABASE_URL` | PostgreSQL 连接串（必填） |
 | `ZHIPUAI_API_KEY` | OpenAI 兼容模型服务的 API key（AI 功能必需） |
 | `SETUP_TOKEN` | 初始化一次性令牌：首个管理员经 `POST /api/auth/setup`（`x-setup-token` 请求头携带）创建后失效 |
+| `EMAIL_SMTP_*` | 邮箱验证码 SMTP 通道（未配置时注册免验证码直接创建） |
 | `AUTH_DISABLED` | 仅本地开发可用；生产非空会拒绝启动 |
 
 **初始化管理员**：服务启动后，用 `SETUP_TOKEN` 调用
@@ -59,15 +60,15 @@ set -a && source .env && set +a && PORT=3100 node apps/api/.next/standalone/apps
 ```bash
 curl -X POST http://127.0.0.1:3100/api/auth/setup \
   -H "content-type: application/json" -H "x-setup-token: <你的 SETUP_TOKEN>" \
-  -d '{"nickname":"admin","phone":"13800000000","password":"your-password"}'
+  -d '{"nickname":"admin","email":"admin@example.com","password":"your-password"}'
 ```
 
-之后由管理员生成邀请码（`POST /api/admin/invites`），普通用户凭邀请码在 `/login` 注册。
+之后即可用邮箱在 `/login` 注册使用——注册开放，无需邀请码（系统会为每位注册用户自动生成一条邀请码记录便于追溯）。
 
 **演示数据**：`scripts/qa/seed-*-gui.mjs` 六个脚本可对任意环境灌入各模块演示数据：
 
 ```bash
-BASE_URL=https://your-host SEED_PHONE=13800000000 SEED_PASSWORD=xxx node scripts/qa/seed-finance-gui.mjs
+BASE_URL=https://your-host SEED_EMAIL=you@example.com SEED_PASSWORD=xxx node scripts/qa/seed-finance-gui.mjs
 ```
 
 ## 目录结构
