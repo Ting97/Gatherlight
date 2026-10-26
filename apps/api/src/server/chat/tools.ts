@@ -8,6 +8,7 @@
  */
 import { z } from "zod";
 import { pool } from "@/server/platform/db";
+import { loadConfig } from "@/server/platform/config";
 import { bjAddDays, bjMondayOf, bjToday } from "@shiguangri/shared/date";
 import { FitnessPlanDraftV2, type AgentToolSpec } from "@shiguangri/ai";
 import { draftToCanonicalPlan, readTrains, makeLocalResolver, getXunjiKey } from "@/server/fitness";
@@ -806,7 +807,48 @@ const queryXunjiTrains: ChatTool = {
   },
 };
 
-/** 注册表全集（20 个只读工具，覆盖全模块数据面；写操作走 A.5「操作意图卡」，见 CHAT_PROPOSAL_TOOLS） */
+/** web_search：联网搜索（Tavily API）——注册表里唯一的非 SQL 工具（外部只读检索，不落库）。
+ *  刻意不标 TOOL_DOMAIN → 仅全局「拾光助手」可见（域助手只答本域数据，不联网）。
+ *  key 经平台 config 读（TAVILY_API_KEY），未配置返回友好降级；15s 超时防拖垮会话；key 绝不入结果/日志 */
+const webSearch: ChatTool = {
+  name: "web_search",
+  description:
+    "联网搜索实时/外部信息（Tavily）：天气、新闻、赛事、价格、客观事实等用户个人数据里查不到的内容。Search the live web (Tavily) for time-sensitive or external facts the user's own data cannot answer (weather, news, events, prices, fact checks). 引用结果时注明来源标题与链接。",
+  params: z.object({
+    query: z.string().min(2).max(200).describe("搜索关键词（跟随用户提问语言）/ search keywords in the user's language"),
+    max_results: z.number().int().min(1).max(5).default(3).describe("返回条数（默认 3）"),
+  }),
+  async execute(_ctx, p) {
+    const { query, max_results } = p as { query: string; max_results?: number };
+    const tavily = loadConfig().tavily;
+    if (!tavily) return { error: "联网搜索未配置（TAVILY_API_KEY 缺失），请说明该能力暂不可用" };
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 15_000);
+    try {
+      const res = await fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${tavily.apiKey}` },
+        body: JSON.stringify({ query, max_results: max_results ?? 3 }),
+        signal: ctl.signal,
+      });
+      if (!res.ok) return { error: `联网搜索失败（Tavily HTTP ${res.status}），请稍后重试或基于已有知识简答` };
+      const data = (await res.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
+      const results = (data.results ?? []).slice(0, 5).map((r) => ({
+        title: String(r.title ?? "").slice(0, 120),
+        url: r.url ?? "",
+        snippet: String(r.content ?? "").slice(0, 400),
+      }));
+      if (results.length === 0) return { query, results, note: "没有搜到相关结果" };
+      return { query, results };
+    } catch (e) {
+      return { error: `联网搜索失败（${ctl.signal.aborted ? "超时" : String(e).slice(0, 80)}），请稍后重试` };
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+};
+
+/** 注册表全集（21 个只读工具：20 个模块数据面查询 + web_search 联网搜索；写操作走 A.5「操作意图卡」，见 CHAT_PROPOSAL_TOOLS） */
 export const CHAT_TOOLS: ChatTool[] = [
   queryTimeBlocks,
   queryTransactions,
@@ -828,6 +870,7 @@ export const CHAT_TOOLS: ChatTool[] = [
   getFitnessGoals,
   getFitnessExercises,
   queryXunjiTrains,
+  webSearch,
 ];
 
 // ---- A.5 操作意图确认卡（REQ-016 首发落地：助手只提案，用户点卡片确认后前端调业务域 API） ----
@@ -1108,4 +1151,5 @@ export const TOOL_LABELS: Record<string, string> = {
   get_fitness_goals: "健身目标档案",
   get_fitness_exercises: "动作库",
   propose_fitness_plan: "生成计划卡片",
+  web_search: "联网搜索",
 };

@@ -22,6 +22,7 @@
 - 运行时所有 LLM 调用走 **Nebius Token Factory**（`https://api.tokenfactory.nebius.com/v1`，OpenAI 兼容端点）
 - 模型：**`nvidia/Nemotron-3_5-Lightning`**（NVIDIA 开源模型，30B MoE——Token Factory 上性价比最高的 Nemotron）——用于分域助手、动态识别、周期复盘与目标拆解
 - 工具调用走标准 OpenAI tools 协议：20 个只读查询工具（`query_transactions`、`query_calendar`、`query_contacts`…）+ 需确认的提案工具
+- 联网能力：全局「拾光助手」的 `web_search` 工具运行时经 **Tavily Search API** 检索网页，回答天气、新闻、赛事等用户个人数据之外的时效性问题
 - 模型层与端点解耦：`ZHIPUAI_BASE_URL` 指向任意 OpenAI 兼容服务（如智谱 GLM）即可，零代码改动
 - Nemotron-3 是思考模型；对延迟敏感的任务通过 `reasoning_effort: "none"` 关闭思考，并兜底兼容其 `reasoning` 字段（`packages/ai/src/glm.ts`）
 
@@ -39,7 +40,7 @@ GLM_MODEL=nvidia/Nemotron-3_5-Lightning
 - **人际图谱**：以你为中心的关系轨道图（可拖动摆位），联系人档案（阳历/农历生日、纪念日、人情往来账）
 - **收支与预算**：多账户、分类统计、月度预算与预警、支付宝/微信支付 CSV 账单导入、AI 收支周报
 - **健身与睡眠**：训练计划与记录、每日睡眠与感受得分，支持对接训记（SynFit）Open API 同步
-- **分域 AI 助手**：全局/目标/日程/人际/财务/健身六个域助手，20 个只读查询工具 + 提案确认卡（AI 不直接写业务数据，提案经你确认生效）
+- **分域 AI 助手**：全局/目标/日程/人际/财务/健身六个域助手，20 个只读查询工具 + 联网搜索（Tavily）+ 提案确认卡（AI 不直接写业务数据，提案经你确认生效）
 - **模块开关**：子模块可按用户粒度开启/关闭；管理员后台支持提示词热更、AI 审计与配额
 - **数据自主**：自建账号体系（邮箱 + 密码，开放注册）、数据导出（JSON / Markdown）、全端登出
 

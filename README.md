@@ -28,6 +28,7 @@ All data stays in your own PostgreSQL database. The UI is bilingual (English / �
 - All runtime LLM calls go to **Nebius Token Factory** (`https://api.tokenfactory.nebius.com/v1`), an OpenAI-compatible endpoint
 - Model: **`nvidia/Nemotron-3_5-Lightning`** (NVIDIA open model, 30B MoE — the most cost-efficient Nemotron on Token Factory) — used for domain assistants, moment extraction, periodic reviews and goal decomposition
 - Function calling over the standard OpenAI tools protocol: 20 read-only query tools (`query_transactions`, `query_calendar`, `query_contacts`, …) plus confirmable proposal tools
+- Live web access: the global assistant's `web_search` tool queries the web through the **Tavily Search API** at runtime for time-sensitive questions (weather, news, events) that the user's personal data cannot answer
 - The model layer is endpoint-agnostic: point `ZHIPUAI_BASE_URL` at any OpenAI-compatible service (e.g. Zhipu GLM) — zero code change
 - Nemotron-3 is a thinking model; for latency-sensitive tasks we disable thinking via `reasoning_effort: "none"` and fall back to its `reasoning` field (`packages/ai/src/glm.ts`)
 
@@ -45,7 +46,7 @@ GLM_MODEL=nvidia/Nemotron-3_5-Lightning
 - **People graph** — a draggable orbit map centered on you; contact profiles with solar/lunar birthdays, anniversaries and a gift-exchange ledger
 - **Finance & budgeting** — multi-account bookkeeping, category stats, monthly budgets with alerts, Alipay/WeChat Pay CSV import, AI weekly finance review
 - **Fitness & sleep** — training plans and logs, daily sleep tracking with feel/score, sync via the Xunji (SynFit) Open API
-- **Domain AI assistants** — six assistants (global/goal/time/people/finance/fitness) with 20 read-only query tools + proposal confirmation cards (the AI never writes business data directly; proposals take effect only after you approve)
+- **Domain AI assistants** — six assistants (global/goal/time/people/finance/fitness) with 20 read-only query tools, live web search (Tavily) on the global assistant, and proposal confirmation cards (the AI never writes business data directly; proposals take effect only after you approve)
 - **Module switches** — modules can be toggled per user; the admin console supports prompt hot-reload, AI audit and quotas
 - **Data ownership** — self-hosted accounts (email + password, open registration), data export (JSON / Markdown), sign out everywhere
 

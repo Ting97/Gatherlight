@@ -48,6 +48,8 @@ export interface AppConfig {
   readonly exchangeEncKey: string | null;
   /** 训记（SynFit）Open API key（REQ-017；App 内申请，格式 xjllm_...；null = 功能未配置） */
   readonly xunjiApiKey: string | null;
+  /** Tavily 联网搜索 key（助手 web_search 工具）；null = 工具未配置，执行时友好降级 */
+  readonly tavily: { apiKey: string } | null;
 }
 
 class ConfigValidationError extends Error {
@@ -137,6 +139,10 @@ export function loadConfig(): AppConfig {
     /** 训记（SynFit）Open API key（REQ-017；App 内申请，格式 xjllm_...；null = 功能未配置） */
     get xunjiApiKey(): string | null {
       return process.env.XUNJI_API_KEY || null;
+    },
+    /** Tavily 联网搜索（助手 web_search 工具）；未配置 = null，工具执行时友好降级 */
+    get tavily(): { apiKey: string } | null {
+      return process.env.TAVILY_API_KEY ? { apiKey: process.env.TAVILY_API_KEY } : null;
     },
   };
   return cached;
