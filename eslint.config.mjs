@@ -52,7 +52,7 @@ export default tseslint.config(
     // 白名单：config 自身、middleware/instrumentation（边缘运行时/框架生命周期不宜 import 携带 AI SDK 的 config）、
     // packages/ai（纯包禁止 import apps/api，反向会循环依赖）、*.d.ts 与脚本。
     files: ["apps/api/src/**/*.ts", "apps/web/src/**/*.ts", "apps/web/src/**/*.tsx"],
-    ignores: ["**/platform/config.ts", "**/platform/db.ts", "**/middleware.ts", "**/instrumentation.ts"],
+    ignores: ["**/platform/config.ts", "**/platform/db.ts", "**/middleware.ts", "**/instrumentation.ts", "**/server/ai/provider.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",

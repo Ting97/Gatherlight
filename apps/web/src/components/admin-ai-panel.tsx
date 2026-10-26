@@ -2,8 +2,8 @@
 
 import { t, tpl } from "@/i18n";
 import EditorHeader from "./admin-ai-panel/editor-header";
-import EngineModeCard from "./admin-ai-panel/engine-mode-card";
 import InputAssemblySection from "./admin-ai-panel/input-assembly-section";
+import ProviderCard from "./admin-ai-panel/provider-card";
 import PromptList from "./admin-ai-panel/prompt-list";
 import SystemPromptSection from "./admin-ai-panel/system-prompt-section";
 import VersionsSection from "./admin-ai-panel/versions-section";
@@ -37,13 +37,8 @@ export default function AdminAiPanel({ notify }: { notify: (text: string, ok?: b
 
   return (
     <div>
-      {/* 调用引擎模式开关（REQ-003 3-C 管理台开关） */}
-      <EngineModeCard
-        mode={ai.engineMode}
-        envDefault={ai.engineEnvDefault}
-        saving={ai.engineSaving}
-        onSwitch={(m) => void ai.switchEngineMode(m)}
-      />
+      {/* 模型接入（071 BYOK）：多服务商档案 + 一键切换（替换原「调用引擎」Jev 卡） */}
+      <ProviderCard notify={notify} />
 
       <div className="lg:grid lg:grid-cols-[230px_1fr] lg:gap-5">
         {/* prompt 清单：移动横滑 / PC 左栏 */}
