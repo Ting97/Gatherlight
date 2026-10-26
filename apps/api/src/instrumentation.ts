@@ -17,6 +17,9 @@ export async function register() {
       if (process.env.NEXT_RUNTIME === "nodejs") {
         const { startAnalysisPatrol } = await import("./server/timeline/patrol");
         startAnalysisPatrol();
+        // 模型接入（071）：启动即应用激活的服务商档案（否则重启后回落 env，直到首个 admin 请求）
+        const { ensureProviderApplied } = await import("./server/ai/provider");
+        void ensureProviderApplied().catch((e) => console.warn("[provider] 启动应用激活档案失败，走环境变量：", String(e).slice(0, 120)));
       }
     } catch (e) {
       console.error(String(e instanceof Error ? e.message : e));

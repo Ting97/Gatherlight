@@ -133,7 +133,7 @@ export async function activateProvider(id: string | null): Promise<ProviderProfi
         [id],
       );
       row = (rows[0] as ProviderProfile) ?? null;
-      if (!row) throw new Error("profile not found");
+      if (!row) throw ApiError.notFound("档案不存在");
     }
     await client.query("commit");
     applyProviderToEnv(row);
