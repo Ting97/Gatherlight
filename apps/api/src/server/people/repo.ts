@@ -83,15 +83,17 @@ export const contactsRepo = {
       ],
     );
   },
-  /** TA 的档案基本信息（含 AI 画像缓存与生成时间） */
-  async detailById(id: string, userId: string) {
+  /** TA 的档案基本信息（含 AI 画像缓存与生成时间；画像列按 lang 取双语列，别名不变） */
+  async detailById(id: string, userId: string, lang: "zh" | "en" = "zh") {
     return (
       await pool.query(
         `select id, name, alias, group_tag,
                 to_char(birthday, 'YYYY-MM-DD') as birthday,
                 birthday_cal, lunar_month, lunar_day, lunar_leap,
                 to_char(anniversary, 'YYYY-MM-DD') as anniversary,
-                intimacy, importance, notes, created_at, ai_profile, to_char(ai_profile_at, 'YYYY-MM-DD HH24:MI') as ai_profile_at
+                intimacy, importance, notes, created_at,
+                ${lang === "en" ? "ai_profile_en as ai_profile" : "ai_profile"},
+                to_char(${lang === "en" ? "ai_profile_at_en" : "ai_profile_at"}, 'YYYY-MM-DD HH24:MI') as ai_profile_at
          from contacts where id = $1 and user_id = $2`,
         [id, userId],
       )
@@ -153,9 +155,10 @@ export const contactsRepo = {
     );
   },
   /** AI 画像缓存只读 */
-  async aiProfileOf(id: string, userId: string) {
+  async aiProfileOf(id: string, userId: string, lang: "zh" | "en" = "zh") {
+    const cols = lang === "en" ? "ai_profile_en as ai_profile, ai_profile_at_en as ai_profile_at" : "ai_profile, ai_profile_at";
     return (
-      await pool.query(`select ai_profile, ai_profile_at from contacts where id = $1 and user_id = $2`, [id, userId])
+      await pool.query(`select ${cols} from contacts where id = $1 and user_id = $2`, [id, userId])
     ).rows[0];
   },
   /** 画像提炼的档案输入 */
@@ -168,10 +171,12 @@ export const contactsRepo = {
       )
     ).rows[0];
   },
-  setAiProfile(id: string, userId: string, profileJson: string) {
+  setAiProfile(id: string, userId: string, profileJson: string, lang: "zh" | "en" = "zh") {
+    const profCol = lang === "en" ? "ai_profile_en" : "ai_profile";
+    const atCol = lang === "en" ? "ai_profile_at_en" : "ai_profile_at";
     return pool.query(
-      `update contacts set ai_profile = $3, ai_profile_at = now() where id = $1 and user_id = $2
-       returning ai_profile, ai_profile_at`,
+      `update contacts set ${profCol} = $3, ${atCol} = now() where id = $1 and user_id = $2
+       returning ${profCol} as ai_profile, ${atCol} as ai_profile_at`,
       [id, userId, profileJson],
     );
   },

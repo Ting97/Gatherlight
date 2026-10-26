@@ -126,9 +126,9 @@ export async function createContact(userId: string, body: ContactUpsertBody) {
   }
 }
 
-/** GET /api/contacts/:id —— TA 的档案：基本信息 + 往来时间线 + 关联人情账 */
-export async function contactDetail(userId: string, id: string) {
-  const contact = await contactsRepo.detailById(id, userId);
+/** GET /api/contacts/:id —— TA 的档案：基本信息 + 往来时间线 + 关联人情账（画像缓存按 X-Lang 取对应语言） */
+export async function contactDetail(userId: string, id: string, lang: "zh" | "en" = "zh") {
+  const contact = await contactsRepo.detailById(id, userId, lang);
   if (!contact) throw ApiError.notFound("联系人不存在");
 
   const timeline = (await contactsRepo.timelineOf(id, userId)).rows;
@@ -346,9 +346,9 @@ const bjDateStr = (v: unknown): string | null => {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 };
 
-/** GET /api/contacts/:id/ai-profile —— 只读已缓存的画像（不触发 AI；QA 验收补齐） */
-export async function cachedAiProfile(userId: string, id: string) {
-  const row = await contactsRepo.aiProfileOf(id, userId);
+/** GET /api/contacts/:id/ai-profile —— 只读已缓存的画像（不触发 AI；按 X-Lang 取对应语言缓存） */
+export async function cachedAiProfile(userId: string, id: string, lang: "zh" | "en" = "zh") {
+  const row = await contactsRepo.aiProfileOf(id, userId, lang);
   if (!row) throw ApiError.notFound("联系人不存在");
   return { profile: row.ai_profile ?? null, generatedAt: row.ai_profile_at ?? null };
 }
@@ -357,7 +357,7 @@ export async function cachedAiProfile(userId: string, id: string) {
  * POST /api/contacts/:id/ai-profile —— 基于往来记录提炼「AI 交往画像」（W10 遗留）
  * 只依据真实记录（往来时间线 + 人情账 + 档案备注），禁止编造；结果缓存于 contacts.ai_profile
  */
-export async function generateAiProfile(userId: string, id: string) {
+export async function generateAiProfile(userId: string, id: string, lang: "zh" | "en" = "zh") {
   // 配额门槛（M3）：与 AI 复盘等 AI 入口同语义——免费用户 30 天窗口额度用尽直接 402，不打 LLM
   const q = await checkAiQuota(userId);
   if (!q.allowed) {
@@ -375,24 +375,33 @@ export async function generateAiProfile(userId: string, id: string) {
     throw ApiError.badRequest("还没有与 TA 的往来记录，先记几条动态或补一笔往来再来提炼");
   }
 
+  const L = (zh: string, en: string) => (lang === "en" ? en : zh);
   const lines = [
-    `人物：${contact.name}${contact.alias ? `（备注名 ${contact.alias}）` : ""}，分组 ${contact.group_tag}`,
+    `${L("人物", "Person")}: ${contact.name}${contact.alias ? L(`（备注名 ${contact.alias}）`, ` (alias ${contact.alias})`) : ""}${L(`，分组 ${contact.group_tag}`, `, group ${contact.group_tag}`)}`,
     // birthday 是 date 列（Date 对象）：直接内插得 "Wed Sep 23..." 脏串，必须先归一化成北京日历日
-    contact.birthday ? `生日 ${bjDateStr(contact.birthday)}` : "",
-    contact.notes ? `档案备注：${contact.notes}` : "",
+    contact.birthday ? `${L("生日", "Birthday")} ${bjDateStr(contact.birthday)}` : "",
+    contact.notes ? `${L("档案备注", "Profile notes")}: ${contact.notes}` : "",
     interactions.length
-      ? `往来记录（最近 ${interactions.length} 条）：\n${interactions
+      ? `${L(`往来记录（最近 ${interactions.length} 条）：`, `Interaction records (latest ${interactions.length}):`)}\n${interactions
           .map((i: Record<string, unknown>) => `- [${i.type}] ${i.summary ?? ""}${i.occurred_at ? `（${bjDateStr(i.occurred_at)}）` : ""}`)
           .join("\n")}`
       : "",
     money.length
-      ? `人情往来（最近 ${money.length} 笔）：\n${money
-          .map((m: Record<string, unknown>) => `- ${m.direction === "out" ? "送出" : "收到"} ¥${(Number(m.amount_cents) / 100).toFixed(0)} ${m.note || m.category || ""}`)
+      ? `${L(`人情往来（最近 ${money.length} 笔）：`, `Gifts & money (latest ${money.length}):`)}\n${money
+          .map((m: Record<string, unknown>) => `- ${m.direction === "out" ? L("送出", "sent") : L("收到", "received")} ¥${(Number(m.amount_cents) / 100).toFixed(0)} ${m.note || m.category || ""}`)
           .join("\n")}`
       : "",
   ].filter(Boolean);
 
-  const system = `你是个人经营助手，帮用户提炼与某位联系人的「交往画像」。只依据给出的真实记录归纳，**严禁编造**记录里没有的信息；记录太少就少说（**字数与条数不限**：按往来记录的丰富程度充分展开，禁止凑条凑字）。严格输出 JSON：
+  const system = lang === "en"
+    ? `You are a personal life-management assistant distilling a "relationship profile" of one contact for the user. Base every statement strictly on the given records — **fabrication is strictly forbidden**; with thin records, say little (**no length or count limits**: expand as richly as the records allow — never pad). Output strictly this JSON (all free text in English):
+{
+  "summary": "Relationship-style summary (from the records, no length limit)",
+  "likes": ["Things the contact clearly likes/cares about (from the records)"],
+  "dislikes": ["The contact's dislikes/taboos/pet peeves (from the records; empty array if none)"],
+  "facts": ["Important facts worth remembering (e.g. family birthdays, tastes, promises)"]
+}`
+    : `你是个人经营助手，帮用户提炼与某位联系人的「交往画像」。只依据给出的真实记录归纳，**严禁编造**记录里没有的信息；记录太少就少说（**字数与条数不限**：按往来记录的丰富程度充分展开，禁止凑条凑字）。严格输出 JSON：
 {
   "summary": "交往风格总结（基于记录，字数不限）",
   "likes": ["TA 明显喜欢/在意的事（来自记录）"],
@@ -433,7 +442,7 @@ export async function generateAiProfile(userId: string, id: string) {
     const parsed = extractJson(raw) as Partial<AiProfile>;
     const arr = (v: unknown) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : []);
     profile = {
-      summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : "记录还太少，多记几次再来提炼会更准",
+      summary: typeof parsed.summary === "string" && parsed.summary.trim() ? parsed.summary.trim() : L("记录还太少，多记几次再来提炼会更准", "Not enough records yet — log a few more interactions and distill again"),
       likes: arr(parsed.likes),
       dislikes: arr(parsed.dislikes),
       facts: arr(parsed.facts),
@@ -448,7 +457,7 @@ export async function generateAiProfile(userId: string, id: string) {
 
   // 生成期间联系人可能被并发删除：setAiProfile 不命中时 rows[0] 为 undefined，直取属性会 TypeError → 500
   const updated = (
-    await contactsRepo.setAiProfile(id, userId, JSON.stringify(profile))
+    await contactsRepo.setAiProfile(id, userId, JSON.stringify(profile), lang)
   ).rows[0];
   if (!updated) throw ApiError.notFound("联系人不存在");
 
